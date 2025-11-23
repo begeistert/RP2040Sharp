@@ -28,6 +28,8 @@ public unsafe class CortexM0Plus
 		Registers.SP = Bus.ReadWord(0x00000000);
 		// PC @ 0x00000004
 		Registers.PC = Bus.ReadWord(0x00000004);
+		
+		UpdateFetchCache(Registers.PC);
         
 		// Limpiar flags
 		Registers.N = false;
@@ -36,22 +38,64 @@ public unsafe class CortexM0Plus
 		Registers.V = false;
 	}
 	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	private void UpdateFetchCache(uint pc)
+	{
+		_currentRegionId = pc >> 28; // High Nibble
+
+		switch (_currentRegionId)
+		{
+			case BusInterconnect.REGION_FLASH: // 0x1
+				_fetchPtr = Bus.PtrFlash;
+				_fetchMask = Bus.MaskFlash;
+				break;
+			case BusInterconnect.REGION_SRAM: // 0x2
+				_fetchPtr = Bus.PtrSram;
+				_fetchMask = Bus.MaskSram;
+				break;
+			case BusInterconnect.REGION_BOOTROM: // 0x0
+				_fetchPtr = Bus.PtrBootRom;
+				_fetchMask = Bus.MaskBootRom;
+				break;
+			default:
+				// Ejecución fuera de memoria mapeada (Crash o Periféricos no ejecutables)
+				_fetchPtr = null; 
+				break;
+		}
+	}
+	
 	[MethodImpl(MethodImplOptions.AggressiveOptimization)] // Pide al JIT máxima prioridad
 	public void Run(int instructions)
 	{
-		var decoder = _decoder; 
-        
+		var decoder = _decoder;
+		
+		byte* fetchPtr = _fetchPtr;
+		uint fetchMask = _fetchMask;
+		uint regionId = _currentRegionId;
+       
 		while (instructions-- > 0)
 		{
-			// 1. FETCH
-			// TODO: Optimización futura -> "Fast Fetch" usando punteros directos si PC está en Flash/RAM para evitar la llamada virtual a Bus.ReadHalfWord.
 			var pc = Registers.PC;
-			var opcode = Bus.ReadHalfWord(pc);
 
-			// 2. UPDATE PC
+			if ((pc >> 28) != regionId) 
+			{
+				// FALLBACK: Cambio de región (Salto largo o retorno de interrupción)
+				// Actualizamos la caché local
+				UpdateFetchCache(pc);
+				fetchPtr = _fetchPtr;
+				fetchMask = _fetchMask;
+				regionId = _currentRegionId;
+             
+				// Si saltamos a la nada, abortamos o manejamos error
+				if (fetchPtr == null) break; 
+			}
+
+			// EJECUCIÓN OPTIMIZADA
+			// Leemos directo del puntero. Sin 'if' de RAM vs Flash.
+			// Solo un AND para la máscara.
+			var opcode = Unsafe.ReadUnaligned<ushort>(fetchPtr + (pc & fetchMask));
+			
 			Registers.PC = pc + 2;
-
-			// 3. DECODE & EXECUTE (Inlined)
 			decoder.Dispatch(opcode, this);
 		}
 	}
