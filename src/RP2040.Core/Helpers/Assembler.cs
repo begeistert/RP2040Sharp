@@ -27,10 +27,17 @@ public static class Assembler
 		return (ushort)((uint)(0xA800 | rd << 8) | imm8);
 	}
 
-	public static ushort AddHighRegisters (int rdn, int rm)
+	public static ushort AddHighRegisters (uint rdn, uint rm)
 	{
 		if (rdn > 0xf || rm > 0xf) throw new ArgumentException("Register index out of range (0-15)");
 		return (ushort)(0x4400 | (rdn & 0x8) << 4 | (rm & 0xf) << 3 | rdn & 0x7);
+	}
+
+	public static ushort AddsImmediate3 (uint rd, uint rn, uint imm3)
+	{
+		if (rd > 7 || rn > 7) throw new ArgumentException("Register index out of range (0-7)");
+		if (imm3 > 7) throw new ArgumentException("Immediate too large for ADDS");
+		return (ushort)(0x1C00 | (imm3 & 0x7) << 6 | ((rn & 0x07) << 3) | (rd & 0x07));
 	}
 
 	// MOVS Rd, #imm8
