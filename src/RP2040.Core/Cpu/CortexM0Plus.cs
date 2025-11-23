@@ -65,39 +65,4 @@ public class CortexM0Plus
 		Registers.Z = (result == 0);
 		Registers.N = (result & 0x80000000) != 0; // Bit 31 set
 	}
-
-	/// <summary>
-	/// Actualiza N, Z, C, V para operaciones de SUMA (ADD, CMN).
-	/// </summary>
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal void SetFlagsAdd(uint op1, uint op2, uint result)
-	{
-		Registers.Z = (result == 0);
-		Registers.N = (result & 0x80000000) != 0;
-        
-		// Carry: Si el resultado es menor que uno de los operandos (overflow de unsigned)
-		Registers.C = result < op1;
-        
-		// Overflow (Signed): Si operando 1 y 2 tienen el mismo signo, 
-		// y el resultado tiene signo distinto.
-		// Fórmula mágica: (~(op1 ^ op2) & (op1 ^ result)) & 0x80000000
-		Registers.V = ((~(op1 ^ op2) & (op1 ^ result)) & 0x80000000) != 0;
-	}
-
-	/// <summary>
-	/// Actualiza N, Z, C, V para operaciones de RESTA (SUB, CMP).
-	/// </summary>
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal void SetFlagsSub(uint op1, uint op2, uint result)
-	{
-		Registers.Z = (result == 0);
-		Registers.N = (result & 0x80000000) != 0;
-        
-		// Carry en ARM para resta es "Not Borrow". 
-		// C = 1 si no hubo préstamo (op1 >= op2).
-		Registers.C = op1 >= op2;
-        
-		// Overflow: (op1 ^ op2) & (op1 ^ result) & 0x80000000
-		Registers.V = (((op1 ^ op2) & (op1 ^ result)) & 0x80000000) != 0;
-	}
 }
