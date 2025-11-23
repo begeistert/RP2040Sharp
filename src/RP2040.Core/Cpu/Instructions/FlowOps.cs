@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using RP2040.Core.Internals;
 
 namespace RP2040.Core.Cpu.Instructions;
 
@@ -14,7 +13,8 @@ public static class FlowOps
         // Rango: -2048 a +2047 bytes (multiplicado por 2)
         
         // 1. Extraemos los 11 bits
-        uint rawOffset = BitUtils.Extract(opcode, 0, 11);
+        // uint rawOffset = BitUtils.Extract(opcode, 0, 11);
+        var rawOffset = (uint)(opcode & 0x7FF);
 
         // 2. Sign Extension (Extensión de Signo)
         // El truco maestro: Si el bit 10 (signo) es 1, debemos rellenar 

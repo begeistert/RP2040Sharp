@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using RP2040.Core.Internals; // Para BitUtils
 
 namespace RP2040.Core.Cpu.Instructions;
 

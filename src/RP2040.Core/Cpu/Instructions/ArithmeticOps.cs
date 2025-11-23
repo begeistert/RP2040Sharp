@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using RP2040.Core.Internals;
 namespace RP2040.Core.Cpu.Instructions;
 
 public class ArithmeticOps
