@@ -57,7 +57,7 @@ public static class InstructionEmiter
 	{
 		if (rd > 7) throw new ArgumentException("Register index out of range (0-7)");
 		if (imm8 >> 2 > 0xFF) throw new ArgumentException("Immediate too large");
-		return (ushort)(0xA000 | (rd & 7) << 3 | imm8 >> 2 & 0xFF);
+		return (ushort)(0xA000 | (rd & 7) << 8 | imm8 >> 2 & 0xFF);
 	}
 
 	// MOVS Rd, #imm8
