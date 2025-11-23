@@ -50,4 +50,45 @@ public static class BitOps
 		cpu.Registers.Z = (result == 0);
 		cpu.Registers.C = carry;
 	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void AsrsRegister(ushort opcode, CortexM0Plus cpu)
+	{
+		var rdn = opcode & 0x7;
+		var rm = (opcode >> 3) & 0x7;
+
+		ref var ptrRdn = ref cpu.Registers[rdn];
+		
+		var valRdn = ptrRdn; 
+		var valRm = cpu.Registers[rm];
+
+		var shift = (int)(valRm & 0xFF);
+
+		if (shift == 0)
+		{
+			cpu.Registers.N = (int)valRdn < 0;
+			cpu.Registers.Z = (valRdn == 0);
+			return;
+		}
+
+		uint result;
+		bool carry;
+
+		if (shift < 32)
+		{
+			result = (uint)((int)valRdn >> shift);
+			carry = ((valRdn >> (shift - 1)) & 1) != 0;
+		}
+		else
+		{
+			result = (uint)((int)valRdn >> 31);
+			carry = (int)valRdn < 0;
+		}
+
+		ptrRdn = result;
+
+		cpu.Registers.N = (int)result < 0;
+		cpu.Registers.Z = (result == 0);
+		cpu.Registers.C = carry;
+	}
 }
