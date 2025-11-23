@@ -73,6 +73,12 @@ public static class InstructionEmiter
 		return (ushort)(0x1000 | (imm5 & 0x1F) << 6 | ((rm & 7) << 3) | (rd & 7));
 	}
 
+	public static ushort AsrsRegister (uint rdn, uint rm)
+	{
+		if (rdn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4100 | ((rm & 7) << 3) | rdn);
+	}
+
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
 	public static ushort Movs(int rd, uint imm8)
