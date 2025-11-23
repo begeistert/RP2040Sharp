@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 
@@ -23,11 +24,7 @@ public struct Registers
     public uint R11;
     public uint R12;
 
-    // --- Registros Especiales ---
-    
     // R13: Stack Pointer (SP)
-    // Nota: El M0+ tiene MSP (Main) y PSP (Process). 
-    // El emulador debe gestionar cuál de los dos está activo en 'SP' según el modo.
     public uint SP; 
 
     // R14: Link Register (LR)
@@ -37,10 +34,6 @@ public struct Registers
     public uint PC;
 
     // --- Program Status Register (xPSR) ---
-    // OPTIMIZACIÓN CRÍTICA:
-    // En lugar de empaquetar los flags (N, Z, C, V) en un solo uint y usar máscaras
-    // en cada instrucción (lento), los guardamos como bools separados.
-    // Solo los empaquetamos cuando el software lee el registro xPSR explícitamente.
     public bool N; // Negative
     public bool Z; // Zero
     public bool C; // Carry
@@ -54,18 +47,13 @@ public struct Registers
     /// <summary>
     /// Helper para obtener el valor indexado (sugar syntax para el Span)
     /// </summary>
-    public uint this[int index]
+    public ref uint this[int index]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [UnscopedRef]
         get
         {
-            return Unsafe.Add(ref R0, index);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        set
-        {
-            Unsafe.Add(ref R0, index) = value;
+            return ref Unsafe.Add(ref R0, index);
         }
     }
     
