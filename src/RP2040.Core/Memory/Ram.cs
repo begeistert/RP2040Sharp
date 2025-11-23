@@ -3,20 +3,22 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 namespace RP2040.Core.Memory;
 
-public unsafe class RandomAccessMemory : IMemoryBus, IDisposable
+public unsafe class RandomAccessMemory : IMemoryMappedDevice, IDisposable
 {
 	readonly byte[] _memory;
 	GCHandle _pinnedHandle;
-	private readonly uint _length;
-	
+
 	public readonly byte* BasePtr;
+	public uint Size {
+		get;
+	}
 
 	public RandomAccessMemory (int size)
 	{
 		_memory = new byte[size];
 		_pinnedHandle = GCHandle.Alloc(_memory, GCHandleType.Pinned);
 		BasePtr = (byte*)_pinnedHandle.AddrOfPinnedObject();
-		_length = (uint)size;
+		Size = (uint)size;
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -48,6 +50,12 @@ public unsafe class RandomAccessMemory : IMemoryBus, IDisposable
 
 	public void Dispose()
 	{
-		if (_pinnedHandle.IsAllocated) _pinnedHandle.Free();
+		if (_pinnedHandle.IsAllocated)
+		{
+			_pinnedHandle.Free();
+		}
 	}
+	
+	[MethodImpl(MethodImplOptions.NoInlining)]
+	private static void ThrowOutOfRange() => throw new IndexOutOfRangeException();
 }
