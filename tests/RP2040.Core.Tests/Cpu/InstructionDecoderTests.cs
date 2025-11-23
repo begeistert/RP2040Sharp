@@ -177,4 +177,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	[Fact]
+	public void Bics ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Bics (R0, R3);
+		var expectedPointer = AddressOf (&BitOps.Bics);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
