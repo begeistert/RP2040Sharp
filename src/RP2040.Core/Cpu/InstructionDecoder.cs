@@ -21,7 +21,6 @@ public unsafe class InstructionDecoder : IDisposable
 
     public InstructionDecoder()
     {
-        // 1. Llenar con Undefined
         _pinnedHandle = GCHandle.Alloc(_lookupTable, GCHandleType.Pinned);
         _fastTablePtr = (InstructionHandler*)_pinnedHandle.AddrOfPinnedObject();
         
@@ -31,7 +30,6 @@ public unsafe class InstructionDecoder : IDisposable
             new Span<nuint>(ptrToArr, _lookupTable.Length).Fill((nuint)undefinedPtr);
         }
 
-        // 2. Registrar instrucciones (Aquí conectamos el decoder con la implementación)
         ReadOnlySpan<OpcodeRule> rules = [
             // ADCS (Rd, Rm)
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0001 0100 0000 (4140)
@@ -45,7 +43,6 @@ public unsafe class InstructionDecoder : IDisposable
             // ADD (High Registers) - Encoding T2
             // Cubre: ADD Rd, Rm (donde alguno es > R7)
             new OpcodeRule(0xFF00, 0x4400, &ArithmeticOps.AddHighRegisters),
-            // --- ARITMÉTICA COMÚN ---
             // ADDS (Rd, Rn, Rm) - Encoding T1 Register
             // Mask: 1111 1110 0000 0000 (FE00) -> Pattern: 0001 1000 0000 0000 (1800)
             new OpcodeRule(0xFE00, 0x1800, &ArithmeticOps.AddsRegister),

@@ -58,7 +58,7 @@ public unsafe class CortexM0Plus
              break;
           case BusInterconnect.REGION_BOOTROM:
              _fetchPtr = Bus.PtrBootRom;
-             _fetchMask = BusInterconnect.REGION_BOOTROM & ~1u;
+             _fetchMask = BusInterconnect.MASK_BOOTROM & ~1u;
              break;
           default:
              _fetchPtr = null; // Detiene el fast-fetch
