@@ -26,7 +26,7 @@ public unsafe class InstructionDecoderTests
 	public void Adcs ()
 	{
 		// Arrange
-		var opcode = Assembler.Adcs (R4, R4);
+		var opcode = InstructionEmiter.Adcs (R4, R4);
 		var expectedPointer = AddressOf(&ArithmeticOps.Adcs);
 		
 		// Act
@@ -40,7 +40,7 @@ public unsafe class InstructionDecoderTests
 	public void AddSpImm7 ()
 	{
 		// Arrange
-		var opcode = Assembler.AddSpImm7 (0x10);
+		var opcode = InstructionEmiter.AddSpImm7 (0x10);
 		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm7);
 		
 		// Act
@@ -54,7 +54,7 @@ public unsafe class InstructionDecoderTests
 	public void AddSpImm8 ()
 	{
 		// Arrange
-		var opcode = Assembler.AddSpImm8 (R1, 0x10);
+		var opcode = InstructionEmiter.AddSpImm8 (R1, 0x10);
 		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm8);
 		
 		// Act
@@ -68,7 +68,7 @@ public unsafe class InstructionDecoderTests
 	public void AddHighRegisters ()
 	{
 		// Arrange
-		var opcode = Assembler.AddHighRegisters (R1, IP);
+		var opcode = InstructionEmiter.AddHighRegisters (R1, IP);
 		var expectedPointer = AddressOf(&ArithmeticOps.AddHighRegisters);
 		
 		// Act
@@ -82,7 +82,7 @@ public unsafe class InstructionDecoderTests
 	public void AddsImmediate3 ()
 	{
 		// Arrange
-		var opcode = Assembler.AddsImmediate3 (R1, R2, 3);
+		var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
 		var expectedPointer = AddressOf (&ArithmeticOps.AddsImmediate3);
 		
 		// Act

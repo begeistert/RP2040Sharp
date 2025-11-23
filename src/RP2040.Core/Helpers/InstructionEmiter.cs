@@ -1,6 +1,6 @@
 namespace RP2040.Core.Helpers;
 
-public static class Assembler
+public static class InstructionEmiter
 {
 	// ADCS Rd, Rm
 	// Encoding: 0100 0001 01mm mddd (0x4140 base)
@@ -33,7 +33,7 @@ public static class Assembler
 		return (ushort)(0x4400 | (rdn & 0x8) << 4 | (rm & 0xf) << 3 | rdn & 0x7);
 	}
 
-	public static ushort AddsImmediate3 (uint rd, uint rn, uint imm3)
+	public static ushort AddsImm3 (uint rd, uint rn, uint imm3)
 	{
 		if (rd > 7 || rn > 7) throw new ArgumentException("Register index out of range (0-7)");
 		if (imm3 > 7) throw new ArgumentException("Immediate too large for ADDS");

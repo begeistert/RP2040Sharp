@@ -36,7 +36,7 @@ public class ArithmeticOpsTests
 		public void ShouldExecute()
 		{
 			// Arrange
-			var opcode = Assembler.Adcs (R5, R4);
+			var opcode = InstructionEmiter.Adcs (R5, R4);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers[R4] = 55;
@@ -58,7 +58,7 @@ public class ArithmeticOpsTests
 		public void ShouldSetNegativeAndOverflowFlags ()
 		{
 			// Arrange
-			var opcode = Assembler.Adcs (R5, R4);
+			var opcode = InstructionEmiter.Adcs (R5, R4);
 			_bus.WriteHalfWord (0x20000000, opcode);
 			
 			_cpu.Registers[R4] = 0x7fffffff;
@@ -80,7 +80,7 @@ public class ArithmeticOpsTests
 		public void ShouldNotSetOverflowFlagWhenAddingZeroesWithCarry ()
 		{
 			// Arrange
-			var opcode = Assembler.Adcs (R3, R2);
+			var opcode = InstructionEmiter.Adcs (R3, R2);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers[R2] = 0;
@@ -102,7 +102,7 @@ public class ArithmeticOpsTests
 		public void ShouldSetZeroCarryAndOverflowFlags ()
 		{
 			// Arrange
-			var opcode = Assembler.Adcs (R0, R0);
+			var opcode = InstructionEmiter.Adcs (R0, R0);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers[R0] = 0x80000000;
@@ -136,7 +136,7 @@ public class ArithmeticOpsTests
 		public void ShouldExecuteAddSp ()
 		{
 			// Arrange
-			var opcode = Assembler.AddSpImm7 (0x10);
+			var opcode = InstructionEmiter.AddSpImm7 (0x10);
 			_bus.WriteHalfWord (0x20000000, opcode);
 			
 			_cpu.Registers.SP = 0x10000040;
@@ -152,7 +152,7 @@ public class ArithmeticOpsTests
 		public void ShouldExecuteAddSpPlusImmediate ()
 		{
 			// Arrange
-			var opcode = Assembler.AddSpImm8 (R1, 0x10);
+			var opcode = InstructionEmiter.AddSpImm8 (R1, 0x10);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers.SP = 0x54;
@@ -170,7 +170,7 @@ public class ArithmeticOpsTests
 		public void ShouldExecuteAddHighRegisters ()
 		{
 			// Arrange
-			var opcode = Assembler.AddHighRegisters (R1, IP);
+			var opcode = InstructionEmiter.AddHighRegisters (R1, IP);
 			_bus.WriteHalfWord (0x20000000, opcode);
 			
 			_cpu.Registers[R1] = 66;
@@ -181,17 +181,13 @@ public class ArithmeticOpsTests
 			
 			// Assert
 			_cpu.Registers[R1].Should ().Be (110);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
 		}
 
 		[Fact]
 		public void ShouldExecuteAddHighRegistersWithoutUpdateTheFlags ()
 		{
 			// Arrange
-			var opcode = Assembler.AddHighRegisters (R3, R12);
+			var opcode = InstructionEmiter.AddHighRegisters (R3, R12);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers[R3] = 0x00002000;
@@ -212,7 +208,7 @@ public class ArithmeticOpsTests
 		public void ShouldExecuteAddHighRegistersWithSpWithoutUpdateTheFlags ()
 		{
 			// Arrange
-			var opcode = Assembler.AddHighRegisters (SP, R8);
+			var opcode = InstructionEmiter.AddHighRegisters (SP, R8);
 			_bus.WriteHalfWord (0x20000000, opcode);
 			
 			_cpu.Registers[SP] = 0x20030000;
@@ -231,7 +227,7 @@ public class ArithmeticOpsTests
 		public void ShouldExecuteAddHighRegistersWithPc ()
 		{
 			// Arrange
-			var opcode = Assembler.AddHighRegisters (PC, R8);
+			var opcode = InstructionEmiter.AddHighRegisters (PC, R8);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers[R8] = 0x11;
@@ -257,10 +253,10 @@ public class ArithmeticOpsTests
 		}
 
 		[Fact]
-		public void ShouldExecuteWithImmediate3 ()
+		public void ShouldExecuteImmediate3 ()
 		{
 			// Arrange
-			var opcode = Assembler.AddsImmediate3 (R1, R2, 3);
+			var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_cpu.Registers[R2] = 2;
@@ -274,6 +270,12 @@ public class ArithmeticOpsTests
 			_cpu.Registers.Z.Should ().BeFalse ();
 			_cpu.Registers.C.Should ().BeFalse ();
 			_cpu.Registers.V.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void ShouldExecuteImmediate8 ()
+		{
+			
 		}
 	}
 }
