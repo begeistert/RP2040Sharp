@@ -46,6 +46,9 @@ public struct Registers
     public bool C; // Carry
     public bool V; // Overflow
     
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public byte GetC() => Unsafe.As<bool, byte>(ref C);
+    
     // Interrupt Status Register (IPSR) y Execution (EPSR) se pueden manejar aparte o implícitamente.
     
     /// <summary>

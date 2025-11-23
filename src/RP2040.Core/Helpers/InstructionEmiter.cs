@@ -40,6 +40,26 @@ public static class InstructionEmiter
 		return (ushort)(0x1C00 | (imm3 & 0x7) << 6 | ((rn & 0x07) << 3) | (rd & 0x07));
 	}
 
+	public static ushort AddsImm8 (uint rdn, uint imm8)
+	{
+		if (rdn > 7) throw new ArgumentException("Register index out of range (0-7)");
+		if (imm8 > 255) throw new ArgumentException("Immediate too large for ADDS");
+		return (ushort)(0x3000 | (rdn & 0x07) << 8 | (imm8 & 0xFF));
+	}
+
+	public static ushort AddsRegister (uint rd, uint rn, uint rm)
+	{
+		if (rd > 7 || rn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x1800 | ((rm & 0x07) << 6) | (rn & 0x07) << 3 | (rd & 0x07));
+	}
+
+	public static ushort Adr (uint rd, uint imm8)
+	{
+		if (rd > 7) throw new ArgumentException("Register index out of range (0-7)");
+		if (imm8 >> 2 > 0xFF) throw new ArgumentException("Immediate too large");
+		return (ushort)(0xA000 | (rd & 7) << 3 | imm8 >> 2 & 0xFF);
+	}
+
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
 	public static ushort Movs(int rd, uint imm8)

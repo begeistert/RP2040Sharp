@@ -16,6 +16,8 @@ public unsafe class InstructionDecoderTests
 	const int R3 = 3;
 	const int R4 = 4;
 	const int R5 = 5;
+	const int R6 = 6;
+	const int R7 = 7;
 
 	const int IP = 12;
 	
@@ -41,7 +43,7 @@ public unsafe class InstructionDecoderTests
 	{
 		// Arrange
 		var opcode = InstructionEmiter.AddSpImm7 (0x10);
-		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm7);
+		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImmediate7);
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);
@@ -55,7 +57,7 @@ public unsafe class InstructionDecoderTests
 	{
 		// Arrange
 		var opcode = InstructionEmiter.AddSpImm8 (R1, 0x10);
-		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm8);
+		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImmediate8);
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);
@@ -79,11 +81,53 @@ public unsafe class InstructionDecoderTests
 	}
 
 	[Fact]
-	public void AddsImmediate3 ()
+	public void AddsImm3 ()
 	{
 		// Arrange
 		var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
 		var expectedPointer = AddressOf (&ArithmeticOps.AddsImmediate3);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+
+	[Fact]
+	public void AddsImm8 ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.AddsImm8 (R1, 1);
+		var expectedPointer = AddressOf (&ArithmeticOps.AddsImmediate8);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+
+	[Fact]
+	public void AddsRegister ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.AddsRegister (R1, R2, R7);
+		var expectedPointer = AddressOf (&ArithmeticOps.AddsRegister);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+
+	[Fact]
+	public void Adr ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Adr (R4, 0x50);
+		var expectedPointer = AddressOf (&ArithmeticOps.Adr);
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);

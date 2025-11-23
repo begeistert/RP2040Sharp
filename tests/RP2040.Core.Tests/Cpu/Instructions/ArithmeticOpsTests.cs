@@ -12,6 +12,8 @@ public class ArithmeticOpsTests
 	const int R3 = 3;
 	const int R4 = 4;
 	const int R5 = 5;
+	const int R6 = 6;
+	const int R7 = 7;
 	const int R8 = 8;
 	const int R12 = 12;
 	
@@ -238,6 +240,37 @@ public class ArithmeticOpsTests
 			// Assert
 			_cpu.Registers[PC].Should ().Be (0x20000014);
 		}
+		
+		[Fact]
+		public void ShouldExecuteAddEncodingT2WithLowRegistersAndPreserveFlags()
+		{
+			// Arrange
+			// Esto genera el opcode 0x4411 (Encoding T2) en lugar de 0x1811 (Encoding T1)
+			var opcode = InstructionEmiter.AddHighRegisters(R1, R2); 
+			_bus.WriteHalfWord(0x20000000, opcode);
+
+			_cpu.Registers[R1] = 10;
+			_cpu.Registers[R2] = 20;
+
+			_cpu.Registers.N = true;
+			_cpu.Registers.Z = true; 
+			_cpu.Registers.C = true; 
+			_cpu.Registers.V = true;
+
+			// Act
+			_cpu.Step();
+
+			// Assert
+			_cpu.Registers[R1].Should().Be(30); // 10 + 20
+
+			// Verificamos que NO cambiaron, a pesar de que:
+			// - El resultado (30) NO es negativo (N debería ser false si se actualizara)
+			// - El resultado NO es cero (Z debería ser false si se actualizara)
+			_cpu.Registers.N.Should().BeTrue();
+			_cpu.Registers.Z.Should().BeTrue();
+			_cpu.Registers.C.Should().BeTrue();
+			_cpu.Registers.V.Should().BeTrue();
+		}
 	}
 
 	public class Adds
@@ -253,7 +286,7 @@ public class ArithmeticOpsTests
 		}
 
 		[Fact]
-		public void ShouldExecuteImmediate3 ()
+		public void ShouldExecuteImm3 ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
@@ -273,7 +306,98 @@ public class ArithmeticOpsTests
 		}
 
 		[Fact]
-		public void ShouldExecuteImmediate8 ()
+		public void ShouldExecuteImm8 ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.AddsImm8 (R1, 1);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R1] = 0xffffffff;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R1].Should ().Be (0);
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeTrue ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteRegister ()
+		{
+			// Test 1: ADDS R1, R2, R7 (2 + 27 = 29)
+			// Requiere: InstructionEmiter.AddsReg(rd, rn, rm)
+			var opcode = InstructionEmiter.AddsRegister (R1, R2, R7);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R2] = 2;
+			_cpu.Registers[R7] = 27;
+       
+			_cpu.Step ();
+       
+			_cpu.Registers[R1].Should ().Be (29);
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteRegisterWithSignedOverflow ()
+		{
+			// Test 2: ADDS R4, R4, R2 (Overflow Signed)
+			var opcode = InstructionEmiter.AddsRegister (R4, R4, R2);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R2] = 0x74bc8000;
+			_cpu.Registers[R4] = 0x43740000;
+       
+			_cpu.Step ();
+       
+			_cpu.Registers[R4].Should ().Be (0xb8308000);
+			_cpu.Registers.N.Should ().BeTrue ();  // Resultado es negativo (bit 31=1)
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse (); // No hubo carry unsigned
+			_cpu.Registers.V.Should ().BeTrue ();  // Overflow Signed (Pos + Pos = Neg)
+		}
+
+		[Fact]
+		public void ShouldExecuteRegisterSelfAddWithCarryAndOverflow ()
+		{
+			// Test 3: ADDS R1, R1, R1 (Neg + Neg = Pos + Carry)
+			var opcode = InstructionEmiter.AddsRegister (R1, R1, R1);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R1] = 0xbf8d1424;
+			_cpu.Registers.C = true; // Inyectamos C para probar que se SOBREESCRIBE, no que se usa.
+       
+			_cpu.Step ();
+       
+			_cpu.Registers[R1].Should ().Be (0x7f1a2848);
+			_cpu.Registers.N.Should ().BeFalse (); // Positivo
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();  // Carry generado
+			_cpu.Registers.V.Should ().BeTrue ();  // Overflow Signed
+		}
+	}
+
+	public class Adr
+	{
+		readonly CortexM0Plus _cpu;
+		readonly BusInterconnect _bus;
+		public Adr ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus(_bus);
+        
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecute ()
 		{
 			
 		}

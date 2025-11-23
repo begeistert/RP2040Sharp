@@ -41,11 +41,11 @@ public unsafe class InstructionDecoder : IDisposable
             // --- ADD CON SP (STACK POINTER) ---
             // ADD (SP + imm7)
             // Mask: 1111 1111 1000 0000 (FF80) -> Pattern: 1011 0000 0000 0000 (B000)
-            new OpcodeRule(0xFF80, 0xB000, &ArithmeticOps.AddSpImm7),
+            new OpcodeRule(0xFF80, 0xB000, &ArithmeticOps.AddSpImmediate7),
 
             // ADD (Rd = SP + imm8)
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1010 1000 0000 0000 (A800)
-            new OpcodeRule(0xF800, 0xA800, &ArithmeticOps.AddSpImm8),
+            new OpcodeRule(0xF800, 0xA800, &ArithmeticOps.AddSpImmediate8),
             
             // ADD (High Registers) - Encoding T2
             // Cubre: ADD Rd, Rm (donde alguno es > R7)
