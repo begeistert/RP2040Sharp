@@ -65,7 +65,10 @@ public unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0x4100, &BitOps.AsrsRegister),
             // BICS (Rdn, Rm)
             // Mask: 1111 1111 1100 0000 (0xFFC0) ->  Pattern: 0100 0011 1000 0000 (0x4380)
-            new OpcodeRule(0xFFC0, 0x4380, &BitOps.Bics)
+            new OpcodeRule(0xFFC0, 0x4380, &BitOps.Bics),
+            // BL (Branch with Link)
+            // H1 Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1111 0000 0000 0000 (F000)
+            new OpcodeRule(0xF800, 0xF000, &FlowOps.Bl),
         ];
         
         for (var i = 0; i < 65536; i++)

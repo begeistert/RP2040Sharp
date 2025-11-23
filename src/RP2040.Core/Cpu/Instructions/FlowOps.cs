@@ -49,4 +49,33 @@ public static class FlowOps
         
         // Flush Pipeline? En M0 no hace falta simularlo, solo cambiamos PC.
     }
+
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void Bl (ushort opcodeH1, CortexM0Plus cpu)
+    {
+        ref var pc = ref cpu.Registers.PC;
+        var opcodeH2 = cpu.Bus.ReadHalfWord(pc);
+
+        pc += 2;
+        var nextPc = pc;
+        
+        var s = (opcodeH1 >> 10) & 1;
+        var j1 = (opcodeH2 >> 13) & 1;
+        var j2 = (opcodeH2 >> 11) & 1;
+        
+        var imm10 = opcodeH1 & 0x3FF;
+        var imm11 = opcodeH2 & 0x7FF;
+
+        var i1 = ~(j1 ^ s) & 1;
+        var i2 = ~(j2 ^ s) & 1;
+
+        var offset = (s << 24) | (i1 << 23) | (i2 << 22) | (imm10 << 12) | (imm11 << 1);
+
+        offset = (offset << 7) >> 7;
+
+        cpu.Registers.LR = nextPc | 1;
+        pc = (uint)(nextPc + offset);
+
+        cpu.Cycles += 3; // Takes total 4 cycles
+    }
 }
