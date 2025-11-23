@@ -6,11 +6,9 @@ namespace RP2040.Core.Cpu;
 public class CortexM0Plus
 {
 	public readonly IMemoryBus Bus;
-    
-	// El estado de los registros.
-	// Al ser un struct, 'Registers' aquí es un CAMPO que contiene los datos directamente.
 	public Registers Registers; 
-	private readonly InstructionDecoder _decoder;
+	
+	readonly InstructionDecoder _decoder;
 
 	public CortexM0Plus(IMemoryBus bus)
 	{
@@ -21,11 +19,10 @@ public class CortexM0Plus
 
 	public void Reset()
 	{
-		// Lógica de Reset del ARM Cortex-M0+
-		// 1. Leer el Stack Pointer inicial desde la dirección 0x00000000
+		// RP2040 Boot sequence:
+		// SP @ 0x00000000
 		Registers.SP = Bus.ReadWord(0x00000000);
-        
-		// 2. Leer el Reset Vector (PC inicial) desde 0x00000004
+		// PC @ 0x00000004
 		Registers.PC = Bus.ReadWord(0x00000004);
         
 		// Limpiar flags
