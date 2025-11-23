@@ -205,4 +205,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	[Fact]
+	public void Blx ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Blx  (R3);
+		var expectedPointer = AddressOf (&FlowOps.Blx);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

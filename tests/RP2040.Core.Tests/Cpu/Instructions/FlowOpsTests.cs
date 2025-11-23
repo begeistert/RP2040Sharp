@@ -81,4 +81,35 @@ public class FlowOpsTests
 			_cpu.Cycles.Should ().Be (4);
 		}
 	}
+	
+	public class Blx
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		public Blx()
+		{
+			_bus = new BusInterconnect();
+			_cpu = new CortexM0Plus(_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecute ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Blx (R3);
+			_bus.WriteWord (0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x20000201;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.PC.Should ().Be (0x20000200);
+			_cpu.Registers.LR.Should ().Be (0x20000003);
+			_cpu.Cycles.Should ().Be (3);
+		}
+	}
 }
