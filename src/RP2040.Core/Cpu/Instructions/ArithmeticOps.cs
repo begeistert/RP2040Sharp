@@ -12,66 +12,69 @@ public class ArithmeticOps
         var rn = (opcode >> 3) & 0x7;
         var imm3 = (uint)((opcode >> 6) & 0x7);
 
-        // Lectura optimizada con Unsafe (via indexer)
-        var valRn = cpu.Registers[rn];
+        // Escritura optimizada: Obtenemos el puntero al destino.
+        ref var ptrRd = ref cpu.Registers[rd];
+        var valRn = cpu.Registers[rn]; // Rn suele ser distinto, leemos por valor
         
-        // Inlined Math: Evitamos overhead de llamada para la instrucción más común
-        var res = AddWithFlags(cpu, valRn, imm3, carryIn: 0);
-        cpu.Registers[rd] = res;
+        ptrRd = AddWithFlags(cpu, valRn, imm3, carryIn: 0);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddsImmediate8(ushort opcode, CortexM0Plus cpu)
     {
+        // ADDS Rd, #imm8 (Rd es Source y Destino)
         var rd = (opcode >> 8) & 0x7;
         var imm8 = (uint)(opcode & 0xFF);
-        var valRd = cpu.Registers[rd];
         
-        cpu.Registers[rd] = AddWithFlags(cpu, valRd, imm8, carryIn: 0);
+        // OPTIMIZACIÓN CLAVE: Read-Modify-Write
+        // Capturamos la dirección de Rd una sola vez.
+        ref var ptrRd = ref cpu.Registers[rd];
+        
+        // Pasamos 'ptrRd' (se lee implícitamente) y asignamos el resultado a 'ptrRd'
+        ptrRd = AddWithFlags(cpu, ptrRd, imm8, carryIn: 0);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddsRegister(ushort opcode, CortexM0Plus cpu)
     {
+        // ADDS Rd, Rn, Rm
         var rd = opcode & 0x7;
         var rn = (opcode >> 3) & 0x7;
         var rm = (opcode >> 6) & 0x7;
 
+        // Preparamos puntero de escritura
+        ref var ptrRd = ref cpu.Registers[rd];
         var valRn = cpu.Registers[rn];
         var valRm = cpu.Registers[rm];
 
-        cpu.Registers[rd] = AddWithFlags(cpu, valRn, valRm, carryIn: 0);
+        ptrRd = AddWithFlags(cpu, valRn, valRm, carryIn: 0);
     }
-
-    // --- ADCS (Suma con Acarreo y flags) ---
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Adcs(ushort opcode, CortexM0Plus cpu)
     {
+        // ADCS Rd, Rm (Rd es Source y Destino)
         var rd = opcode & 0x7;
         var rm = (opcode >> 3) & 0x7;
 
-        var valRd = cpu.Registers[rd];
+        // Read-Modify-Write optimizado
+        ref var ptrRd = ref cpu.Registers[rd];
         var valRm = cpu.Registers[rm];
 
-        // Conversión branchless de bool a int (0 o 1)
-        // Unsafe.As<bool, byte> es una opción, pero el ternario suele optimizarse bien.
-        var carryIn = cpu.Registers.GetC ();
+        var carryIn = cpu.Registers.GetC();
 
-        cpu.Registers[rd] = AddWithFlags(cpu, valRd, valRm, carryIn);
+        ptrRd = AddWithFlags(cpu, ptrRd, valRm, carryIn);
     }
 
-    // --- ADD (Sin flags - Usualmente con SP o High Registers) ---
+    // --- ADD SP (Sin Flags) ---
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddSpImmediate7(ushort opcode, CortexM0Plus cpu)
     {
-        // ADD SP, SP, #imm7 (Encoding T2)
-        // Encoding: 1011 0000 0iii iiii
-        // Nota: Esta instrucción multiplica el inmediato por 4 (alineación de palabras)
+        // ADD SP, SP, #imm7
+        // Aquí no necesitamos ref porque SP es un campo directo, no un array indexado.
+        // El acceso a cpu.Registers.SP ya es directísimo.
         var imm7 = (uint)((opcode & 0x7F) << 2);
-
-        // NO actualiza flags
         cpu.Registers.SP += imm7;
     }
 
@@ -144,18 +147,28 @@ public class ArithmeticOps
         var rn = (opcode >> 3) & 0x7;
         var imm3 = (uint)((opcode >> 6) & 0x7);
         
-        cpu.Registers[rd] = SubWithFlags(cpu, cpu.Registers[rn], imm3);
+        ref var ptrRd = ref cpu.Registers[rd];
+        var valRn = cpu.Registers[rn];
+        
+        ptrRd = SubWithFlags(cpu, valRn, imm3);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SubsImmediate8(ushort opcode, CortexM0Plus cpu)
     {
-        // SUBS Rd, #imm8 (Rd es también Rn)
+        // SUBS Rd, #imm8 (Rd es Source y Destino)
         var rd = (opcode >> 8) & 0x7;
         var imm8 = (uint)(opcode & 0xFF);
         
-        cpu.Registers[rd] = SubWithFlags(cpu, cpu.Registers[rd], imm8);
+        // OPTIMIZACIÓN: Read-Modify-Write
+        ref var ptrRd = ref cpu.Registers[rd];
+        
+        ptrRd = SubWithFlags(cpu, ptrRd, imm8);
     }
+    
+    // =============================================================
+    // MATH HELPERS (Sin cambios, reciben valores)
+    // =============================================================
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint AddWithFlags(CortexM0Plus cpu, uint op1, uint op2, uint carryIn)
