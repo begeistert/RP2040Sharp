@@ -1,7 +1,6 @@
-using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using RP2040.Core.Cpu.Instructions; // Importamos los namespaces de las instrucciones
+using RP2040.Core.Cpu.Instructions; 
 
 using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.CortexM0Plus, void>;
 
@@ -9,9 +8,6 @@ namespace RP2040.Core.Cpu;
 
 public unsafe class InstructionDecoder : IDisposable
 {
-    // Definimos la firma del puntero/delegado
-    // public delegate void InstructionHandler(ushort opcode, CortexM0Plus cpu);
-
     private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
     private GCHandle _pinnedHandle;
     private readonly InstructionHandler* _fastTablePtr;
@@ -26,7 +22,6 @@ public unsafe class InstructionDecoder : IDisposable
     public InstructionDecoder()
     {
         // 1. Llenar con Undefined
-        // Array.Fill(_lookupTable, HandleUndefined);
         _pinnedHandle = GCHandle.Alloc(_lookupTable, GCHandleType.Pinned);
         _fastTablePtr = (InstructionHandler*)_pinnedHandle.AddrOfPinnedObject();
         
@@ -103,26 +98,14 @@ public unsafe class InstructionDecoder : IDisposable
             // new OpcodeRule(0xF800, 0xF000, FlowOps.BranchLink)
         ];
         
-        foreach (ref readonly var rule in rules)
+        for (var i = 0; i < 65536; i++)
         {
-            ApplyRule(rule, undefinedPtr);
-        }
-    }
-    
-    private void ApplyRule(in OpcodeRule rule, InstructionHandler undefinedHandler)
-    {
-        // Iteramos los 65536 opcodes.
-        // Esto toma unos ms en el arranque, pero asegura la corrección.
-        for (var i = 0; i < 65536; i++) {
-            // Si el opcode coincide con la máscara...
-            if (((ushort)i & rule.Mask) != rule.Pattern)
-                continue;
-            // OPTIMIZACIÓN LÓGICA:
-            // Solo escribimos si la celda sigue apuntando a "Undefined".
-            // Esto garantiza que la PRIMERA regla en la lista que atrapó este opcode sea la que se quede.
-            if (_lookupTable[i] == undefinedHandler)
-            {
-                _lookupTable[i] = rule.Handler;
+            var opcode = (ushort)i;
+            foreach (ref readonly var rule in rules) {
+                if ((opcode & rule.Mask) != rule.Pattern)
+                    continue;
+                _fastTablePtr[i] = rule.Handler;
+                break;
             }
         }
     }
