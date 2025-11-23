@@ -3,11 +3,10 @@ using System.Runtime.CompilerServices;
 
 namespace RP2040.Core.Cpu;
 
-// Garantizamos que R0 a R15 estén contiguos en memoria.
 [StructLayout(LayoutKind.Sequential)]
 public struct Registers
 {
-    // --- Registros de Propósito General (Low Registers) ---
+    // --- Low Registers (R0-R7) ---
     public uint R0;
     public uint R1;
     public uint R2;
@@ -17,7 +16,7 @@ public struct Registers
     public uint R6;
     public uint R7;
 
-    // --- Registros Altos (High Registers) ---
+    // --- High Registers (R8-R12) ---
     public uint R8;
     public uint R9;
     public uint R10;
