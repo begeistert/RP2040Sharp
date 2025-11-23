@@ -7,8 +7,9 @@ public unsafe class RandomAccessMemory : IMemoryBus, IDisposable
 {
 	readonly byte[] _memory;
 	GCHandle _pinnedHandle;
-	readonly byte* BasePtr;
 	private readonly uint _length;
+	
+	public readonly byte* BasePtr;
 
 	public RandomAccessMemory (int size)
 	{
