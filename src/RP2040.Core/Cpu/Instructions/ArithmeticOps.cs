@@ -3,7 +3,6 @@ namespace RP2040.Core.Cpu.Instructions;
 
 public class ArithmeticOps
 {
-    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddsImmediate3(ushort opcode, CortexM0Plus cpu)
     {
@@ -82,24 +81,22 @@ public class ArithmeticOps
     public static void AddSpImmediate8(ushort opcode, CortexM0Plus cpu)
     {
         // ADD Rd, SP, #imm8
-        // Encoding: 1010 1ddd iiii iiii
-        // También multiplica por 4
         var rd = (opcode >> 8) & 0x7;
         var imm8 = (uint)((opcode & 0xFF) << 2);
 
-        // 3. Ejecución
+        // Escritura en Rd
         cpu.Registers[rd] = cpu.Registers.SP + imm8;
     }
     
-    // (Falta ADD High Register, pero con estos tienes el 90% cubierto)
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddHighRegisters(ushort opcode, CortexM0Plus cpu)
     {
-        // Encoding: 0100 0100 DNmm mddd (0x4400)
+        // ADD (High Registers)
         var rm = (opcode >> 3) & 0xF;
         var dn = ((opcode >> 4) & 0x8) | (opcode & 0x7);
         
+        // Aquí usamos acceso normal porque 'dn' puede ser PC(15) o SP(13)
+        // y la lógica especial del switch hace difícil usar ref genérico.
         var valDn = (dn == 15) ? cpu.Registers.PC + 2 : cpu.Registers[dn];
         var valRm = cpu.Registers[rm];
 
@@ -107,9 +104,9 @@ public class ArithmeticOps
 
         switch (dn)
         {
-            case 15: cpu.Registers.PC = result & 0xFFFFFFFE; break; // Align Halfword
-            case 13: cpu.Registers.SP = result & 0xFFFFFFFC; break; // Align Word
-            default: cpu.Registers[dn] = result; break;
+            case 15: cpu.Registers.PC = result & 0xFFFFFFFE; break;
+            case 13: cpu.Registers.SP = result & 0xFFFFFFFC; break;
+            default: cpu.Registers[dn] = result; break; // Aquí se usa el indexador (set) optimizado
         }
     }
 
@@ -117,12 +114,12 @@ public class ArithmeticOps
     public static void Adr(ushort opcode, CortexM0Plus cpu)
     {
         // ADR Rd, label
-        // Encoding: 1010 0ddd iiii iiii
-    
         var rd = (opcode >> 8) & 0x7;
         var imm8 = (uint)(opcode & 0xFF);
         
         var basePc = (cpu.Registers.PC + 2) & 0xFFFFFFFC;
+        
+        // Escritura directa
         cpu.Registers[rd] = basePc + (imm8 << 2);
     }
 
@@ -130,10 +127,10 @@ public class ArithmeticOps
     public static void CmpImmediate(ushort opcode, CortexM0Plus cpu)
     {
         // CMP Rn, #imm8
-        // Encoding: 0010 1rrr iiii iiii (0x2800)
         var rn = (opcode >> 8) & 0x7;
         var imm8 = (uint)(opcode & 0xFF);
         
+        // CMP solo lee, no escribe. No necesitamos 'ref'.
         var val1 = cpu.Registers[rn];
         
         SubWithFlags(cpu, val1, imm8);
@@ -183,6 +180,7 @@ public class ArithmeticOps
 
         return result32;
     }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint SubWithFlags(CortexM0Plus cpu, uint op1, uint op2)
     {
