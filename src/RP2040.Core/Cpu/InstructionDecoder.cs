@@ -61,6 +61,11 @@ public unsafe class InstructionDecoder : IDisposable
 
             // ADDS (Rd, imm8)
             new OpcodeRule(0xF800, 0x3000, &ArithmeticOps.AddsImmediate8),
+            
+            // ADR (Rd, imm8)
+            // Mask : -> Pattern: 1010 0000 0000 0000 (0000)
+            new OpcodeRule(0xF800, 0xA000, &ArithmeticOps.Adr),
+            
             // ADCS (Rd, Rm) - JS: opcode >> 6 === 0b0100000101
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0001 0100 0000 (4140)
             // new OpcodeRule(0xFFC0, 0x4140, AluOps.Adcs), 
