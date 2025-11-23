@@ -69,6 +69,9 @@ public unsafe class InstructionDecoder : IDisposable
             // BL (Branch with Link)
             // H1 Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1111 0000 0000 0000 (F000)
             new OpcodeRule(0xF800, 0xF000, &FlowOps.Bl),
+            // BLX Rm
+            // Mask: 1111 1111 1000 0111 (FF87) -> Pattern: 0100 0111 1000 0000 (4780)
+            new OpcodeRule(0xFF87, 0x4780, &FlowOps.Blx),
         ];
         
         for (var i = 0; i < 65536; i++)
