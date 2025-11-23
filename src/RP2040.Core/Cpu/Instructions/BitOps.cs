@@ -16,7 +16,6 @@ public static class BitOps
 		var result = ptrRdn & valRm;
 		ptrRdn = result;
 
-		cpu.Registers[rdn] = result;
 		cpu.Registers.N = (int)result < 0; 
 		cpu.Registers.Z = (result == 0);
 	}

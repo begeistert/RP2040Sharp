@@ -136,7 +136,7 @@ public unsafe class InstructionDecoderTests
 		handlerAddress.Should ().Be (expectedPointer);
 	}
 
-	//[Fact]
+	[Fact]
 	public void Ands ()
 	{
 		// Arrange
