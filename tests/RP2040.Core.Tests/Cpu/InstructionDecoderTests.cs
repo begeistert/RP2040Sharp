@@ -151,11 +151,25 @@ public unsafe class InstructionDecoderTests
 	}
 
 	[Fact]
-	public void Asrs ()
+	public void AsrsImm5 ()
 	{
 		// Arrange
 		var opcode = InstructionEmiter.AsrsImm5 (R3, R2, 31);
 		var expectedPointer = AddressOf (&BitOps.AsrsImm5);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+
+	[Fact]
+	public void AsrsRegister ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.AsrsRegister (R3, R4);
+		var expectedPointer = AddressOf (&BitOps.AsrsRegister);
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);

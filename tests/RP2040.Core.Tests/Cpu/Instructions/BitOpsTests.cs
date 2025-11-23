@@ -107,5 +107,114 @@ public class BitOpsTests
 			_cpu.Registers.Z.Should().BeFalse();
 			_cpu.Registers.C.Should().BeTrue();
 		}
+		
+		[Fact]
+		public void ShouldExecuteAsrsRegister ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.AsrsRegister(R3, R4); 
+			_bus.WriteHalfWord(0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x80000040;
+			_cpu.Registers[R4] = 0xff500007;
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers[R3].Should().Be(0xff000000);
+			_cpu.Registers.PC.Should().Be(0x20000002);
+			_cpu.Registers.N.Should().BeTrue();
+			_cpu.Registers.Z.Should().BeFalse();
+			_cpu.Registers.C.Should().BeTrue();
+		}
+
+		[Fact]
+		public void ShouldExecuteAsrsRegisterWithCarry ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.AsrsRegister(R3, R4); 
+			_bus.WriteHalfWord(0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x40000040;
+			_cpu.Registers[R4] = 50;
+			_cpu.Registers.C = true;
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers[R3].Should().Be(0);
+			_cpu.Registers.PC.Should().Be(0x20000002);
+			_cpu.Registers.N.Should().BeFalse();
+			_cpu.Registers.Z.Should().BeTrue();
+			_cpu.Registers.C.Should().BeFalse();
+		}
+		
+		[Fact]
+		public void ShouldExecuteAsrsRegisterWithCarryAndUpdateZero ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.AsrsRegister(R3, R4); 
+			_bus.WriteHalfWord(0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x40000040;
+			_cpu.Registers[R4] = 31;
+			_cpu.Registers.C = true;
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers[R3].Should().Be(0);
+			_cpu.Registers.PC.Should().Be(0x20000002);
+			_cpu.Registers.N.Should().BeFalse();
+			_cpu.Registers.Z.Should().BeTrue();
+			_cpu.Registers.C.Should().BeTrue();
+		}
+		
+		[Fact]
+		public void ShouldExecuteAsrsRegisterWithCarryAndUpdateNegative ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.AsrsRegister(R3, R4); 
+			_bus.WriteHalfWord(0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x80000040;
+			_cpu.Registers[R4] = 50;
+			_cpu.Registers.C = true;
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers[R3].Should().Be(0xffffffff);
+			_cpu.Registers.PC.Should().Be(0x20000002);
+			_cpu.Registers.N.Should().BeTrue();
+			_cpu.Registers.Z.Should().BeFalse();
+			_cpu.Registers.C.Should().BeTrue();
+		}
+		
+		[Fact]
+		public void ShouldExecuteAsrsRegisterWithShiftZeroAndCarryAndUpdateNegative ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.AsrsRegister(R3, R4); 
+			_bus.WriteHalfWord(0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x80000040;
+			_cpu.Registers[R4] = 0;
+			_cpu.Registers.C = true;
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers[R3].Should().Be(0x80000040);
+			_cpu.Registers.PC.Should().Be(0x20000002);
+			_cpu.Registers.N.Should().BeTrue();
+			_cpu.Registers.Z.Should().BeFalse();
+			_cpu.Registers.C.Should().BeTrue();
+		}
 	}
 }
