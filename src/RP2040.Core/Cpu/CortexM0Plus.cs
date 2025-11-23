@@ -7,7 +7,8 @@ namespace RP2040.Core.Cpu;
 public unsafe class CortexM0Plus
 {
     public readonly BusInterconnect Bus;
-    public Registers Registers; 
+    public Registers Registers;
+    public long Cycles;
     
     private readonly InstructionDecoder _decoder;
     
@@ -36,6 +37,8 @@ public unsafe class CortexM0Plus
        Registers.Z = false;
        Registers.C = false;
        Registers.V = false;
+       
+       Cycles = 0;
     }
     
     /// <summary>
@@ -104,6 +107,8 @@ public unsafe class CortexM0Plus
           
           // 4. PRE-UPDATE PC (Speculative)
           Registers.PC = pc + 2;
+          
+          Cycles++;
 
           // 5. DISPATCH
           decoder.Dispatch(opcode, this);
@@ -123,6 +128,7 @@ public unsafe class CortexM0Plus
        // Usamos el Bus normal que maneja lógica segura y unaligned
        var opcode = Bus.ReadHalfWord(pc); 
        Registers.PC = pc + 2;
+       Cycles++;
        _decoder.Dispatch(opcode, this);
     }
 }
