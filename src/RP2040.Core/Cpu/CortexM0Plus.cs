@@ -31,35 +31,34 @@ public class CortexM0Plus
 		Registers.C = false;
 		Registers.V = false;
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveOptimization)] // Pide al JIT máxima prioridad
+	public void Run(int instructions)
+	{
+		var decoder = _decoder; 
+        
+		while (instructions-- > 0)
+		{
+			// 1. FETCH
+			// TODO: Optimización futura -> "Fast Fetch" usando punteros directos si PC está en Flash/RAM para evitar la llamada virtual a Bus.ReadHalfWord.
+			var pc = Registers.PC;
+			var opcode = Bus.ReadHalfWord(pc);
+
+			// 2. UPDATE PC
+			Registers.PC = pc + 2;
+
+			// 3. DECODE & EXECUTE (Inlined)
+			decoder.Dispatch(opcode, this);
+		}
+	}
 
 	// Este método será el corazón del bucle
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Step()
 	{
-		// 1. FETCH
-		uint pc = Registers.PC;
-		ushort opcode = Bus.ReadHalfWord(pc);
-        
-		// Avanzamos PC (Thumb instructions son 2 bytes, algunas 4, M0+ usa mayormente 2)
-		Registers.PC += 2;
-
-		// 2. DECODE & EXECUTE
-		ExecuteInstruction(opcode);
-	}
-
-	private void ExecuteInstruction(ushort opcode)
-	{
-		// Buscamos el handler en la tabla (Array lookup = Muy rápido)
+		var pc = Registers.PC;
+		var opcode = Bus.ReadHalfWord(pc);
+		Registers.PC = pc + 2;
 		_decoder.Dispatch(opcode, this);
-	}
-	
-	/// <summary>
-	/// Actualiza los flags N y Z basados en el resultado.
-	/// Usado por casi todas las instrucciones de movimiento y lógicas.
-	/// </summary>
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	internal void SetZN(uint result)
-	{
-		Registers.Z = (result == 0);
-		Registers.N = (result & 0x80000000) != 0; // Bit 31 set
 	}
 }
