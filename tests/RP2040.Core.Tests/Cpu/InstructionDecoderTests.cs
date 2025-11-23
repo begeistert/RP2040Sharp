@@ -20,17 +20,17 @@ public unsafe class InstructionDecoderTests
 	const int IP = 12;
 	
 	static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
+	static readonly InstructionDecoder Decoder = new InstructionDecoder ();
 
     [Fact]
 	public void Adcs ()
 	{
 		// Arrange
-		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.Adcs (R4, R4);
 		var expectedPointer = AddressOf(&ArithmeticOps.Adcs);
 		
 		// Act
-		var handlerAddress = decoder.GetHandler(opcode);
+		var handlerAddress = Decoder.GetHandler(opcode);
 		
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
@@ -40,12 +40,11 @@ public unsafe class InstructionDecoderTests
 	public void AddSpImm7 ()
 	{
 		// Arrange
-		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.AddSpImm7 (0x10);
 		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm7);
 		
 		// Act
-		var handlerAddress = decoder.GetHandler(opcode);
+		var handlerAddress = Decoder.GetHandler(opcode);
 		
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
@@ -55,12 +54,11 @@ public unsafe class InstructionDecoderTests
 	public void AddSpImm8 ()
 	{
 		// Arrange
-		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.AddSpImm8 (R1, 0x10);
 		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm8);
 		
 		// Act
-		var handlerAddress = decoder.GetHandler(opcode);
+		var handlerAddress = Decoder.GetHandler(opcode);
 		
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
