@@ -60,6 +60,12 @@ public static class InstructionEmiter
 		return (ushort)(0xA000 | (rd & 7) << 8 | imm8 >> 2 & 0xFF);
 	}
 
+	public static ushort Ands (uint rn, uint rm)
+	{
+		if (rn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4000 | (rm & 7) << 3 | rn & 7);
+	}
+
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
 	public static ushort Movs(int rd, uint imm8)

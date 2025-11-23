@@ -135,4 +135,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	//[Fact]
+	public void Ands ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Ands (R5, R0);
+		var expectedPointer = AddressOf (&BitOps.Ands);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
