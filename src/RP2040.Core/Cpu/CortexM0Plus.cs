@@ -3,14 +3,18 @@ using RP2040.Core.Memory;
 
 namespace RP2040.Core.Cpu;
 
-public class CortexM0Plus
+public unsafe class CortexM0Plus
 {
-	public readonly IMemoryBus Bus;
+	public readonly BusInterconnect Bus;
 	public Registers Registers; 
 	
 	readonly InstructionDecoder _decoder;
+	
+	private byte* _fetchPtr;
+	private uint _fetchMask;
+	private uint _currentRegionId; // 0x0, 0x1, o 0x2
 
-	public CortexM0Plus(IMemoryBus bus)
+	public CortexM0Plus(BusInterconnect bus)
 	{
 		Bus = bus;
 		_decoder = new InstructionDecoder();
