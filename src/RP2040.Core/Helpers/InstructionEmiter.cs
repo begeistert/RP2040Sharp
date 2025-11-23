@@ -101,6 +101,12 @@ public static class InstructionEmiter
 		return (h2 << 16) | h1;
 	}
 
+	public static ushort Blx (int rm)
+	{
+		if (rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4780 | rm << 3);
+	}
+
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
 	public static ushort Movs(int rd, uint imm8)
