@@ -54,9 +54,6 @@ public unsafe class InstructionDecoder : IDisposable
             // --- ARITMÉTICA COMÚN ---
             // ADDS (Rd, Rn, Rm) - Encoding T1 Register
             // Mask: 1111 1110 0000 0000 (FE00) -> Pattern: 0001 1000 0000 0000 (1800)
-            // OJO: Esta máscara es similar a AddsImmediate3. El bit 10 es la clave.
-            // AddsImm3: 0001 11... (Bit 10 es 1)
-            // AddsReg:  0001 10... (Bit 10 es 0)
             new OpcodeRule(0xFE00, 0x1800, &ArithmeticOps.AddsRegister),
 
             // ADDS (Rd, Rn, imm3)
