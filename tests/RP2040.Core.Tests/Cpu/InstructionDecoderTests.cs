@@ -219,4 +219,32 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	[Fact]
+	public void BranchConditional ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.BranchConditional  (1, 0x1f8);
+		var expectedPointer = AddressOf (&FlowOps.BranchConditional);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	[Fact]
+	public void Branch ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Branch  (0xfec);
+		var expectedPointer = AddressOf (&FlowOps.Branch);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

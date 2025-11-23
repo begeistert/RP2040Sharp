@@ -72,6 +72,23 @@ public unsafe class InstructionDecoder : IDisposable
             // BLX Rm
             // Mask: 1111 1111 1000 0111 (FF87) -> Pattern: 0100 0111 1000 0000 (4780)
             new OpcodeRule(0xFF87, 0x4780, &FlowOps.Blx),
+            
+            // B (Conditional) - T1
+            // Mask: 1111 0000 0000 0000 (F000) -> Pattern: 1101 0000 0000 0000 (D000)
+            // Nota: Esto captura SVC (cond=1111). Debemos asegurarnos de que SVC tenga prioridad 
+            // o filtrar en el handler. 
+            // MEJOR ESTRATEGIA: Filtrar cond != 1110 (UDF) y != 1111 (SVC) en la máscara es difícil.
+            // Lo ideal es registrar SVC *antes* o usar una máscara más específica para SVC.
+
+            // Opción Recomendada: Registrar B Conditional genérico, y dentro del switch el default maneja 0xE/0xF.
+            // Y registrar SVC (0xDF) aparte con mayor prioridad en el array de reglas o asegurando que su patrón sea único.
+
+            // B (Cond)
+            new OpcodeRule(0xF000, 0xD000, &FlowOps.BranchConditional),
+
+            // B (Unconditional) - T2
+            // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1110 0000 0000 0000 (E000)
+            new OpcodeRule(0xF800, 0xE000, &FlowOps.Branch),
         ];
         
         for (var i = 0; i < 65536; i++)

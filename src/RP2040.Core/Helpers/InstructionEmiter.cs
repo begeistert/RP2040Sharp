@@ -106,6 +106,21 @@ public static class InstructionEmiter
 		if (rm > 7) throw new ArgumentException("Register index out of range (0-7)");
 		return (ushort)(0x4780 | rm << 3);
 	}
+	
+	public static ushort BranchConditional(uint cond, uint offset)
+	{
+		if (cond > 15) throw new ArgumentException("Condition code out of range (0-15)");
+		if (offset > 0x3FF) throw new ArgumentException("Offset out of range for Conditional Branch (-256 to +254)");
+		if (offset % 2 != 0) throw new ArgumentException("Offset must be aligned to 2 bytes");
+		return (ushort)(0xD000 | (cond & 0xF) << 8 | (uint)(offset >> 1 & 0x1FF));
+	}
+	
+	public static ushort Branch(uint offset)
+	{
+		if (offset > 0xFFF) throw new ArgumentException("Offset out of range for Unconditional Branch (-2048 to +2046)");
+		if (offset % 2 != 0) throw new ArgumentException("Offset must be aligned to 2 bytes");
+		return (ushort)(0xE000 | ((offset >> 1) & 0x7FF));
+	}
 
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)

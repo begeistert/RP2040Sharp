@@ -112,4 +112,50 @@ public class FlowOpsTests
 			_cpu.Cycles.Should ().Be (3);
 		}
 	}
+	
+	public class Branch
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		public Branch()
+		{
+			_bus = new BusInterconnect();
+			_cpu = new CortexM0Plus(_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecuteUnconditional ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Branch (0xfec);
+			_bus.WriteHalfWord (0x20000000 + 9 * 2, opcode);
+			
+			_cpu.Registers.PC = 0x20000000 + 9 * 2;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.PC.Should ().Be (0x20000002);
+		}
+		
+		[Fact]
+		public void ShouldExecuteConditional ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.BranchConditional (1, 0x1f8);
+			_bus.WriteHalfWord (0x20000000 + 9 * 2, opcode);
+			
+			_cpu.Registers.PC = 0x20000000 + 9 * 2;
+			_cpu.Registers.Z = false;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.PC.Should ().Be (0x2000000e);
+		}
+	}
 }
