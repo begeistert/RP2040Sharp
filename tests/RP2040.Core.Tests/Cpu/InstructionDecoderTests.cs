@@ -3,9 +3,12 @@ using RP2040.Core.Cpu;
 using RP2040.Core.Cpu.Instructions;
 using RP2040.Core.Helpers;
 using RP2040.Core.Memory;
+
+using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.CortexM0Plus, void>;
+
 namespace RP2040.tests.Cpu;
 
-public class InstructionDecoderTests
+public unsafe class InstructionDecoderTests
 {
 	const int R0 = 0;
 	const int R1 = 1;
@@ -15,6 +18,8 @@ public class InstructionDecoderTests
 	const int R5 = 5;
 
 	const int IP = 12;
+	
+	static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
 
     [Fact]
 	public void Adcs ()
@@ -22,13 +27,13 @@ public class InstructionDecoderTests
 		// Arrange
 		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.Adcs (R4, R4);
+		var expectedPointer = AddressOf(&ArithmeticOps.Adcs);
 		
 		// Act
-		var handler = decoder.GetHandler(opcode);
+		var handlerAddress = decoder.GetHandler(opcode);
 		
 		// Assert
-		handler.Should ().NotBeNull ();
-		Assert.Equal (ArithmeticOps.Adcs, handler);
+		handlerAddress.Should ().Be (expectedPointer);
 	}
 
 	[Fact]
@@ -37,13 +42,13 @@ public class InstructionDecoderTests
 		// Arrange
 		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.AddSpImm7 (0x10);
+		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm7);
 		
 		// Act
-		var handler = decoder.GetHandler(opcode);
+		var handlerAddress = decoder.GetHandler(opcode);
 		
 		// Assert
-		handler.Should ().NotBeNull ();
-		Assert.Equal (ArithmeticOps.AddSpImm7, handler);
+		handlerAddress.Should ().Be (expectedPointer);
 	}
 
 	[Fact]
@@ -52,13 +57,13 @@ public class InstructionDecoderTests
 		// Arrange
 		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.AddSpImm8 (R1, 0x10);
+		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImm8);
 		
 		// Act
-		var handler = decoder.GetHandler(opcode);
+		var handlerAddress = decoder.GetHandler(opcode);
 		
 		// Assert
-		handler.Should ().NotBeNull ();
-		Assert.Equal (ArithmeticOps.AddSpImm8, handler);
+		handlerAddress.Should ().Be (expectedPointer);
 	}
 
 	[Fact]
@@ -67,12 +72,12 @@ public class InstructionDecoderTests
 		// Arrange
 		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.AddHighRegisters (R1, IP);
+		var expectedPointer = AddressOf(&ArithmeticOps.AddHighRegisters);
 		
 		// Act
-		var handler = decoder.GetHandler(opcode);
+		var handlerAddress = decoder.GetHandler(opcode);
 		
 		// Assert
-		handler.Should ().NotBeNull ();
-		Assert.Equal (ArithmeticOps.AddHighRegisters, handler);
+		handlerAddress.Should ().Be (expectedPointer);
 	}
 }

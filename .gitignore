@@ -1,2 +1,35 @@
+# --- C# / .NET Core Standard ---
+[Bb]in/
+[Oo]bj/
+.config/
+*.user
+*.userosscache
+*.sln.docstates
 
+# --- JetBrains Rider / IntelliJ ---
+# .idea/**/workspace.xml
+# .idea/**/tasks.xml
+# .idea/**/usage.statistics.xml
+# .idea/**/dictionaries
+# .idea/**/shelf
+.idea/
+
+*.dotCover
+
+# --- Visual Studio --
+.vs/
+*.suo
+*.userprefs
+
+# --- NuGet ---
+packages/
+!packages/build/
+*.nupkg
+
+# --- Test Results ---
+TestResults/
+*.trx
+
+# --- OS Generated Files ---
 .DS_Store
+Thumbs.db

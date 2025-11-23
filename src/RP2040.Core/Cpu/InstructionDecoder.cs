@@ -3,14 +3,18 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RP2040.Core.Cpu.Instructions; // Importamos los namespaces de las instrucciones
 
+using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.CortexM0Plus, void>;
+
 namespace RP2040.Core.Cpu;
 
-public class InstructionDecoder
+public unsafe class InstructionDecoder : IDisposable
 {
     // Definimos la firma del puntero/delegado
-    public delegate void InstructionHandler(ushort opcode, CortexM0Plus cpu);
+    // public delegate void InstructionHandler(ushort opcode, CortexM0Plus cpu);
 
     private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
+    private GCHandle _pinnedHandle;
+    private readonly InstructionHandler* _fastTablePtr;
     
     private readonly struct OpcodeRule (ushort mask, ushort pattern, InstructionHandler handler)
     {
@@ -22,27 +26,35 @@ public class InstructionDecoder
     public InstructionDecoder()
     {
         // 1. Llenar con Undefined
-        Array.Fill(_lookupTable, HandleUndefined);
+        // Array.Fill(_lookupTable, HandleUndefined);
+        _pinnedHandle = GCHandle.Alloc(_lookupTable, GCHandleType.Pinned);
+        _fastTablePtr = (InstructionHandler*)_pinnedHandle.AddrOfPinnedObject();
+        
+        InstructionHandler undefinedPtr = &HandleUndefined;
+        fixed (InstructionHandler* ptrToArr = _lookupTable)
+        {
+            new Span<nuint>(ptrToArr, _lookupTable.Length).Fill((nuint)undefinedPtr);
+        }
 
         // 2. Registrar instrucciones (Aquí conectamos el decoder con la implementación)
-        var rules = new List<OpcodeRule> {
+        ReadOnlySpan<OpcodeRule> rules = [
             // --- ARITMÉTICA ESPECIAL ---
             // ADCS (Rd, Rm)
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0001 0100 0000 (4140)
-            new OpcodeRule(0xFFC0, 0x4140, ArithmeticOps.Adcs),
+            new OpcodeRule (0xFFC0, 0x4140, &ArithmeticOps.Adcs),
 
             // --- ADD CON SP (STACK POINTER) ---
             // ADD (SP + imm7)
             // Mask: 1111 1111 1000 0000 (FF80) -> Pattern: 1011 0000 0000 0000 (B000)
-            new OpcodeRule(0xFF80, 0xB000, ArithmeticOps.AddSpImm7),
+            new OpcodeRule(0xFF80, 0xB000, &ArithmeticOps.AddSpImm7),
 
             // ADD (Rd = SP + imm8)
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1010 1000 0000 0000 (A800)
-            new OpcodeRule(0xF800, 0xA800, ArithmeticOps.AddSpImm8),
+            new OpcodeRule(0xF800, 0xA800, &ArithmeticOps.AddSpImm8),
             
             // ADD (High Registers) - Encoding T2
             // Cubre: ADD Rd, Rm (donde alguno es > R7)
-            new OpcodeRule(0xFF00, 0x4400, ArithmeticOps.AddHighRegisters),
+            new OpcodeRule(0xFF00, 0x4400, &ArithmeticOps.AddHighRegisters),
 
             // --- ARITMÉTICA COMÚN ---
             // ADDS (Rd, Rn, Rm) - Encoding T1 Register
@@ -50,13 +62,13 @@ public class InstructionDecoder
             // OJO: Esta máscara es similar a AddsImmediate3. El bit 10 es la clave.
             // AddsImm3: 0001 11... (Bit 10 es 1)
             // AddsReg:  0001 10... (Bit 10 es 0)
-            new OpcodeRule(0xFE00, 0x1800, ArithmeticOps.AddsRegister),
+            new OpcodeRule(0xFE00, 0x1800, &ArithmeticOps.AddsRegister),
 
             // ADDS (Rd, Rn, imm3)
-            new OpcodeRule(0xFE00, 0x1C00, ArithmeticOps.AddsImmediate3),
+            new OpcodeRule(0xFE00, 0x1C00, &ArithmeticOps.AddsImmediate3),
 
             // ADDS (Rd, imm8)
-            new OpcodeRule(0xF800, 0x3000, ArithmeticOps.AddsImmediate8),
+            new OpcodeRule(0xF800, 0x3000, &ArithmeticOps.AddsImmediate8),
             // ADCS (Rd, Rm) - JS: opcode >> 6 === 0b0100000101
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0001 0100 0000 (4140)
             // new OpcodeRule(0xFFC0, 0x4140, AluOps.Adcs), 
@@ -71,13 +83,10 @@ public class InstructionDecoder
             // new OpcodeRule(0xF800, 0xA800, AluOps.AddSpImm8),
 
             // --- ARITMÉTICA COMÚN (ADDS/SUBS/MOVS) ---
-            // ADDS (Rd, Rn, imm3) - Encoding T1 - JS: opcode >> 9 === 0b0001110
-            // Mask: 1111 1110 0000 0000 (FE00) -> Pattern: 0001 1100 0000 0000 (1C00)
-            new OpcodeRule(0xFE00, 0x1C00, BitOps.AddsImmediate3),
 
             // MOVS (Rd, imm8) - JS: opcode >> 11 === 0b00100
             // Mask: 0xF800, Pattern: 0x2000
-            new OpcodeRule(0xF800, 0x2000, BitOps.MovsImmediate),
+            new OpcodeRule(0xF800, 0x2000, &BitOps.MovsImmediate),
 
             // --- CONTROL DE FLUJO (BRANCH) ---
             // B (Conditional) - JS: opcode >> 12 === 0b1101
@@ -86,40 +95,56 @@ public class InstructionDecoder
 
             // B (Unconditional) - JS: opcode >> 11 === 0b11100
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1110 0000 0000 0000 (E000)
-            new OpcodeRule(0xF800, 0xE000, FlowOps.Branch),
+            new OpcodeRule(0xF800, 0xE000, &FlowOps.Branch),
             
             // BL (Branch with Link - 32 bit) 
             // Aquí solo detectamos la PRIMERA mitad (Prefijo 11110...)
             // JS: opcode >> 11 === 0b11110
             // new OpcodeRule(0xF800, 0xF000, FlowOps.BranchLink)
-        };
+        ];
         
-        // 3. Generar la Tabla (El bucle único eficiente)
-        // Recorremos los 65536 posibles opcodes una sola vez.
-        for (var i = 0; i < 65536; i++)
+        foreach (ref readonly var rule in rules)
         {
-            var opcode = (ushort)i;
-
-            // Buscamos la PRIMERA regla que coincida
-            foreach (var rule in rules)
+            ApplyRule(rule, undefinedPtr);
+        }
+    }
+    
+    private void ApplyRule(in OpcodeRule rule, InstructionHandler undefinedHandler)
+    {
+        // Iteramos los 65536 opcodes.
+        // Esto toma unos ms en el arranque, pero asegura la corrección.
+        for (var i = 0; i < 65536; i++) {
+            // Si el opcode coincide con la máscara...
+            if (((ushort)i & rule.Mask) != rule.Pattern)
+                continue;
+            // OPTIMIZACIÓN LÓGICA:
+            // Solo escribimos si la celda sigue apuntando a "Undefined".
+            // Esto garantiza que la PRIMERA regla en la lista que atrapó este opcode sea la que se quede.
+            if (_lookupTable[i] == undefinedHandler)
             {
-                if ((opcode & rule.Mask) == rule.Pattern)
-                {
-                    _lookupTable[i] = rule.Handler;
-                    break; // Encontramos la regla, pasamos al siguiente opcode
-                }
+                _lookupTable[i] = rule.Handler;
             }
         }
     }
-
-    public InstructionHandler GetHandler(ushort opcode)
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Dispatch(ushort opcode, CortexM0Plus cpu)
     {
-        // Acceso directo al array (O(1))
-        return _lookupTable[opcode];
+        _fastTablePtr[opcode](opcode, cpu);
+    }
+
+    public nuint GetHandler(ushort opcode)
+    {
+        return (nuint)_fastTablePtr[opcode];
     }
 
     private static void HandleUndefined(ushort opcode, CortexM0Plus cpu)
     {
         throw new Exception($"Undefined Opcode: 0x{opcode:X4} PC={cpu.Registers.PC:X8}");
+    }
+    
+    public void Dispose()
+    {
+        if (_pinnedHandle.IsAllocated) _pinnedHandle.Free();
     }
 }

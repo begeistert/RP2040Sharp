@@ -52,10 +52,7 @@ public class CortexM0Plus
 	private void ExecuteInstruction(ushort opcode)
 	{
 		// Buscamos el handler en la tabla (Array lookup = Muy rápido)
-		var handler = _decoder.GetHandler(opcode);
-
-		// Ejecutamos el delegado pasando el opcode y 'this' (la CPU)
-		handler(opcode, this);
+		_decoder.Dispatch(opcode, this);
 	}
 	
 	/// <summary>

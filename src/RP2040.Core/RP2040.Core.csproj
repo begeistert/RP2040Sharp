@@ -6,6 +6,10 @@
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <PublishTrimmed>true</PublishTrimmed>
+        <IsTrimmable>true</IsTrimmable>
+        <IsAotCompatible>true</IsAotCompatible>
+        <Optimize>true</Optimize>
+        <DebugType>embedded</DebugType>
     </PropertyGroup>
 
 </Project>
