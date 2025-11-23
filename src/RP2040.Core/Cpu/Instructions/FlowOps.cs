@@ -77,5 +77,21 @@ public static class FlowOps
         pc = (uint)(nextPc + offset);
 
         cpu.Cycles += 3; // Takes total 4 cycles
+        // BLTaken Action is Missing
+    }
+
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void Blx (ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0xF;
+        ref var pc = ref cpu.Registers.PC;
+        
+        cpu.Registers.LR = pc | 0x1;
+        
+        var targetAddress = cpu.Registers[rm];
+        pc = targetAddress & 0xFFFFFFFE;
+
+        cpu.Cycles += 2;
+        // BLTaken Action is Missing
     }
 }
