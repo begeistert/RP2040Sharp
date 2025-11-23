@@ -129,7 +129,6 @@ public class ArithmeticOpsTests
 			_bus = new BusInterconnect ();
 			_cpu = new CortexM0Plus(_bus);
         
-			// Configuración común opcional
 			_cpu.Registers.PC = 0x20000000;
 		}
 		
