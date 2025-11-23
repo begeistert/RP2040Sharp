@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-
 namespace RP2040.Core.Memory;
 
 public interface IMemoryBus
