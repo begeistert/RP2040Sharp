@@ -68,12 +68,25 @@ public unsafe class InstructionDecoderTests
 	public void AddHighRegisters ()
 	{
 		// Arrange
-		var decoder = new InstructionDecoder ();
 		var opcode = Assembler.AddHighRegisters (R1, IP);
 		var expectedPointer = AddressOf(&ArithmeticOps.AddHighRegisters);
 		
 		// Act
-		var handlerAddress = decoder.GetHandler(opcode);
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+
+	[Fact]
+	public void AddsImmediate3 ()
+	{
+		// Arrange
+		var opcode = Assembler.AddsImmediate3 (R1, R2, 3);
+		var expectedPointer = AddressOf (&ArithmeticOps.AddsImmediate3);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
 		
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
