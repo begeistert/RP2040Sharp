@@ -85,6 +85,22 @@ public static class InstructionEmiter
 		return (ushort)(0x4380 | ((rm & 7) << 3) | rdn);
 	}
 
+	public static uint Bl (int offset)
+	{
+		if (offset < -16777216 || offset > 16777214) 
+			throw new ArgumentException("Offset out of range for BL (+/- 16MB)");
+		var s = (uint)((offset >> 24) & 1);
+		var i1 = (uint)((offset >> 23) & 1);
+		var i2 = (uint)((offset >> 22) & 1);
+		var imm10 = (uint)((offset >> 12) & 0x3FF);
+		var imm11 = (uint)((offset >> 1) & 0x7FF);
+		var j1 = (~i1 ^ s) & 1;
+		var j2 = (~i2 ^ s) & 1;
+		var h1 = 0xF000 | (s << 10) | imm10;
+		var h2 = 0xD000 | (j1 << 13) | (j2 << 11) | imm11;
+		return (h2 << 16) | h1;
+	}
+
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
 	public static ushort Movs(int rd, uint imm8)
