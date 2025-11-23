@@ -399,7 +399,15 @@ public class ArithmeticOpsTests
 		[Fact]
 		public void ShouldExecute ()
 		{
+			// Arrange
+			var opcode = InstructionEmiter.Adr (R4, 0x50);
+			_bus.WriteHalfWord (0x20000000, opcode);
 			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R4].Should ().Be (0x20000054);
 		}
 	}
 }
