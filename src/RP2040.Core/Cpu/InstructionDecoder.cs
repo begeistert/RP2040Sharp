@@ -60,6 +60,9 @@ public unsafe class InstructionDecoder : IDisposable
             // ASRS (Rd, Rm, imm5)
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 0001 0000 0000 0000 (1000)
             new OpcodeRule(0xF800, 0x1000, &BitOps.AsrsImm5),
+            // ASRS (Register) - Encoding T2
+            // Mask: 1111 1111 1100 0000 (0xFFC0) -> Pattern: 0100 0001 0000 0000 (0x4100)
+            new OpcodeRule(0xFFC0, 0x4100, &BitOps.AsrsRegister),
         ];
         
         for (var i = 0; i < 65536; i++)
