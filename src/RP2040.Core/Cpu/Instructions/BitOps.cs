@@ -91,4 +91,20 @@ public static class BitOps
 		cpu.Registers.Z = (result == 0);
 		cpu.Registers.C = carry;
 	}
+
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Bics (ushort opcode, CortexM0Plus cpu)
+	{
+		var rdn = opcode & 0x7;
+		var rm = (opcode >> 3) & 0x7;
+		
+		ref var ptrRdn = ref cpu.Registers[rdn];
+		var valRm = cpu.Registers[rm];
+		
+		var result = ptrRdn & ~valRm;
+		ptrRdn = result;
+		
+		cpu.Registers.N = (int)result < 0; 
+		cpu.Registers.Z = (result == 0);
+	}
 }
