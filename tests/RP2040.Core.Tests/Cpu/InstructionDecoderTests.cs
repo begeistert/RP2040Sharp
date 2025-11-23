@@ -191,4 +191,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	[Fact]
+	public void Bl ()
+	{
+		// Arrange
+		var opcode = (ushort)(InstructionEmiter.Bl  (0x34) & 0xFFFF);
+		var expectedPointer = AddressOf (&FlowOps.Bl);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
