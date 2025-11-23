@@ -48,30 +48,28 @@ public struct Registers
     public bool V; // Overflow
     
     // Interrupt Status Register (IPSR) y Execution (EPSR) se pueden manejar aparte o implícitamente.
-
-    /// <summary>
-    /// Permite acceso indexado rápido (0-15) sin switch/case y sin arrays en Heap.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Span<uint> AsSpan()
-    {
-        // Creamos un Span sobre la memoria de ESTE struct.
-        // Como es Sequential, R0...PC son contiguos.
-        // Longitud 16 (R0 a R15).
-        return MemoryMarshal.CreateSpan(ref R0, 16);
-    }
     
     /// <summary>
     /// Helper para obtener el valor indexado (sugar syntax para el Span)
     /// </summary>
-    public uint this[int index] {
+    public uint this[int index]
+    {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get {
-            return AsSpan ()[index];
+        get
+        {
+            return Unsafe.Add(ref R0, index);
         }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        set {
-            AsSpan ()[index] = value;
+        set
+        {
+            Unsafe.Add(ref R0, index) = value;
         }
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public unsafe uint* GetBasePointer()
+    {
+        return (uint*)Unsafe.AsPointer(ref R0);
     }
 }
