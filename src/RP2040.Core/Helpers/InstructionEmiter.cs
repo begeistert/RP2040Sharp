@@ -66,6 +66,13 @@ public static class InstructionEmiter
 		return (ushort)(0x4000 | (rm & 7) << 3 | rn & 7);
 	}
 
+	public static ushort AsrsImm5 (uint rd, uint rm, uint imm5)
+	{
+		if (rd > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		if (imm5 > 31) throw new ArgumentException("Immediate too large for ASRS");
+		return (ushort)(0x1000 | (imm5 & 0x1F) << 6 | ((rm & 7) << 3) | (rd & 7));
+	}
+
 	// MOVS Rd, #imm8
 	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
 	public static ushort Movs(int rd, uint imm8)
