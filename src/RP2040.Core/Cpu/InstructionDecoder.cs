@@ -97,6 +97,11 @@ public unsafe class InstructionDecoder : IDisposable
             // CMN (Rn, Rm)
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0010 1100 0000 (42C0)
             new OpcodeRule(0xFFC0, 0x42C0, &ArithmeticOps.Cmn),
+            
+            // CMP Rn, #imm8
+            // Encoding: 0010 1rrr iiii iiii (0x2800)
+            // Mask: F800 -> Pattern: 2800
+            new OpcodeRule(0xF800, 0x2800, &ArithmeticOps.CmpImmediate),
         ];
         
         for (var i = 0; i < 65536; i++)
