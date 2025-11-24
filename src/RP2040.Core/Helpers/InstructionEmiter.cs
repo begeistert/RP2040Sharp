@@ -122,25 +122,9 @@ public static class InstructionEmiter
 		return (ushort)(0xE000 | ((offset >> 1) & 0x7FF));
 	}
 
-	// MOVS Rd, #imm8
-	// Encoding: 0010 0ddd iiii iiii (0x2000 base)
-	public static ushort Movs(int rd, uint imm8)
+	public static ushort Bx (uint rm)
 	{
-		if (imm8 > 255) throw new ArgumentException("Immediate too large for MOVS");
-		return (ushort)(0x2000 | (rd << 8) | imm8);
+		if (rm > 15) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4700 | rm << 3);
 	}
-
-	// B <offset> (Calculado automáticamente)
-	public static ushort B(int currentPc, int targetAddress)
-	{
-		// Cálculo inverso del salto relativo
-		int offset = targetAddress - (currentPc + 4); 
-		offset /= 2; // Instrucciones alineadas
-        
-		// Máscara de 11 bits
-		int imm11 = offset & 0x7FF; 
-		return (ushort)(0xE000 | imm11);
-	}
-    
-	// Agrega aquí ADDS, SUB, etc. a medida que los necesites
 }
