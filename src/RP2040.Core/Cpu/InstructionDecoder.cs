@@ -31,6 +31,9 @@ public unsafe class InstructionDecoder : IDisposable
         }
 
         ReadOnlySpan<OpcodeRule> rules = [
+            // DMB, DSB, ISB
+            // Mask: 1111 1111 1111 1111 (FFFF) -> Pattern: 1111 0011 1011 1111 (F3BF)
+            new OpcodeRule(0xFFFF, 0xF3BF, &SystemOps.Barrier),
             // ADCS (Rd, Rm)
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0001 0100 0000 (4140)
             new OpcodeRule (0xFFC0, 0x4140, &ArithmeticOps.Adcs),
