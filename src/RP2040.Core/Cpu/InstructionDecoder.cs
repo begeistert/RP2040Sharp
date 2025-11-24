@@ -89,6 +89,10 @@ public unsafe class InstructionDecoder : IDisposable
             // B (Unconditional) - T2
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1110 0000 0000 0000 (E000)
             new OpcodeRule(0xF800, 0xE000, &FlowOps.Branch),
+            
+            // BX Rm
+            // Mask: 1111 1111 1000 0111 (FF87) -> Pattern: 0100 0111 0000 0000 (4700)
+            new OpcodeRule(0xFF87, 0x4700, &FlowOps.Bx),
         ];
         
         for (var i = 0; i < 65536; i++)

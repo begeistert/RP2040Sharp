@@ -94,4 +94,14 @@ public static class FlowOps
         pc += (uint)(offset + 2);
         cpu.Cycles += 2; // Penalización por salto tomado
     }
+    
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void Bx (ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0xf;
+        var targetAddress = cpu.Registers[rm];
+        // TODO: Implement CPU Execution Modes and Exception Handling
+        cpu.Registers.PC = targetAddress & 0xFFFFFFFE;
+        cpu.Cycles += 2;
+    }
 }
