@@ -163,4 +163,10 @@ public static class InstructionEmiter
 	{
 		return 0x8f4ff3bf;
 	}
+	
+	public static ushort Eors (uint rdn, uint rm)
+	{
+		if (rdn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4040 | ((rm & 7) << 3) | rdn & 0x7);
+	}
 }
