@@ -138,11 +138,9 @@ public class ArithmeticOps
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CmpImmediate(ushort opcode, CortexM0Plus cpu)
     {
-        // CMP Rn, #imm8
         var rn = (opcode >> 8) & 0x7;
         var imm8 = (uint)(opcode & 0xFF);
         
-        // CMP solo lee, no escribe. No necesitamos 'ref'.
         var val1 = cpu.Registers[rn];
         
         SubWithFlags(cpu, val1, imm8);
