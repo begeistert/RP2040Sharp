@@ -20,6 +20,7 @@ public unsafe class InstructionDecoderTests
 	const int R7 = 7;
 
 	const int IP = 12;
+	const int LR = 14;
 	
 	static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
 	static readonly InstructionDecoder Decoder = new InstructionDecoder ();
@@ -240,6 +241,20 @@ public unsafe class InstructionDecoderTests
 		// Arrange
 		var opcode = InstructionEmiter.Branch  (0xfec);
 		var expectedPointer = AddressOf (&FlowOps.Branch);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	[Fact]
+	public void Bx ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Bx  (LR);
+		var expectedPointer = AddressOf (&FlowOps.Bx);
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);

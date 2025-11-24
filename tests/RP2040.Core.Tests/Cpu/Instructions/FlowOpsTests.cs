@@ -19,6 +19,7 @@ public class FlowOpsTests
 	
 	const int IP = 12;
 	const int SP = 13;
+	const int LR = 14;
 	const int PC = 15;
 	
 	public class Bl
@@ -156,6 +157,35 @@ public class FlowOpsTests
 			
 			// Assert
 			_cpu.Registers.PC.Should ().Be (0x2000000e);
+		}
+	}
+
+	public class Bx
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		public Bx()
+		{
+			_bus = new BusInterconnect();
+			_cpu = new CortexM0Plus(_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecuteUnconditional ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Bx (LR);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers.LR = 0x10000200;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.PC.Should ().Be (0x10000200);
 		}
 	}
 }
