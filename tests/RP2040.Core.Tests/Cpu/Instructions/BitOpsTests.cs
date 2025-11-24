@@ -21,36 +21,33 @@ public class BitOpsTests
 	const int SP = 13;
 	const int PC = 15;
 	
-	public class Ands
+	readonly CortexM0Plus _cpu;
+	readonly BusInterconnect _bus;
+	public BitOpsTests ()
 	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Ands ()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
+		_bus = new BusInterconnect ();
+		_cpu = new CortexM0Plus(_bus);
         
-			_cpu.Registers.PC = 0x20000000;
-		}
-
-		[Fact]
-		public void ShouldExecute ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.Ands (R5, R0);
-			_bus.WriteHalfWord (0x20000000, opcode);
+		_cpu.Registers.PC = 0x20000000;
+	}
+	
+	[Fact]
+	public void Ands ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Ands (R5, R0);
+		_bus.WriteHalfWord (0x20000000, opcode);
 			
-			_cpu.Registers[R5] = 0xffff0000;
-			_cpu.Registers[R0] = 0xf00fffff;
+		_cpu.Registers[R5] = 0xffff0000;
+		_cpu.Registers[R0] = 0xf00fffff;
 			
-			// Act
-			_cpu.Step ();
+		// Act
+		_cpu.Step ();
 			
-			// Assert
-			_cpu.Registers[R5].Should ().Be (0xf00f0000);
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-		}
+		// Assert
+		_cpu.Registers[R5].Should ().Be (0xf00f0000);
+		_cpu.Registers.N.Should ().BeTrue ();
+		_cpu.Registers.Z.Should ().BeFalse ();
 	}
 
 	public class Asrs
