@@ -127,4 +127,10 @@ public static class InstructionEmiter
 		if (rm > 15) throw new ArgumentException("Register index out of range (0-7)");
 		return (ushort)(0x4700 | rm << 3);
 	}
+
+	public static ushort Cmn (uint rn, uint rm)
+	{
+		if (rn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x42c0 | ((rn & 7) << 3) | rm);
+	}
 }
