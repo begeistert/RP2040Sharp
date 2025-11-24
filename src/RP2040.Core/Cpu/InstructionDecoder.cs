@@ -102,6 +102,14 @@ public unsafe class InstructionDecoder : IDisposable
             // Encoding: 0010 1rrr iiii iiii (0x2800)
             // Mask: F800 -> Pattern: 2800
             new OpcodeRule(0xF800, 0x2800, &ArithmeticOps.CmpImmediate),
+            
+            // CMP Rn, Rm (Low Registers - Encoding T1)
+            // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0010 1000 0000 (4280)
+            new OpcodeRule(0xFFC0, 0x4280, &ArithmeticOps.CmpRegister),
+
+            // CMP Rn, Rm (High Registers - Encoding T2)
+            // Mask: 1111 1111 0000 0000 (FF00) -> Pattern: 0100 0101 0000 0000 (4500)
+            new OpcodeRule(0xFF00, 0x4500, &ArithmeticOps.CmpHighRegister),
         ];
         
         for (var i = 0; i < 65536; i++)
