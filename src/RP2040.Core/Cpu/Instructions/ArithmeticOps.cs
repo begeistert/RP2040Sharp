@@ -123,6 +123,18 @@ public class ArithmeticOps
         cpu.Registers[rd] = basePc + (imm8 << 2);
     }
 
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void Cmn (ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rn = opcode & 0x7;
+    
+        var valRm = cpu.Registers[rm];
+        var valRn = cpu.Registers[rn];
+        
+        AddWithFlags(cpu, valRn, valRm, carryIn: 0);
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CmpImmediate(ushort opcode, CortexM0Plus cpu)
     {
