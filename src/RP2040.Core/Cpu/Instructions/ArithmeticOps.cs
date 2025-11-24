@@ -146,6 +146,33 @@ public class ArithmeticOps
         SubWithFlags(cpu, val1, imm8);
     }
 
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void CmpRegister (ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7; 
+        var rn = opcode & 0x7;
+        
+        var val1 = cpu.Registers[rn];
+        var val2 = cpu.Registers[rm];
+        
+        SubWithFlags(cpu, val1, val2);
+    }
+
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void CmpHighRegister (ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0xF;
+        var rn = ((opcode >> 4) & 0x8) | (opcode & 0x7);
+    
+        var valRn = cpu.Registers[rn];
+        var valRm = cpu.Registers[rm];
+        
+        valRn += (uint)((rn + 1) >> 4) << 1;
+        valRm += (uint)((rm + 1) >> 4) << 1;
+
+        SubWithFlags(cpu, valRn, valRm);
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SubsImmediate3(ushort opcode, CortexM0Plus cpu)
     {
