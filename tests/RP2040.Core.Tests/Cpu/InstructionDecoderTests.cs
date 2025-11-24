@@ -335,7 +335,6 @@ public unsafe class InstructionDecoderTests
 		
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
-		
 	}
 	
 	[Fact]
