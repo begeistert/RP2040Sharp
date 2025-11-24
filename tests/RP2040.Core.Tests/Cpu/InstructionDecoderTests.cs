@@ -22,7 +22,7 @@ public unsafe class InstructionDecoderTests
 	const int IP = 12;
 	const int LR = 14;
 	
-	static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
+	public static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
 	static readonly InstructionDecoder Decoder = new InstructionDecoder ();
 
     [Fact]
