@@ -140,4 +140,17 @@ public static class InstructionEmiter
 		if (imm8 > 255) throw new ArgumentException("Immediate too large for CMP");
 		return (ushort)(0x2800 | (rn & 7) << 3 | imm8 & 0xFF);
 	}
+	
+	public static ushort CmpRegister(uint rn, uint rm)
+	{
+		if (rn > 7 || rm > 7) throw new ArgumentException("CMP T1 only supports Low Registers (0-7)");
+		return (ushort)(0x4280 | ((rm & 0x7) << 3) | (rn & 0x7));
+	}
+
+	public static ushort CmpHighRegister(uint rn, uint rm)
+	{
+		if (rn > 15 || rm > 15) throw new ArgumentException("Register index out of range (0-15)");
+		var n = (rn >> 3) & 1;
+		return (ushort)(0x4500 | (n << 7) | ((rm & 0xF) << 3) | (rn & 0x7));
+	}
 }
