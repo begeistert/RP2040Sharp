@@ -266,5 +266,22 @@ public class BitOpsTests
 		}
 	}
 	
-	
+	[Fact]
+	public void Eors ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Eors (R1, R3);
+		_bus.WriteHalfWord (0x20000000, opcode);
+			
+		_cpu.Registers[R1] = 0xf0f0f0f0;
+		_cpu.Registers[R3] = 0x08ff3007;
+			
+		// Act
+		_cpu.Step ();
+			
+		// Assert
+		_cpu.Registers[R1].Should ().Be (0xf80fc0f7);
+		_cpu.Registers.N.Should ().BeTrue ();
+		_cpu.Registers.Z.Should ().BeFalse ();
+	}
 }
