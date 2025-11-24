@@ -153,4 +153,14 @@ public static class InstructionEmiter
 		var n = (rn >> 3) & 1;
 		return (ushort)(0x4500 | (n << 7) | ((rm & 0xF) << 3) | (rn & 0x7));
 	}
+
+	public static uint Dmb ()
+	{
+		return 0x8f4ff3bfu;
+	}
+	
+	public static uint Dsb ()
+	{
+		return 0x8f4ff3bf;
+	}
 }
