@@ -262,4 +262,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Cmn ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Cmn  (R7, R2);
+		var expectedPointer = AddressOf (&ArithmeticOps.Cmn);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
