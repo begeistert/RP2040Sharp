@@ -480,5 +480,184 @@ public class ArithmeticOpsTests
 			_cpu.Registers.C.Should ().BeFalse ();
 			_cpu.Registers.V.Should ().BeFalse ();
 		}
+		
+		[Fact]
+		public void ShouldExecuteImmpAndUpdateCarryFlag ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpImm  (R0, 0);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R0] = 0x80010133;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteRegister ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpRegister  (R5, R0);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R0] = 56;
+			_cpu.Registers[R5] = 60;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteRegisterAndNotSetFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpRegister  (R2, R0);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R0] = 0xb71b0000;
+			_cpu.Registers[R2] = 0x00b71b00;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteRegisterAndSetNegativeAndOverflowFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpRegister  (R3, R7);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0;
+			_cpu.Registers[R7] = 0x80000000;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.V.Should ().BeTrue ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteRegisterAndSetNegativeAndCarryFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpRegister  (R3, R7);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x80000000;
+			_cpu.Registers[R7] = 0;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void ShouldExecuteHighRegisterAndSetCarryFlag ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x00000008;
+			_cpu.Registers[R11] = 0xffffffff;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteHighRegister ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpHighRegister  (IP, R6);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R6] = 56;
+			_cpu.Registers[R12] = 60;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteHighRegisterAndUpdateNegativeAndCarryFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0;
+			_cpu.Registers[R11] = 0x80000000;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeTrue ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteHighRegisterAndUpdateNegativeAndOverflowFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R3] = 0x80000000;
+			_cpu.Registers[R11] = 0;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.V.Should ().BeTrue ();
+		}
 	}
 }
