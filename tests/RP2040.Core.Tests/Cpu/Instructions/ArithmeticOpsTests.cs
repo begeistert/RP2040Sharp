@@ -460,7 +460,7 @@ public class ArithmeticOpsTests
 		}
 
 		[Fact]
-		public void ShouldExecute ()
+		public void ShouldExecuteImmp ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.CmpImm  (R5, 66);
