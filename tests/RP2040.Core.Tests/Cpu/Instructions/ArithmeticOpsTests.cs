@@ -446,4 +446,36 @@ public class ArithmeticOpsTests
 			_cpu.Registers.V.Should ().BeFalse ();
 		}
 	}
+	
+	public class Cmp
+	{
+		readonly CortexM0Plus _cpu;
+		readonly BusInterconnect _bus;
+		public Cmp ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus(_bus);
+        
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecute ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.CmpImm  (R5, 66);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R5] = 60;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+	}
 }
