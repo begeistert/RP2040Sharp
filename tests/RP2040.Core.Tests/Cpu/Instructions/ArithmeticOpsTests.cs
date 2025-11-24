@@ -15,6 +15,9 @@ public class ArithmeticOpsTests
 	const int R6 = 6;
 	const int R7 = 7;
 	const int R8 = 8;
+	const int R9 = 9;
+	const int R10 = 10;
+	const int R11 = 11;
 	const int R12 = 12;
 	
 	const int IP = 12;
