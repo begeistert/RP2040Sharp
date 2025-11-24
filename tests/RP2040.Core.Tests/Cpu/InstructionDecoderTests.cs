@@ -349,6 +349,33 @@ public unsafe class InstructionDecoderTests
 		
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	[Fact]
+	public void Eors ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Eors (R1, R3) ;
+		var expectedPointer = AddressOf (&BitOps.Eors);
 		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	[Fact]
+	public void Isb ()
+	{
+		// Arrange
+		var opcode = (ushort)(InstructionEmiter.Isb  () & 0xFFFF);
+		var expectedPointer = AddressOf (&SystemOps.Barrier);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
 	}
 }
