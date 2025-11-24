@@ -169,4 +169,9 @@ public static class InstructionEmiter
 		if (rdn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
 		return (ushort)(0x4040 | ((rm & 7) << 3) | rdn & 0x7);
 	}
+
+	public static uint Isb ()
+	{
+		return 0x8f6ff3bf;
+	}
 }
