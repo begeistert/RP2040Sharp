@@ -133,4 +133,11 @@ public static class InstructionEmiter
 		if (rn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
 		return (ushort)(0x42c0 | ((rn & 7) << 3) | rm);
 	}
+	
+	public static ushort CmpImm (uint rn, uint imm8)
+	{
+		if (rn > 7) throw new ArgumentException("Register index out of range (0-7)");
+		if (imm8 > 255) throw new ArgumentException("Immediate too large for CMP");
+		return (ushort)(0x2800 | (rn & 7) << 3 | imm8 & 0xFF);
+	}
 }
