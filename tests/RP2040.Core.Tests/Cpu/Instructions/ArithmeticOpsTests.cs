@@ -410,4 +410,40 @@ public class ArithmeticOpsTests
 			_cpu.Registers[R4].Should ().Be (0x20000054);
 		}
 	}
+	
+	public class Cmn
+	{
+		readonly CortexM0Plus _cpu;
+		readonly BusInterconnect _bus;
+		public Cmn ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus(_bus);
+        
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecute ()
+		{
+			// Arrange
+			const uint negativeTwo = (uint)(-2 & 0xFFFFFFFF);
+			var opcode = InstructionEmiter.Cmn (R7, R2);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R2] = 1;
+			_cpu.Registers[R7] = negativeTwo;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R2].Should ().Be (1);
+			_cpu.Registers[R7].Should ().Be (negativeTwo);
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.V.Should ().BeFalse ();
+		}
+	}
 }
