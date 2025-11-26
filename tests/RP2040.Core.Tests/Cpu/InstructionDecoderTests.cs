@@ -434,4 +434,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Orrs ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Orrs (R5, R0);
+		var expectedPointer = AddressOf (&ArithmeticOps.Orrs);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

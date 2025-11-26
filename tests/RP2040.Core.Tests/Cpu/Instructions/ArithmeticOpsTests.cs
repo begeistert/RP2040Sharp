@@ -758,4 +758,23 @@ public class ArithmeticOpsTests
 			_cpu.Registers.Z.Should ().BeFalse ();
 		}
 	}
+	
+	[Fact]
+	public void Orrs ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Orrs (R5, R0);
+		_bus.WriteHalfWord (0x20000000, opcode);
+			
+		_cpu.Registers[R5] = 0xf00f0000;
+		_cpu.Registers[R0] = 0xf000ffff;
+			
+		// Act
+		_cpu.Step ();
+			
+		// Assert
+		_cpu.Registers[R5].Should ().Be (0xf00fffff);
+		_cpu.Registers.N.Should ().BeTrue ();
+		_cpu.Registers.Z.Should ().BeFalse ();
+	}
 }
