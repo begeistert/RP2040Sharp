@@ -149,4 +149,19 @@ public static class BitOps
 			cpu.Registers.SP = value & 0xFFFFFFFC;
 		}
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void Mvns(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 7;
+		var rd = opcode & 7;
+		
+		ref var ptrRd = ref cpu.Registers[rd];
+		var valRm = cpu.Registers[rm];
+		
+		ptrRd = ~valRm;
+		
+		cpu.Registers.N = (int)ptrRd < 0; 
+		cpu.Registers.Z = (ptrRd == 0);
+	}
 }
