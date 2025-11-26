@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace RP2040.Core.Cpu.Instructions;
 
@@ -121,5 +122,31 @@ public static class BitOps
 		
 		cpu.Registers.N = (int)result < 0; 
 		cpu.Registers.Z = (result == 0);
+	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void Mov(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0xF;
+		var rd = ((opcode >> 4) & 0x8) | (opcode & 0x7);
+
+		var value = cpu.Registers[rm];
+		value += (uint)((rm + 1) >> 4) << 1;
+
+		if ((rd & 13) != 13)
+		{
+			cpu.Registers[rd] = value;
+			return; 
+		}
+		
+		if (rd == 15)
+		{
+			cpu.Registers.PC = value & 0xFFFFFFFE;
+			cpu.Cycles += 2;
+		}
+		else
+		{
+			cpu.Registers.SP = value & 0xFFFFFFFC;
+		}
 	}
 }
