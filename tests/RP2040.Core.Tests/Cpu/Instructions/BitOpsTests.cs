@@ -343,4 +343,22 @@ public class BitOpsTests
 			_cpu.Registers[SP].Should ().Be (52);
 		}
 	}
+	
+	[Fact]
+	public void Mvns ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Mvns (R4, R3);
+		_bus.WriteHalfWord (0x20000000, opcode);
+			
+		_cpu.Registers[R3] = 0x11115555;
+			
+		// Act
+		_cpu.Step ();
+			
+		// Assert
+		_cpu.Registers[R4].Should ().Be (0xeeeeaaaa);
+		_cpu.Registers.N.Should ().BeTrue ();
+		_cpu.Registers.Z.Should ().BeFalse ();
+	}
 }
