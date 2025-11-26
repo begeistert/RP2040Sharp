@@ -192,4 +192,9 @@ public static class InstructionEmiter
 		if (rd > 15 || rm > 15) throw new ArgumentException("Register index out of range (0-15)");
 		return (ushort)(0x43c0 | ((rm & 7) << 3) | (rd & 7));
 	}
+
+	public static ushort Nop ()
+	{
+		return 0xBF00;
+	}
 }

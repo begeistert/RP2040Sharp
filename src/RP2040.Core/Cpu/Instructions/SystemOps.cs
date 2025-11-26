@@ -9,4 +9,10 @@ public class SystemOps
 		cpu.Registers.PC += 2;
 		cpu.Cycles += 2;
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void Nop(ushort opcodeH1, CortexM0Plus cpu)
+	{
+		// Do nothing
+	}
 }
