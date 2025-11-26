@@ -420,4 +420,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Nop ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Nop ();
+		var expectedPointer = AddressOf (&SystemOps.Nop);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

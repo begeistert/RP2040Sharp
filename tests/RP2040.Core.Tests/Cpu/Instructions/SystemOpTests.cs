@@ -43,4 +43,18 @@ public class SystemOpTests
 		// Assert
 		_cpu.Registers.PC.Should ().Be (0x20000004);
 	}
+	
+	[Fact]
+	public void Nop ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Nop ();
+		_bus.WriteWord (0x20000000, opcode);
+		
+		// Act
+		_cpu.Step ();
+		
+		// Assert
+		_cpu.Registers.PC.Should ().Be (0x20000002);
+	}
 }
