@@ -128,7 +128,11 @@ public unsafe class InstructionDecoder : IDisposable
             
             // MVNS Rd, Rm
             // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0011 1100 0000
-            new OpcodeRule(0xFFC0, 0x43C0, &BitOps.Mvns)
+            new OpcodeRule(0xFFC0, 0x43C0, &BitOps.Mvns),
+            
+            // NOP
+            // Mask: 1011 1111 0000 0000 -> Pattern: 1011 1111 0000 0000 (BF00)
+            new OpcodeRule(0xBF00, 0xBF00, &SystemOps.Nop),
         ];
         
         for (var i = 0; i < 65536; i++)
