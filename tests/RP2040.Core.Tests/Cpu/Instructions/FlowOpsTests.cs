@@ -47,7 +47,7 @@ public class FlowOpsTests
 			// Assert
 			_cpu.Registers.PC.Should ().Be (0x20000038);
 			_cpu.Registers.LR.Should ().Be (0x20000005);
-			_cpu.Cycles.Should ().Be (4);
+			_cpu.Cycles.Should ().Be (3);
 		}
 
 		[Fact]
@@ -63,7 +63,7 @@ public class FlowOpsTests
 			// Assert
 			_cpu.Registers.PC.Should ().Be (0x20000004 - 0x10);
 			_cpu.Registers.LR.Should ().Be (0x20000005);
-			_cpu.Cycles.Should ().Be (4);
+			_cpu.Cycles.Should ().Be (3);
 		}
 		
 		[Fact]
@@ -79,7 +79,7 @@ public class FlowOpsTests
 			// Assert
 			_cpu.Registers.PC.Should ().Be (0x20000004 - 3242);
 			_cpu.Registers.LR.Should ().Be (0x20000005);
-			_cpu.Cycles.Should ().Be (4);
+			_cpu.Cycles.Should ().Be (3);
 		}
 	}
 	
@@ -110,7 +110,7 @@ public class FlowOpsTests
 			// Assert
 			_cpu.Registers.PC.Should ().Be (0x20000200);
 			_cpu.Registers.LR.Should ().Be (0x20000003);
-			_cpu.Cycles.Should ().Be (3);
+			_cpu.Cycles.Should ().Be (2);
 		}
 	}
 	

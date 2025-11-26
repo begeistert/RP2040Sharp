@@ -30,7 +30,7 @@ public static class FlowOps
         cpu.Registers.LR = nextPc | 1;
         pc = (uint)(nextPc + offset);
 
-        cpu.Cycles += 3; // Takes total 4 cycles
+        cpu.Cycles += 2; // Takes total 3 cycles
         // BLTaken Action is Missing
     }
 
@@ -45,7 +45,7 @@ public static class FlowOps
         var targetAddress = cpu.Registers[rm];
         pc = targetAddress & 0xFFFFFFFE;
 
-        cpu.Cycles += 2;
+        cpu.Cycles ++;
         // BLTaken Action is Missing
     }
     
@@ -58,7 +58,7 @@ public static class FlowOps
         
         pc += (uint)(offset + 2);
         
-        cpu.Cycles += 2;
+        cpu.Cycles ++;
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -92,7 +92,7 @@ public static class FlowOps
         ref var pc = ref cpu.Registers.PC;
         
         pc += (uint)(offset + 2);
-        cpu.Cycles += 2; // Penalización por salto tomado
+        cpu.Cycles ++; // Penalización por salto tomado
     }
     
     [MethodImpl (MethodImplOptions.AggressiveInlining)]
@@ -102,6 +102,6 @@ public static class FlowOps
         var targetAddress = cpu.Registers[rm];
         // TODO: Implement CPU Execution Modes and Exception Handling
         cpu.Registers.PC = targetAddress & 0xFFFFFFFE;
-        cpu.Cycles += 2;
+        cpu.Cycles ++;
     }
 }
