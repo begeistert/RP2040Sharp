@@ -672,22 +672,90 @@ public class ArithmeticOpsTests
 		}
 	}
 
-	[Fact]
-	public void Muls ()
+	public class Muls
 	{
-		// Arrange
-		var opcode = InstructionEmiter.Muls (R0, R2);
-		_bus.WriteHalfWord (0x20000000, opcode);
+		readonly CortexM0Plus _cpu;
+		readonly BusInterconnect _bus;
+		public Muls ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus (_bus);
+
+			_cpu.Registers.PC = 0x20000000;
+		}
+		
+		[Fact]
+		public void ShouldExecute ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			_bus.WriteHalfWord (0x20000000, opcode);
 			
-		_cpu.Registers[R0] = 5;
-		_cpu.Registers[R2] = 1000000;
+			_cpu.Registers[R0] = 5;
+			_cpu.Registers[R2] = 1000000;
 			
-		// Act
-		_cpu.Step ();
+			// Act
+			_cpu.Step ();
 			
-		// Assert
-		_cpu.Registers[R2].Should ().Be (5000000);
-		_cpu.Registers.N.Should ().BeFalse ();
-		_cpu.Registers.Z.Should ().BeFalse ();
+			// Assert
+			_cpu.Registers[R2].Should ().Be (5000000);
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteWith32BitNumber ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R0] = 2654435769;
+			_cpu.Registers[R2] = 340573321;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R2].Should ().Be (1);
+		}
+		
+		[Fact]
+		public void ShouldExecuteAndSetZeroFlag ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R0] = 0;
+			_cpu.Registers[R2] = 1000000;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R2].Should ().Be (0);
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeTrue ();
+		}
+		
+		[Fact]
+		public void ShouldExecuteAndSetNegativeFlag ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R0] = (uint)(-1 & 0xFFFFFFFF);
+			_cpu.Registers[R2] = 1000000;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R2].Should ().Be ((uint)(-1000000 & 0xFFFFFFFF));
+			_cpu.Registers.N.Should ().BeTrue ();
+			_cpu.Registers.Z.Should ().BeFalse ();
+		}
 	}
 }
