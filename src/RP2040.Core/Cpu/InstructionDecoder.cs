@@ -117,6 +117,10 @@ public unsafe class InstructionDecoder : IDisposable
             // EORS Rdn, Rm
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0000 0100 0000 (4040)
             new OpcodeRule(0xFFC0, 0x4040, &BitOps.Eors),
+            
+            // MOV Rd, Rm (High Registers / No Flags)
+            // Mask: FF00 -> Pattern: 4600
+            new OpcodeRule(0xFF00, 0x4600, &BitOps.Mov),
         ];
         
         for (var i = 0; i < 65536; i++)

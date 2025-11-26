@@ -174,4 +174,10 @@ public static class InstructionEmiter
 	{
 		return 0x8f6ff3bf;
 	}
+	
+	public static ushort Mov (uint rd, uint rm)
+	{
+		if (rd > 15 || rm > 15) throw new ArgumentException("Register index out of range (0-15)");
+		return (ushort)(0x4600 | ((rd & 8) << 4) | ((rm & 0xF) << 3) | (rd & 7));
+	}
 }
