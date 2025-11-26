@@ -124,7 +124,11 @@ public unsafe class InstructionDecoder : IDisposable
             
             // MULS Rn, Rdm
             // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0011 0100 0000
-            new OpcodeRule(0xffc0, 0x4340, &ArithmeticOps.Muls)
+            new OpcodeRule(0xffc0, 0x4340, &ArithmeticOps.Muls),
+            
+            // MVNS Rd, Rm
+            // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0011 1100 0000
+            new OpcodeRule(0xFFC0, 0x43C0, &BitOps.Mvns)
         ];
         
         for (var i = 0; i < 65536; i++)

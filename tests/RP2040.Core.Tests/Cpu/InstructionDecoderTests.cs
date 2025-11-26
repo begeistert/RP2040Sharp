@@ -406,4 +406,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Mvns ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Mvns (R0, R2);
+		var expectedPointer = AddressOf (&BitOps.Mvns);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
