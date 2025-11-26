@@ -392,4 +392,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	[Fact]
+	public void Muls ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Muls (R0, R2);
+		var expectedPointer = AddressOf (&ArithmeticOps.Muls);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

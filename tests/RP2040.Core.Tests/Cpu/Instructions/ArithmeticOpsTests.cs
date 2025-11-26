@@ -24,6 +24,17 @@ public class ArithmeticOpsTests
 	const int SP = 13;
 	const int PC = 15;
 	
+	readonly CortexM0Plus _cpu;
+	readonly BusInterconnect _bus;
+	public ArithmeticOpsTests ()
+	{
+		_bus = new BusInterconnect ();
+		_cpu = new CortexM0Plus(_bus);
+        
+		// Configuración común opcional
+		_cpu.Registers.PC = 0x20000000;
+	}
+	
 	public class Adcs
 	{
 		readonly CortexM0Plus _cpu;
@@ -659,5 +670,24 @@ public class ArithmeticOpsTests
 			_cpu.Registers.C.Should ().BeFalse ();
 			_cpu.Registers.V.Should ().BeTrue ();
 		}
+	}
+
+	[Fact]
+	public void Muls ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Muls (R0, R2);
+		_bus.WriteHalfWord (0x20000000, opcode);
+			
+		_cpu.Registers[R0] = 5;
+		_cpu.Registers[R2] = 1000000;
+			
+		// Act
+		_cpu.Step ();
+			
+		// Assert
+		_cpu.Registers[R2].Should ().Be (5000000);
+		_cpu.Registers.N.Should ().BeFalse ();
+		_cpu.Registers.Z.Should ().BeFalse ();
 	}
 }

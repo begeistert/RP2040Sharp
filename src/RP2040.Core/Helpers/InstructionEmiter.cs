@@ -180,4 +180,10 @@ public static class InstructionEmiter
 		if (rd > 15 || rm > 15) throw new ArgumentException("Register index out of range (0-15)");
 		return (ushort)(0x4600 | ((rd & 8) << 4) | ((rm & 0xF) << 3) | (rd & 7));
 	}
+
+	public static ushort Muls (uint rn, uint rdm)
+	{
+		if (rn > 7 || rdm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4340 | ((rn & 7) << 3) | (rdm & 7));
+	}
 }

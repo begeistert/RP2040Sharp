@@ -173,6 +173,21 @@ public class ArithmeticOps
         SubWithFlags(cpu, valRn, valRm);
     }
 
+    [MethodImpl (MethodImplOptions.AggressiveInlining)]
+    public static void Muls (ushort opcode, CortexM0Plus cpu)
+    {
+        var rn = (opcode >> 3) & 0x7;
+        var rdm = opcode & 0x7;
+        
+        ref var ptrRdm = ref cpu.Registers[rdm];
+        var valRn = cpu.Registers[rn];
+        
+        ptrRdm *= valRn;
+        
+        cpu.Registers.N = (int)ptrRdm < 0; 
+        cpu.Registers.Z = (ptrRdm == 0);
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SubsImmediate3(ushort opcode, CortexM0Plus cpu)
     {
