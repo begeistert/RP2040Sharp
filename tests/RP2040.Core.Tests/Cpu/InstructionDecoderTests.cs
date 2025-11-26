@@ -378,4 +378,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Mov ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Mov (R3, R8);
+		var expectedPointer = AddressOf (&BitOps.Mov);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

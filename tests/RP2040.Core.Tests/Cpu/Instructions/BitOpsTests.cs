@@ -284,4 +284,63 @@ public class BitOpsTests
 		_cpu.Registers.N.Should ().BeTrue ();
 		_cpu.Registers.Z.Should ().BeFalse ();
 	}
+	
+	public class Mov
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		public Mov()
+		{
+			_bus = new BusInterconnect();
+			_cpu = new CortexM0Plus(_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecute ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Mov (R3, R8);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R8] = 55;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R3].Should ().Be (55);
+		}
+
+		[Fact]
+		public void ShouldExecuteWithPc ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Mov (R3, PC);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[R3].Should ().Be (0x20000004);
+		}
+		
+		[Fact]
+		public void ShouldExecuteWithSp ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Mov (SP, R8);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			_cpu.Registers[R8] = 55;
+			
+			// Act
+			_cpu.Step ();
+			
+			// Assert
+			_cpu.Registers[SP].Should ().Be (52);
+		}
+	}
 }
