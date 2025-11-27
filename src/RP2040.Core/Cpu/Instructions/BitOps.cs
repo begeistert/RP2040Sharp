@@ -63,20 +63,12 @@ public static class BitOps
 			cpu.Registers.Z = (valRdn == 0);
 			return;
 		}
+		
+		var effShift = shift < 32 ? shift : 31;
+		var effCarryShift = shift < 32 ? (shift - 1) : 31;
 
-		uint result;
-		bool carry;
-
-		if (shift < 32)
-		{
-			result = (uint)((int)valRdn >> shift);
-			carry = ((valRdn >> (shift - 1)) & 1) != 0;
-		}
-		else
-		{
-			result = (uint)((int)valRdn >> 31);
-			carry = (int)valRdn < 0;
-		}
+		var result = (uint)((int)valRdn >> effShift);
+		var carry = ((valRdn >> effCarryShift) & 1) != 0;
 
 		ptrRdn = result;
 
