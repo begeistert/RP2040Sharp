@@ -104,4 +104,15 @@ public static class FlowOps
         cpu.Registers.PC = targetAddress & 0xFFFFFFFE;
         cpu.Cycles ++;
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void TakeBranch(ushort opcode, CortexM0Plus cpu)
+    {
+        var offset = (sbyte)(opcode & 0xFF) << 1;
+    
+        ref var pc = ref cpu.Registers.PC;
+        pc += (uint)(offset + 2);
+    
+        cpu.Cycles ++;
+    }
 }
