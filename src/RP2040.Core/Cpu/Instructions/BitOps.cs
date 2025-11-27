@@ -142,7 +142,7 @@ public static class BitOps
 		if (rd == 15)
 		{
 			cpu.Registers.PC = value & 0xFFFFFFFE;
-			cpu.Cycles += 2;
+			cpu.Cycles ++;
 		}
 		else
 		{
