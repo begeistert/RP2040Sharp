@@ -109,40 +109,15 @@ public static class BitOps
 	}
 	
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Mov(ushort opcode, CortexM0Plus cpu)
-	{
-		var rm = (opcode >> 3) & 0xF;
-		var rd = ((opcode >> 4) & 0x8) | (opcode & 0x7);
-
-		var value = cpu.Registers[rm];
-		value += (uint)((rm + 1) >> 4) << 1;
-
-		if ((rd & 13) != 13)
-		{
-			cpu.Registers[rd] = value;
-			return; 
-		}
-		
-		if (rd == 15)
-		{
-			cpu.Registers.PC = value & 0xFFFFFFFE;
-			cpu.Cycles ++;
-		}
-		else
-		{
-			cpu.Registers.SP = value & 0xFFFFFFFC;
-		}
-	}
-	
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void MovToPc(ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 0xF;
         
+		ref var pc = ref cpu.Registers.PC;
 		var valRm = cpu.Registers[rm];
+    
 		valRm += (uint)((rm + 1) >> 4) << 1;
-
-		cpu.Registers.PC = valRm & 0xFFFFFFFE;
+		pc = valRm & 0xFFFFFFFE;
 		cpu.Cycles++;
 	}
 	
@@ -150,11 +125,12 @@ public static class BitOps
 	public static void MovToSp(ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 0xF;
-        
+		ref var sp = ref cpu.Registers.SP;
+    
 		var valRm = cpu.Registers[rm];
 		valRm += (uint)((rm + 1) >> 4) << 1;
 
-		cpu.Registers.SP = valRm & 0xFFFFFFFC;
+		sp = valRm & 0xFFFFFFFC;
 	}
 	
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
