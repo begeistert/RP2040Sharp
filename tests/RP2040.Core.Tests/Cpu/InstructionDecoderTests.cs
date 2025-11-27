@@ -235,19 +235,50 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
-
-	[Fact]
-	public void BranchConditional ()
+	
+	[Theory]
+	[InlineData(0)]  // EQ
+	[InlineData(1)]  // NE
+	[InlineData(2)]  // CS
+	[InlineData(3)]  // CC
+	[InlineData(4)]  // MI
+	[InlineData(5)]  // PL
+	[InlineData(6)]  // VS
+	[InlineData(7)]  // VC
+	[InlineData(8)]  // HI
+	[InlineData(9)]  // LS
+	[InlineData(10)] // GE
+	[InlineData(11)] // LT
+	[InlineData(12)] // GT
+	[InlineData(13)] // LE
+	public void BranchConditional(uint cond)
 	{
 		// Arrange
-		var opcode = InstructionEmiter.BranchConditional  (1, 0x1f8);
-		var expectedPointer = AddressOf (&FlowOps.BranchConditional);
-		
+		InstructionHandler expectedHandler = cond switch
+		{
+			0x0 => &FlowOps.Beq,
+			0x1 => &FlowOps.Bne,
+			0x2 => &FlowOps.Bcs,
+			0x3 => &FlowOps.Bcc,
+			0x4 => &FlowOps.Bmi,
+			0x5 => &FlowOps.Bpl,
+			0x6 => &FlowOps.Bvs,
+			0x7 => &FlowOps.Bvc,
+			0x8 => &FlowOps.Bhi,
+			0x9 => &FlowOps.Bls,
+			0xA => &FlowOps.Bge,
+			0xB => &FlowOps.Blt,
+			0xC => &FlowOps.Bgt,
+			0xD => &FlowOps.Ble,
+			_ => throw new ArgumentException("Unexpected condition")
+		};
+		var opcode = InstructionEmiter.BranchConditional(cond, 0);
+    
 		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
+		var actualAddress = Decoder.GetHandler(opcode);
+    
 		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
+		actualAddress.Should().Be((nuint)expectedHandler);
 	}
 	
 	[Fact]
