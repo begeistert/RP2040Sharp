@@ -31,23 +31,15 @@ public static class BitOps
 		ref var ptrRd = ref cpu.Registers[rd];
 		var valRm = cpu.Registers[rm];
 
-		uint result;
-		bool carry;
+		var shiftVal = imm5 == 0 ? 31 : imm5;
+		var shiftCarry = (imm5 - 1) & 0x1F;
 
-		if (imm5 == 0)
-		{
-			result = (uint)((int)valRm >> 31);
-			carry = (int)valRm < 0;
-		}
-		else
-		{
-			result = (uint)((int)valRm >> imm5);
-			carry = ((valRm >> (imm5 - 1)) & 1) != 0;
-		}
+		var result = (uint)((int)valRm >> shiftVal);
+		var carry = ((valRm >> shiftCarry) & 1) != 0;
 
 		ptrRd = result;
 
-		cpu.Registers.N = (int)result < 0; // Bit 31
+		cpu.Registers.N = (int)result < 0; 
 		cpu.Registers.Z = (result == 0);
 		cpu.Registers.C = carry;
 	}
