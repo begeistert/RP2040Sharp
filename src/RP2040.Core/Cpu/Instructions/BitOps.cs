@@ -135,6 +135,43 @@ public static class BitOps
 	}
 	
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void MovToPc(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0xF;
+        
+		var valRm = cpu.Registers[rm];
+		valRm += (uint)((rm + 1) >> 4) << 1;
+
+		cpu.Registers.PC = valRm & 0xFFFFFFFE;
+		cpu.Cycles++;
+	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void MovToSp(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0xF;
+        
+		var valRm = cpu.Registers[rm];
+		valRm += (uint)((rm + 1) >> 4) << 1;
+
+		cpu.Registers.SP = valRm & 0xFFFFFFFC;
+	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void MovRegister(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0xF;
+		var rd = ((opcode >> 4) & 0x8) | (opcode & 0x7);
+
+		ref var ptrRd = ref cpu.Registers[rd];
+        
+		var valRm = cpu.Registers[rm];
+		valRm += (uint)((rm + 1) >> 4) << 1;
+		
+		ptrRd = valRm;
+	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public static void Mvns(ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 7;
