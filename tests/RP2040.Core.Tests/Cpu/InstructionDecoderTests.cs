@@ -390,18 +390,26 @@ public unsafe class InstructionDecoderTests
 		handlerAddress.Should ().Be (expectedPointer);
 	}
 	
-	[Fact]
-	public void Mov ()
+	[Theory]
+	[InlineData(R3, "Reg")] // Registro normal
+	[InlineData(PC, "Pc")]  // Salto
+	[InlineData(SP, "Sp")]  // Stack
+	public void Mov_Routing(uint targetReg, string expectedType)
 	{
 		// Arrange
-		var opcode = InstructionEmiter.Mov (R3, R8);
-		var expectedPointer = AddressOf (&BitOps.Mov);
+		var opcode = InstructionEmiter.Mov(targetReg, R8);
+		nuint expectedPointer = expectedType switch {
+			"Reg" => AddressOf(&BitOps.MovRegister),
+			"Pc"  => AddressOf(&BitOps.MovToPc),
+			"Sp"  => AddressOf(&BitOps.MovToSp),
+			_ => 0
+		};
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);
-		
+    
 		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
+		handlerAddress.Should().Be(expectedPointer);
 	}
 
 	[Fact]
