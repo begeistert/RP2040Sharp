@@ -203,4 +203,10 @@ public static class InstructionEmiter
 		if (rn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
 		return (ushort)(0x4300 | ((rm & 7) << 3) | rn & 7);
 	}
+
+	public static ushort Pop (bool p, uint rlist)
+	{
+		if (rlist > 255) throw new ArgumentException("Register list too large (0-15)");
+		return (ushort)(0xBC00 | (p ? 0x100u : 0u) | rlist);
+	}
 }

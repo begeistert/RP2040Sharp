@@ -12,6 +12,9 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public const uint MASK_SRAM    = 0x7FFFF;  // 512KB (covers 264KB + mirrors)
     public const uint MASK_FLASH   = 0x1FFFFF; // 2MB
     public const uint MASK_BOOTROM = 0x3FFF;   // 16KB
+    
+    public const uint SRAM_START_ADDRESS = 0x20000000;
+    public const uint FLASH_START_ADDRESS = 0x10000000;
 
     public readonly byte* PtrSram;
     public readonly byte* PtrFlash;
