@@ -89,25 +89,40 @@ public class ArithmeticOps
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void AddHighRegisters(ushort opcode, CortexM0Plus cpu)
+    public static void AddHighToPc(ushort opcode, CortexM0Plus cpu)
     {
-        // ADD (High Registers)
         var rm = (opcode >> 3) & 0xF;
-        var dn = ((opcode >> 4) & 0x8) | (opcode & 0x7);
         
-        // Aquí usamos acceso normal porque 'dn' puede ser PC(15) o SP(13)
-        // y la lógica especial del switch hace difícil usar ref genérico.
-        var valDn = (dn == 15) ? cpu.Registers.PC + 2 : cpu.Registers[dn];
+        var valRm = cpu.Registers[rm];
+        var valPc = cpu.Registers.PC + 2;
+
+        var result = valPc + valRm;
+        cpu.Registers.PC = result & 0xFFFFFFFE; 
+        cpu.Cycles++;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void AddHighToSp(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0xF;
         var valRm = cpu.Registers[rm];
 
-        var result = valDn + valRm;
+        cpu.Registers.SP += valRm;
+        
+        cpu.Registers.SP &= 0xFFFFFFFC; 
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void AddHighToReg(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0xF;
+        var dn = ((opcode >> 4) & 0x8) | (opcode & 0x7);
 
-        switch (dn)
-        {
-            case 15: cpu.Registers.PC = result & 0xFFFFFFFE; break;
-            case 13: cpu.Registers.SP = result & 0xFFFFFFFC; break;
-            default: cpu.Registers[dn] = result; break; // Aquí se usa el indexador (set) optimizado
-        }
+        ref var ptrDn = ref cpu.Registers[dn];
+        
+        var valRm = cpu.Registers[rm];
+        
+        ptrDn += valRm;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
