@@ -92,8 +92,24 @@ public unsafe class InstructionDecoder : IDisposable
             // Opción Recomendada: Registrar B Conditional genérico, y dentro del switch el default maneja 0xE/0xF.
             // Y registrar SVC (0xDF) aparte con mayor prioridad en el array de reglas o asegurando que su patrón sea único.
 
-            // B (Cond)
-            new OpcodeRule(0xF000, 0xD000, &FlowOps.BranchConditional),
+            new OpcodeRule(0xFF00, 0xD000, &FlowOps.Beq), // 0000 EQ
+            new OpcodeRule(0xFF00, 0xD100, &FlowOps.Bne), // 0001 NE
+            new OpcodeRule(0xFF00, 0xD200, &FlowOps.Bcs), // 0010 CS
+            new OpcodeRule(0xFF00, 0xD300, &FlowOps.Bcc), // 0011 CC
+            new OpcodeRule(0xFF00, 0xD400, &FlowOps.Bmi), // 0100 MI
+            new OpcodeRule(0xFF00, 0xD500, &FlowOps.Bpl), // 0101 PL
+            new OpcodeRule(0xFF00, 0xD600, &FlowOps.Bvs), // 0110 VS
+            new OpcodeRule(0xFF00, 0xD700, &FlowOps.Bvc), // 0111 VC
+            new OpcodeRule(0xFF00, 0xD800, &FlowOps.Bhi), // 1000 HI
+            new OpcodeRule(0xFF00, 0xD900, &FlowOps.Bls), // 1001 LS
+            new OpcodeRule(0xFF00, 0xDA00, &FlowOps.Bge), // 1010 GE
+            new OpcodeRule(0xFF00, 0xDB00, &FlowOps.Blt), // 1011 LT
+            new OpcodeRule(0xFF00, 0xDC00, &FlowOps.Bgt), // 1100 GT
+            new OpcodeRule(0xFF00, 0xDD00, &FlowOps.Ble), // 1101 LE
+
+            // Nota: 0xDE00 (AL/Undefined) y 0xDF00 (SVC) se manejan aparte.
+            // SVC debe tener su propia regla.
+            // new OpcodeRule(0xFF00, 0xDF00, &FlowOps.Svc), // Ejemplo para SVC
 
             // B (Unconditional) - T2
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1110 0000 0000 0000 (E000)
