@@ -95,6 +95,90 @@ public static class FlowOps
         cpu.Cycles ++; // Penalización por salto tomado
     }
     
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Beq(ushort opcode, CortexM0Plus cpu) // Z == 1
+    {
+        if (cpu.Registers.Z) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bne(ushort opcode, CortexM0Plus cpu) // Z == 0
+    {
+        if (!cpu.Registers.Z) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bcs(ushort opcode, CortexM0Plus cpu) // C == 1
+    {
+        if (cpu.Registers.C) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bcc(ushort opcode, CortexM0Plus cpu) // C == 0
+    {
+        if (!cpu.Registers.C) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bmi(ushort opcode, CortexM0Plus cpu) // N == 1
+    {
+        if (cpu.Registers.N) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bpl(ushort opcode, CortexM0Plus cpu) // N == 0
+    {
+        if (!cpu.Registers.N) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bvs(ushort opcode, CortexM0Plus cpu) // V == 1
+    {
+        if (cpu.Registers.V) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bvc(ushort opcode, CortexM0Plus cpu) // V == 0
+    {
+        if (!cpu.Registers.V) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bhi(ushort opcode, CortexM0Plus cpu) // C==1 && Z==0
+    {
+        if (cpu.Registers.C && !cpu.Registers.Z) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bls(ushort opcode, CortexM0Plus cpu) // C==0 || Z==1
+    {
+        if (!cpu.Registers.C || cpu.Registers.Z) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bge(ushort opcode, CortexM0Plus cpu) // N == V
+    {
+        if (cpu.Registers.N == cpu.Registers.V) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Blt(ushort opcode, CortexM0Plus cpu) // N != V
+    {
+        if (cpu.Registers.N != cpu.Registers.V) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bgt(ushort opcode, CortexM0Plus cpu) // Z==0 && N==V
+    {
+        if (!cpu.Registers.Z && (cpu.Registers.N == cpu.Registers.V)) TakeBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Ble(ushort opcode, CortexM0Plus cpu) // Z==1 || N!=V
+    {
+        if (cpu.Registers.Z || (cpu.Registers.N != cpu.Registers.V)) TakeBranch(opcode, cpu);
+    }
+    
     [MethodImpl (MethodImplOptions.AggressiveInlining)]
     public static void Bx (ushort opcode, CortexM0Plus cpu)
     {
