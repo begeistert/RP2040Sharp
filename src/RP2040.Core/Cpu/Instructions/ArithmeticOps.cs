@@ -1,7 +1,7 @@
 using System.Runtime.CompilerServices;
 namespace RP2040.Core.Cpu.Instructions;
 
-public class ArithmeticOps
+public static class ArithmeticOps
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddsImmediate3(ushort opcode, CortexM0Plus cpu)
