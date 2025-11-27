@@ -43,9 +43,15 @@ public unsafe class InstructionDecoder : IDisposable
             // ADD (Rd = SP + imm8)
             // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1010 1000 0000 0000 (A800)
             new OpcodeRule(0xF800, 0xA800, &ArithmeticOps.AddSpImmediate8),
-            // ADD (High Registers) - Encoding T2
-            // Cubre: ADD Rd, Rm (donde alguno es > R7)
-            new OpcodeRule(0xFF00, 0x4400, &ArithmeticOps.AddHighRegisters),
+            // 1. High Priority: ADD PC, Rm (R15)
+            // Mask: Verify Opcode base + Bit 7 (DN=1) + Bits 0-2 (ddd=7)
+            // 0xFF00 (Base) | 0x0080 (DN) | 0x0007 (ddd) = 0xFF87
+            new OpcodeRule(0xFF87, 0x4487, &ArithmeticOps.AddHighToPc),
+            // 2. High Priority: ADD SP, Rm (R13)
+            // Pattern: Base 0x4400 | 0x0080 (DN) | 0x0005 (ddd) = 0x4485
+            new OpcodeRule(0xFF87, 0x4485, &ArithmeticOps.AddHighToSp),
+            // 3. Low Priority: ADD Genérico (R0-R12, R14)
+            new OpcodeRule(0xFF00, 0x4400, &ArithmeticOps.AddHighToReg),
             // ADDS (Rd, Rn, Rm) - Encoding T1 Register
             // Mask: 1111 1110 0000 0000 (FE00) -> Pattern: 0001 1000 0000 0000 (1800)
             new OpcodeRule(0xFE00, 0x1800, &ArithmeticOps.AddsRegister),
