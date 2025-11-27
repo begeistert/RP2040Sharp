@@ -24,7 +24,9 @@ public unsafe class InstructionDecoderTests
 	const int R11 = 11;
 
 	const int IP = 12;
+	const int SP = 13;
 	const int LR = 14;
+	const int PC = 15;
 	
 	public static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
 	static readonly InstructionDecoder Decoder = new InstructionDecoder ();
@@ -70,19 +72,28 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
-
-	[Fact]
-	public void AddHighRegisters ()
+	
+	[Theory]
+	[InlineData(R1, "Reg")] // 1
+	[InlineData(SP, "Sp")]  // 13
+	[InlineData(PC, "Pc")]  // 15
+	public void AddHighRegisters(uint targetReg, string expectedType)
 	{
 		// Arrange
-		var opcode = InstructionEmiter.AddHighRegisters (R1, IP);
-		var expectedPointer = AddressOf(&ArithmeticOps.AddHighRegisters);
+		var opcode = InstructionEmiter.AddHighRegisters(targetReg, R2);
+    
+		nuint expectedPointer = expectedType switch {
+			"Reg" => AddressOf(&ArithmeticOps.AddHighToReg),
+			"Sp"  => AddressOf(&ArithmeticOps.AddHighToSp),
+			"Pc"  => AddressOf(&ArithmeticOps.AddHighToPc),
+			_ => 0
+		};
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);
 		
 		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
+		handlerAddress.Should().Be(expectedPointer);
 	}
 
 	[Fact]
