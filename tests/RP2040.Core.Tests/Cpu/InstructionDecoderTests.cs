@@ -448,4 +448,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Pop ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Pop (true, (1 << R4) | (1 << R5) | (1 << R6));
+		var expectedPointer = AddressOf (&MemoryOps.Pop);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
