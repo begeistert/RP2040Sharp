@@ -124,9 +124,17 @@ public unsafe class InstructionDecoder : IDisposable
             // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0000 0100 0000 (4040)
             new OpcodeRule(0xFFC0, 0x4040, &BitOps.Eors),
             
-            // MOV Rd, Rm (High Registers / No Flags)
-            // Mask: FF00 -> Pattern: 4600
-            new OpcodeRule(0xFF00, 0x4600, &BitOps.Mov),
+            // 1. MOV PC, Rm (High Priority)
+            // Mask: verify Opcode + destination PC (15)
+            new OpcodeRule(0xFF87, 0x4687, &BitOps.MovToPc),
+
+            // 2. MOV SP, Rm (High Priority)
+            // Mask: verify Opcode + destination SP (13)
+            new OpcodeRule(0xFF87, 0x4685, &BitOps.MovToSp),
+
+            // 3. MOV Rd, Rm (Generic Fallback)
+            // Captures all others (R0-R12, LR)
+            new OpcodeRule(0xFF00, 0x4600, &BitOps.MovRegister),
             
             // MULS Rn, Rdm
             // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0011 0100 0000
