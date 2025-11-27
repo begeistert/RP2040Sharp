@@ -92,12 +92,14 @@ public class ArithmeticOps
     public static void AddHighToPc(ushort opcode, CortexM0Plus cpu)
     {
         var rm = (opcode >> 3) & 0xF;
-        
         var valRm = cpu.Registers[rm];
-        var valPc = cpu.Registers.PC + 2;
+    
+        ref var pc = ref cpu.Registers.PC;
 
-        var result = valPc + valRm;
-        cpu.Registers.PC = result & 0xFFFFFFFE; 
+        var valPcSource = pc + 2;
+        var result = (valPcSource + valRm) & 0xFFFFFFFE;
+        
+        pc = result;
         cpu.Cycles++;
     }
     
@@ -107,9 +109,8 @@ public class ArithmeticOps
         var rm = (opcode >> 3) & 0xF;
         var valRm = cpu.Registers[rm];
 
-        cpu.Registers.SP += valRm;
-        
-        cpu.Registers.SP &= 0xFFFFFFFC; 
+        ref var sp = ref cpu.Registers.SP;
+        sp = (sp + valRm) & 0xFFFFFFFC;
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
