@@ -11,9 +11,8 @@ public static class ArithmeticOps
         var rn = (opcode >> 3) & 0x7;
         var imm3 = (uint)((opcode >> 6) & 0x7);
 
-        // Escritura optimizada: Obtenemos el puntero al destino.
         ref var ptrRd = ref cpu.Registers[rd];
-        var valRn = cpu.Registers[rn]; // Rn suele ser distinto, leemos por valor
+        var valRn = cpu.Registers[rn];
         
         ptrRd = AddWithFlags(cpu, valRn, imm3, carryIn: 0);
     }

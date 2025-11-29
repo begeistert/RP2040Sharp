@@ -20,12 +20,8 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public readonly byte* PtrFlash;
     public readonly byte* PtrBootRom;
 
-    // ==========================================
-    // INTERNAL STATE
-    // ==========================================
     private readonly IMemoryMappedDevice[] _memoryMap = new IMemoryMappedDevice[16];
     
-    // Mantenemos referencias para evitar GC
     private readonly RandomAccessMemory _sram;
     private readonly RandomAccessMemory _bootRom;
     private readonly RandomAccessMemory _flash;
@@ -34,18 +30,14 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 
     public BusInterconnect()
     {
-        // 1. Alocación de Memoria Física (Pinned internamente)
-        // Usamos tamaños Potencia de 2 para permitir máscaras bitwise rápidas.
         _sram    = new RandomAccessMemory(512 * 1024); 
         _flash   = new RandomAccessMemory(2 * 1024 * 1024);
         _bootRom = new RandomAccessMemory(16 * 1024);
 
-        // 2. Exposición de Punteros
         PtrSram    = _sram.BasePtr;
         PtrFlash   = _flash.BasePtr;
         PtrBootRom = _bootRom.BasePtr;
         
-        // 3. Mapeo Lógico (Para el Slow Path / Periféricos)
         MapDevice((int)REGION_BOOTROM, _bootRom);
         MapDevice((int)REGION_FLASH, _flash);
         MapDevice((int)REGION_SRAM, _sram);
@@ -56,27 +48,20 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         if (regionIndex is < 0 or > 15) throw new ArgumentOutOfRangeException(nameof(regionIndex));
         _memoryMap[regionIndex] = device;
     }
-
-    // =============================================================
-    // LECTURAS (Optimizadas para Probabilidad)
-    // =============================================================
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte ReadByte(uint address)
     {
-        // Probabilidad #1: SRAM (Variables, Stack) ~80%
-        if ((address >> 28) == REGION_SRAM)
+        if ((address >> 28) == REGION_SRAM) // Probability #1: SRAM (Variables, Stack) ~80%
             return PtrSram[address & MASK_SRAM];
 
-        // Probabilidad #2: Flash (Constantes, Strings) ~15%
-        if ((address >> 28) == REGION_FLASH)
+        if ((address >> 28) == REGION_FLASH) // Probability #2: Flash (Constants, Strings) ~15%
             return PtrFlash[address & MASK_FLASH];
 
-        // Probabilidad #3: BootROM (Arranque) <1%
-        if ((address >> 28) == REGION_BOOTROM)
+        if ((address >> 28) == REGION_BOOTROM) // Probability #3: BootROM ~1%
             return PtrBootRom[address & MASK_BOOTROM];
 
-        // Fallback: Periféricos
+        // Fallback
         return ReadByteDispatch(address);
     }
 
@@ -125,24 +110,14 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     private uint ReadWordDispatch(uint address) 
         => _memoryMap[address >> 28]?.ReadWord(address & 0x0FFFFFFF) ?? 0;
 
-
-    // =============================================================
-    // ESCRITURAS (Con Protección de Hardware)
-    // =============================================================
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteWord(uint address, uint value)
     {
-        // SOLO la SRAM tiene Fast Path de escritura.
         if ((address >> 28) == REGION_SRAM)
         {
             Unsafe.WriteUnaligned(PtrSram + (address & MASK_SRAM), value);
             return;
         }
-        
-        // PROTECCIÓN TEMPRANA:
-        // Si es Flash o BootROM, retornamos inmediatamente.
-        // Evitamos la llamada a función Dispatch.
         var region = address >> 28;
         if (region == REGION_FLASH || region == REGION_BOOTROM) return;
 
@@ -161,7 +136,6 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         var region = address >> 28;
         if (region == REGION_FLASH || region == REGION_BOOTROM) return;
 
-        // Dispatch manual (inlineado aquí si es simple, o delegado)
         _memoryMap[region]?.WriteHalfWord(address & 0x0FFFFFFF, value);
     }
 
@@ -183,13 +157,9 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void WriteWordDispatch(uint region, uint address, uint value)
     {
-        // Aquí llegarán solo Periféricos (0x4...) y System (0xE...)
         _memoryMap[region]?.WriteWord(address & 0x0FFFFFFF, value);
     }
 
-    // =============================================================
-    // DISPOSE
-    // =============================================================
     public void Dispose()
     {
         if (_disposed) return;
