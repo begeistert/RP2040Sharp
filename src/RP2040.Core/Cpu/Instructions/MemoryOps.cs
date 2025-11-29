@@ -6,73 +6,161 @@ namespace RP2040.Core.Cpu.Instructions;
 
 public unsafe static class MemoryOps
 {
-	[MethodImpl (MethodImplOptions.AggressiveInlining)]
-	public static void Pop (ushort opcode, CortexM0Plus cpu)
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void Pop(ushort opcode, CortexM0Plus cpu)
 	{
 		var mask = (uint)(opcode & 0xFF);
-		var sp = cpu.Registers.SP; 
+		var regCount = (uint)BitOperations.PopCount(mask);
+    
+		var sp = cpu.Registers.SP;
+		var finalSp = sp + (regCount * 4); 
 
-		if (sp >> 28 == BusInterconnect.REGION_SRAM) {
-			var ptr = cpu.Bus.PtrSram;
-			const uint memMask = BusInterconnect.MASK_SRAM;
+		if ((sp >> 28) == BusInterconnect.REGION_SRAM)
+		{
+			var rawPtr = (uint*)(cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM));
 
-			while (mask != 0) {
-				var regIdx = BitOperations.TrailingZeroCount (mask);
-				cpu.Registers[regIdx] = Unsafe.ReadUnaligned<uint> (ptr + (sp & memMask));
-				sp += 4;
-				cpu.Cycles++;
+			while (mask != 0)
+			{
+				var regIdx = BitOperations.TrailingZeroCount(mask);
+				cpu.Registers[regIdx] = *rawPtr;
+            
+				rawPtr++;
 				mask &= (mask - 1);
 			}
 		}
-		else {
-			while (mask != 0) {
-				var regIdx = BitOperations.TrailingZeroCount (mask);
-				cpu.Registers[regIdx] = cpu.Bus.ReadWord (sp);
+		else
+		{
+			while (mask != 0)
+			{
+				var regIdx = BitOperations.TrailingZeroCount(mask);
+				cpu.Registers[regIdx] = cpu.Bus.ReadWord(sp);
 				sp += 4;
-				cpu.Cycles++;
 				mask &= (mask - 1);
 			}
 		}
-		cpu.Registers.SP = sp;
+
+		cpu.Registers.SP = finalSp;
+		cpu.Cycles += 1 + regCount;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void PopPc(ushort opcode, CortexM0Plus cpu)
+	{
+		var mask = (uint)(opcode & 0xFF);
+		var regCount = (uint)BitOperations.PopCount(mask);
+    
+		var sp = cpu.Registers.SP;
+		var finalSp = sp + ((regCount + 1) * 4);
+
+		if ((sp >> 28) == BusInterconnect.REGION_SRAM)
+		{
+			var rawPtr = (uint*)(cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM));
+
+			while (mask != 0)
+			{
+				var regIdx = BitOperations.TrailingZeroCount(mask);
+				cpu.Registers[regIdx] = *rawPtr;
+				rawPtr++;
+				mask &= (mask - 1);
+			}
+			var newPc = *rawPtr;
+			
+			cpu.Registers.PC = newPc & 0xFFFFFFFE;
+		}
+		else
+		{
+			while (mask != 0)
+			{
+				var regIdx = BitOperations.TrailingZeroCount(mask);
+				cpu.Registers[regIdx] = cpu.Bus.ReadWord(sp);
+				sp += 4;
+				mask &= (mask - 1);
+			}
+			var newPc = cpu.Bus.ReadWord(sp);
+			cpu.Registers.PC = newPc & 0xFFFFFFFE;
+		}
+
+		cpu.Registers.SP = finalSp;
+		cpu.Cycles += 4 + regCount; 
 	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
-	public static void PopPc (ushort opcode, CortexM0Plus cpu)
+	public static void Push (ushort opcode, CortexM0Plus cpu)
 	{
 		var mask = (uint)(opcode & 0xFF);
-		var sp = cpu.Registers.SP;
-		
-		if (sp >> 28 == BusInterconnect.REGION_SRAM) {
-			var ptr = cpu.Bus.PtrSram;
-			const uint memMask = BusInterconnect.MASK_SRAM;
+		var regCount = (uint)BitOperations.PopCount (mask);
+		var totalBytes = regCount * 4;
+
+		var oldSp = cpu.Registers.SP;
+		var newSp = oldSp - totalBytes;
+
+		if ((newSp >> 28) == BusInterconnect.REGION_SRAM) {
+			var rawPtr = (uint*)(cpu.Bus.PtrSram + (newSp & BusInterconnect.MASK_SRAM));
 
 			while (mask != 0) {
 				var regIdx = BitOperations.TrailingZeroCount (mask);
-				cpu.Registers[regIdx] = Unsafe.ReadUnaligned<uint> (ptr + (sp & memMask));
-				sp += 4;
-				cpu.Cycles++;
+
+				*rawPtr = cpu.Registers[regIdx];
+
+				rawPtr++;
 				mask &= (mask - 1);
 			}
-
-			var newPc = Unsafe.ReadUnaligned<uint> (ptr + (sp & memMask));
-			sp += 4;
-			cpu.Registers.PC = newPc & 0xFFFFFFFE;
 		}
-		else {
+		else
+		{
+			var writePtr = newSp;
 			while (mask != 0) {
 				var regIdx = BitOperations.TrailingZeroCount (mask);
-				cpu.Registers[regIdx] = cpu.Bus.ReadWord (sp);
-				sp += 4;
-				cpu.Cycles++;
+				var val = cpu.Registers[regIdx];
+				cpu.Bus.WriteWord (writePtr, val);
+
+				writePtr += 4;
 				mask &= (mask - 1);
 			}
-
-			var newPc = cpu.Bus.ReadWord (sp);
-			sp += 4;
-			cpu.Registers.PC = newPc & 0xFFFFFFFE;
 		}
-		
-		cpu.Cycles += 2;
-		cpu.Registers.SP = sp;
+
+		cpu.Registers.SP = newSp;
+		cpu.Cycles += regCount;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void PushLr(ushort opcode, CortexM0Plus cpu)
+	{
+		var mask = (uint)(opcode & 0xFF);
+		var regCount = (uint)BitOperations.PopCount(mask);
+		var totalBytes = (regCount + 1) * 4; // +1 because of LR
+
+		var oldSp = cpu.Registers.SP;
+		var newSp = oldSp - totalBytes;
+
+		if ((newSp >> 28) == BusInterconnect.REGION_SRAM) 
+		{
+			var rawPtr = (uint*)(cpu.Bus.PtrSram + (newSp & BusInterconnect.MASK_SRAM));
+
+			while (mask != 0) 
+			{
+				var regIdx = BitOperations.TrailingZeroCount(mask);
+				*rawPtr = cpu.Registers[regIdx];
+				rawPtr++;
+				mask &= (mask - 1);
+			}
+       
+			*rawPtr = cpu.Registers.LR;
+		}
+		else 
+		{
+			var writePtr = newSp;
+			while (mask != 0) 
+			{
+				var regIdx = BitOperations.TrailingZeroCount(mask);
+				cpu.Bus.WriteWord(writePtr, cpu.Registers[regIdx]);
+				writePtr += 4;
+				mask &= (mask - 1);
+			}
+			cpu.Bus.WriteWord(writePtr, cpu.Registers.LR);
+		}
+
+		cpu.Registers.SP = newSp;
+		cpu.Cycles += regCount + 1; // +1 por LR
 	}
 }

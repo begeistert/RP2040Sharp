@@ -514,4 +514,20 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Theory]
+	[InlineData(false)]
+	[InlineData(true)]
+	public void Push (bool lr)
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Push (lr, (1 << R4) | (1 << R5) | (1 << R6));
+		var expectedPointer = lr ? AddressOf (&MemoryOps.PushLr) : AddressOf (&MemoryOps.Push);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }

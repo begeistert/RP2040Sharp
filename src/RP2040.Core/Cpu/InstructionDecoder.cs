@@ -171,6 +171,14 @@ public unsafe class InstructionDecoder : IDisposable
             // POP (Encoding T1)
             new OpcodeRule(0xFF00, 0xBC00, &MemoryOps.Pop),
             new OpcodeRule(0xFF00, 0xBD00, &MemoryOps.PopPc),
+            
+            // PUSH {regs}
+            // Mask: 1111 1111 0000 0000 (FF00) -> Pattern: B400
+            new OpcodeRule(0xFF00, 0xB400, &MemoryOps.Push),
+
+            // PUSH {regs, LR}
+            // Mask: 1111 1111 0000 0000 (FF00) -> Pattern: B500
+            new OpcodeRule(0xFF00, 0xB500, &MemoryOps.PushLr),
         ];
         
         for (var i = 0; i < 65536; i++)

@@ -209,4 +209,10 @@ public static class InstructionEmiter
 		if (rlist > 255) throw new ArgumentException("Register list too large (0-15)");
 		return (ushort)(0xBC00 | (p ? 0x100u : 0u) | rlist);
 	}
+	
+	public static ushort Push (bool m, uint rlist)
+	{
+		if (rlist > 255) throw new ArgumentException("Register list too large (0-15)");
+		return (ushort)(0xB400 | (m ? 0x100u : 0u) | rlist);
+	}
 }
