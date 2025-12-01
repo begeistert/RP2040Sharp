@@ -32,6 +32,15 @@ public struct Registers
 
     // R15: Program Counter (PC)
     public uint PC;
+    
+    // --- Backing Stores for Stack Pointers ---
+    public uint MSP_Storage; 
+    public uint PSP_Storage; 
+
+    // --- System Registers ---
+    public uint PRIMASK; // Bit 0: PM
+    public uint CONTROL; // Bit 1: SPSEL, Bit 0: nPRIV
+    public uint IPSR;    // Exception Number (0 = Thread Mode)
 
     // --- Program Status Register (xPSR) ---
     public bool N; // Negative
@@ -41,6 +50,19 @@ public struct Registers
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte GetC() => Unsafe.As<bool, byte>(ref C);
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public uint GetxPsr()
+    {
+        uint apsr = 0;
+        if (N) apsr |= 0x80000000;
+        if (Z) apsr |= 0x40000000;
+        if (C) apsr |= 0x20000000;
+        if (V) apsr |= 0x10000000;
+        
+        // xPSR combina APSR, EPSR (Thumb bit siempre 1) e IPSR
+        return apsr | 0x01000000 | (IPSR & 0x3F); 
+    }
     
     // Interrupt Status Register (IPSR) y Execution (EPSR) se pueden manejar aparte o implícitamente.
     

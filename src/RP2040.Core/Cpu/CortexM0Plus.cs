@@ -6,6 +6,7 @@ namespace RP2040.Core.Cpu;
 
 public unsafe class CortexM0Plus
 {
+   
     public readonly BusInterconnect Bus;
     public Registers Registers;
     public long Cycles;
@@ -17,11 +18,15 @@ public unsafe class CortexM0Plus
     private byte* _fetchPtr;
     private uint _fetchMask;
     private uint _currentRegionId;
+    
+    private const uint EXC_RETURN_HANDLER = 0xFFFFFFF1; // Return to Handler mode, using MSP
+    private const uint EXC_RETURN_THREAD_MSP = 0xFFFFFFF9; // Return to Thread mode, using MSP
+    private const uint EXC_RETURN_THREAD_PSP = 0xFFFFFFFD; // Return to Thread mode, using PSP
 
     public CortexM0Plus(BusInterconnect bus)
     {
        Bus = bus;
-       _decoder = new InstructionDecoder();
+       _decoder = InstructionDecoder.Instance;
        Reset();
     }
 
@@ -114,7 +119,6 @@ public unsafe class CortexM0Plus
           decoder.Dispatch(opcode, this);
        }
        
-       // 6. Guardar estado de caché al salir (por si Run se llama de nuevo)
        _currentRegionId = regionId;
        _fetchPtr = fetchPtr;
        _fetchMask = fetchMask;
@@ -125,10 +129,135 @@ public unsafe class CortexM0Plus
     public void Step()
     {
        var pc = Registers.PC;
-       // Usamos el Bus normal que maneja lógica segura y unaligned
        var opcode = Bus.ReadHalfWord(pc); 
        Registers.PC = pc + 2;
        Cycles++;
        _decoder.Dispatch(opcode, this);
+    }
+    
+    [MethodImpl(MethodImplOptions.NoInlining)] // NoInlining (it is not used commonly)
+    public void UpdateStackPointerSource()
+    {
+       if (Registers.IPSR != 0) return;
+       
+       var switchToPsp = (Registers.CONTROL & 2) != 0; 
+
+       if (switchToPsp)
+       {
+          Registers.MSP_Storage = Registers.SP; 
+          Registers.SP = Registers.PSP_Storage;
+       }
+       else
+       {
+          Registers.PSP_Storage = Registers.SP;
+          Registers.SP = Registers.MSP_Storage;
+       }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public void ExceptionEntry(uint exceptionNumber)
+    {
+        var framePtr = Registers.SP;
+        
+        var needsAlign = (framePtr & 4) != 0;
+        var framePtrAlign = needsAlign ? 1u : 0u;
+        
+        var stackAdjust = 0x20u + (needsAlign ? 4u : 0u);
+        var finalSp = framePtr - stackAdjust;
+        
+        var frameBase = finalSp;
+
+        Bus.WriteWord(frameBase + 0x00, Registers.R0);
+        Bus.WriteWord(frameBase + 0x04, Registers.R1);
+        Bus.WriteWord(frameBase + 0x08, Registers.R2);
+        Bus.WriteWord(frameBase + 0x0C, Registers.R3);
+        Bus.WriteWord(frameBase + 0x10, Registers.R12);
+        Bus.WriteWord(frameBase + 0x14, Registers.LR);
+        Bus.WriteWord(frameBase + 0x18, Registers.PC & 0xFFFFFFFE); // Return Address
+        
+        var xpsr = Registers.GetxPsr() | (framePtrAlign << 9);
+        Bus.WriteWord(frameBase + 0x1C, xpsr);
+
+        if (Registers.IPSR > 0)
+        {
+            Registers.LR = EXC_RETURN_HANDLER;
+        }
+        else
+        {
+            Registers.LR = (Registers.CONTROL & 2) != 0 ? EXC_RETURN_THREAD_PSP : EXC_RETURN_THREAD_MSP;
+        }
+
+        if ((Registers.CONTROL & 2) != 0) 
+        {
+            Registers.PSP_Storage = finalSp;
+            Registers.SP = Registers.MSP_Storage;
+        }
+        else
+        {
+            Registers.SP = finalSp;
+        }
+
+        Registers.IPSR = exceptionNumber; 
+        Registers.CONTROL &= ~2u;
+        
+        uint vtor = 0; // TODO: Read from Registers.VTOR or PPB
+        var vectorAddress = vtor + (exceptionNumber * 4);
+        
+        var targetPc = Bus.ReadWord(vectorAddress);
+        Registers.PC = targetPc & 0xFFFFFFFE;
+        
+        Cycles += 12; // Exception Entry cost (aprox 12-15 ciclos)
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public void ExceptionReturn(uint excReturn)
+    {
+        var returnToThread = (excReturn & 8) != 0;
+        var usePsp = (excReturn & 4) != 0;
+
+        if (!returnToThread && usePsp) 
+        {
+            usePsp = false;
+        }
+        
+        if (returnToThread)
+        {
+            Registers.IPSR = 0;
+            
+            if (usePsp)
+            {
+                Registers.MSP_Storage = Registers.SP;
+                Registers.SP = Registers.PSP_Storage;
+                Registers.CONTROL |= 2;
+            }
+            else
+            {
+                Registers.CONTROL &= ~2u;
+            }
+        }
+
+        var framePtr = Registers.SP;
+        
+        Registers.R0  = Bus.ReadWord(framePtr + 0x00);
+        Registers.R1  = Bus.ReadWord(framePtr + 0x04);
+        Registers.R2  = Bus.ReadWord(framePtr + 0x08);
+        Registers.R3  = Bus.ReadWord(framePtr + 0x0C);
+        Registers.R12 = Bus.ReadWord(framePtr + 0x10);
+        Registers.LR  = Bus.ReadWord(framePtr + 0x14);
+        var retPC = Bus.ReadWord(framePtr + 0x18);
+        var xpsr  = Bus.ReadWord(framePtr + 0x1C);
+
+        Registers.N = (xpsr & 0x80000000) != 0;
+        Registers.Z = (xpsr & 0x40000000) != 0;
+        Registers.C = (xpsr & 0x20000000) != 0;
+        Registers.V = (xpsr & 0x10000000) != 0;
+        
+        var alignAdjust = (xpsr & (1 << 9)) != 0;
+        var stackFree = 0x20u + (alignAdjust ? 4u : 0u);
+        
+        Registers.SP += stackFree;
+        Registers.PC = retPC & 0xFFFFFFFE;
+        
+        Cycles += 10;
     }
 }

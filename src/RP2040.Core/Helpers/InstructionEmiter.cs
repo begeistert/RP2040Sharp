@@ -112,7 +112,7 @@ public static class InstructionEmiter
 		if (cond > 15) throw new ArgumentException("Condition code out of range (0-15)");
 		if (offset > 0x3FF) throw new ArgumentException("Offset out of range for Conditional Branch (-256 to +254)");
 		if (offset % 2 != 0) throw new ArgumentException("Offset must be aligned to 2 bytes");
-		return (ushort)(0xD000 | (cond & 0xF) << 8 | (uint)(offset >> 1 & 0x1FF));
+		return (ushort)(0xD000 | (cond & 0xF) << 8 | offset >> 1 & 0x1FF);
 	}
 	
 	public static ushort Branch(uint offset)
@@ -204,15 +204,29 @@ public static class InstructionEmiter
 		return (ushort)(0x4300 | ((rm & 7) << 3) | rn & 7);
 	}
 
-	public static ushort Pop (bool p, uint rlist)
+	public static ushort Pop (bool p, uint registerList)
 	{
-		if (rlist > 255) throw new ArgumentException("Register list too large (0-15)");
-		return (ushort)(0xBC00 | (p ? 0x100u : 0u) | rlist);
+		if (registerList > 255) throw new ArgumentException("Register list too large (0-15)");
+		return (ushort)(0xBC00 | (p ? 0x100u : 0u) | registerList);
 	}
 	
-	public static ushort Push (bool m, uint rlist)
+	public static ushort Push (bool m, uint registerList)
 	{
-		if (rlist > 255) throw new ArgumentException("Register list too large (0-15)");
-		return (ushort)(0xB400 | (m ? 0x100u : 0u) | rlist);
+		if (registerList > 255) throw new ArgumentException("Register list too large (0-15)");
+		return (ushort)(0xB400 | (m ? 0x100u : 0u) | registerList);
+	}
+
+	public static uint Mrs (uint rd, uint specialRegister)
+	{
+		if (rd > 15) throw new ArgumentException("Register index out of range (0-15)");
+		if (specialRegister > 255) throw new ArgumentException("Special register index out of range (0-15)");
+		return 0x80000000 | (rd & 0xf) << 24 | (specialRegister & 0xFF) << 16 | 0xf3ef;
+	}
+	
+	public static uint Msr (uint specialRegister, uint rd)
+	{
+		if (rd > 15) throw new ArgumentException("Register index out of range (0-15)");
+		if (specialRegister > 255) throw new ArgumentException("Special register index out of range (0-15)");
+		return 0x88000000 | (specialRegister & 0xFF) << 16 | 0xf380 | rd & 0xf ;
 	}
 }

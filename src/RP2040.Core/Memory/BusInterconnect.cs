@@ -19,6 +19,9 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public readonly byte* PtrSram;
     public readonly byte* PtrFlash;
     public readonly byte* PtrBootRom;
+    
+    private readonly byte*[] _fastBasePtrs = new byte*[16];
+    private readonly uint[] _fastMasks = new uint[16];
 
     private readonly IMemoryMappedDevice[] _memoryMap = new IMemoryMappedDevice[16];
     
@@ -38,6 +41,15 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         PtrFlash   = _flash.BasePtr;
         PtrBootRom = _bootRom.BasePtr;
         
+        _fastBasePtrs[REGION_BOOTROM] = PtrBootRom;
+        _fastMasks[REGION_BOOTROM]    = MASK_BOOTROM;
+        
+        _fastBasePtrs[REGION_FLASH]   = PtrFlash;
+        _fastMasks[REGION_FLASH]      = MASK_FLASH;
+        
+        _fastBasePtrs[REGION_SRAM]    = PtrSram;
+        _fastMasks[REGION_SRAM]       = MASK_SRAM;
+        
         MapDevice((int)REGION_BOOTROM, _bootRom);
         MapDevice((int)REGION_FLASH, _flash);
         MapDevice((int)REGION_SRAM, _sram);
@@ -52,51 +64,32 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte ReadByte(uint address)
     {
-        if ((address >> 28) == REGION_SRAM) // Probability #1: SRAM (Variables, Stack) ~80%
-            return PtrSram[address & MASK_SRAM];
+        var region = address >> 28;
+        var basePtr = _fastBasePtrs[region];
 
-        if ((address >> 28) == REGION_FLASH) // Probability #2: Flash (Constants, Strings) ~15%
-            return PtrFlash[address & MASK_FLASH];
-
-        if ((address >> 28) == REGION_BOOTROM) // Probability #3: BootROM ~1%
-            return PtrBootRom[address & MASK_BOOTROM];
-
-        // Fallback
-        return ReadByteDispatch(address);
+        return basePtr != null ? basePtr[address & _fastMasks[region]] : ReadByteDispatch(address);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ushort ReadHalfWord(uint address)
     {
-        if ((address >> 28) == REGION_SRAM)
-            return Unsafe.ReadUnaligned<ushort>(PtrSram + (address & MASK_SRAM));
-
-        if ((address >> 28) == REGION_FLASH)
-            return Unsafe.ReadUnaligned<ushort>(PtrFlash + (address & MASK_FLASH));
-            
-        if ((address >> 28) == REGION_BOOTROM)
-            return Unsafe.ReadUnaligned<ushort>(PtrBootRom + (address & MASK_BOOTROM));
-
-        return ReadHalfWordDispatch(address);
+        var region = address >> 28;
+        var basePtr = _fastBasePtrs[region];
+        
+        return basePtr != null ? Unsafe.ReadUnaligned<ushort>(basePtr + (address & _fastMasks[region])) : ReadHalfWordDispatch(address);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public uint ReadWord(uint address)
     {
-        if ((address >> 28) == REGION_SRAM)
-            return Unsafe.ReadUnaligned<uint>(PtrSram + (address & MASK_SRAM));
+        var region = address >> 28;
+        var basePtr = _fastBasePtrs[region];
+        
+        return basePtr != null ? Unsafe.ReadUnaligned<uint>(basePtr + (address & _fastMasks[region])) : ReadWordDispatch(address);
 
-        if ((address >> 28) == REGION_FLASH)
-            return Unsafe.ReadUnaligned<uint>(PtrFlash + (address & MASK_FLASH));
-
-        if ((address >> 28) == REGION_BOOTROM)
-            return Unsafe.ReadUnaligned<uint>(PtrBootRom + (address & MASK_BOOTROM));
-
-        return ReadWordDispatch(address);
     }
 
     // --- SLOW PATH DISPATCHERS ---
-    // Marcados como NoInlining para mantener pequeño el código caliente de arriba.
     
     [MethodImpl(MethodImplOptions.NoInlining)]
     private byte ReadByteDispatch(uint address) 
@@ -125,40 +118,23 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void WriteHalfWord(uint address, ushort value)
+    public void WriteByte(uint address, byte value)
     {
-        if ((address >> 28) == REGION_SRAM)
-        {
-            Unsafe.WriteUnaligned(PtrSram + (address & MASK_SRAM), value);
-            return;
-        }
-
-        var region = address >> 28;
-        if (region == REGION_FLASH || region == REGION_BOOTROM) return;
-
-        _memoryMap[region]?.WriteHalfWord(address & 0x0FFFFFFF, value);
+        if ((address >> 28) == REGION_SRAM) { PtrSram[address & MASK_SRAM] = value; return; }
+        if ((address >> 28) <= REGION_FLASH) return; // ROM(0) o FLASH(1)
+        _memoryMap[address >> 28]?.WriteByte(address & 0x0FFFFFFF, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void WriteByte(uint address, byte value)
+    public void WriteHalfWord(uint address, ushort value)
     {
-        if ((address >> 28) == REGION_SRAM)
-        {
-            PtrSram[address & MASK_SRAM] = value;
-            return;
-        }
-
-        var region = address >> 28;
-        if (region == REGION_FLASH || region == REGION_BOOTROM) return;
-
-        _memoryMap[region]?.WriteByte(address & 0x0FFFFFFF, value);
+        if ((address >> 28) == REGION_SRAM) { Unsafe.WriteUnaligned(PtrSram + (address & MASK_SRAM), value); return; }
+        if ((address >> 28) <= REGION_FLASH) return;
+        _memoryMap[address >> 28]?.WriteHalfWord(address & 0x0FFFFFFF, value);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
-    private void WriteWordDispatch(uint region, uint address, uint value)
-    {
-        _memoryMap[region]?.WriteWord(address & 0x0FFFFFFF, value);
-    }
+    private void WriteWordDispatch(uint region, uint address, uint value) => _memoryMap[region]?.WriteWord(address & 0x0FFFFFFF, value);
 
     public void Dispose()
     {

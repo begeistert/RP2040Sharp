@@ -62,40 +62,6 @@ public static class FlowOps
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void BranchConditional(ushort opcode, CortexM0Plus cpu)
-    {
-        var cond = (opcode >> 8) & 0xF;
-
-        bool taken;
-        switch (cond)
-        {
-            case 0x0: taken = cpu.Registers.Z; break;              // EQ (Equal)
-            case 0x1: taken = !cpu.Registers.Z; break;             // NE (Not Equal)
-            case 0x2: taken = cpu.Registers.C; break;              // CS (Carry Set)
-            case 0x3: taken = !cpu.Registers.C; break;             // CC (Carry Clear)
-            case 0x4: taken = cpu.Registers.N; break;              // MI (Minus)
-            case 0x5: taken = !cpu.Registers.N; break;             // PL (Plus)
-            case 0x6: taken = cpu.Registers.V; break;              // VS (Overflow)
-            case 0x7: taken = !cpu.Registers.V; break;             // VC (No Overflow)
-            case 0x8: taken = cpu.Registers.C && !cpu.Registers.Z; break; // HI (Unsigned Higher)
-            case 0x9: taken = !cpu.Registers.C || cpu.Registers.Z; break; // LS (Unsigned Lower or Same)
-            case 0xA: taken = cpu.Registers.N == cpu.Registers.V; break;  // GE (Signed >=)
-            case 0xB: taken = cpu.Registers.N != cpu.Registers.V; break;  // LT (Signed <)
-            case 0xC: taken = !cpu.Registers.Z && (cpu.Registers.N == cpu.Registers.V); break; // GT (Signed >)
-            case 0xD: taken = cpu.Registers.Z || (cpu.Registers.N != cpu.Registers.V); break;  // LE (Signed <=)
-            default: taken = false; break; // 0xE (AL) not used here, 0xF es SVC.
-        }
-
-        if (!taken)
-            return;
-        var offset = (int)(sbyte)(opcode & 0xFF) << 1;
-        ref var pc = ref cpu.Registers.PC;
-        
-        pc += (uint)(offset + 2);
-        cpu.Cycles ++; // Penalización por salto tomado
-    }
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Beq(ushort opcode, CortexM0Plus cpu) // Z == 1
     {
         if (cpu.Registers.Z) TakeBranch(opcode, cpu);
@@ -183,9 +149,13 @@ public static class FlowOps
     public static void Bx (ushort opcode, CortexM0Plus cpu)
     {
         var rm = (opcode >> 3) & 0xf;
-        var targetAddress = cpu.Registers[rm];
-        // TODO: Implement CPU Execution Modes and Exception Handling
-        cpu.Registers.PC = targetAddress & 0xFFFFFFFE;
+        var target = cpu.Registers[rm];
+        if (target >= 0xFFFFFFF0 && cpu.Registers.IPSR != 0)
+        {
+            cpu.ExceptionReturn(target);
+            return; 
+        }
+        cpu.Registers.PC = target & 0xFFFFFFFE;
         cpu.Cycles ++;
     }
     

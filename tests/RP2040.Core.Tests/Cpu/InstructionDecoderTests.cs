@@ -29,7 +29,7 @@ public unsafe class InstructionDecoderTests
 	const int PC = 15;
 	
 	public static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
-	static readonly InstructionDecoder Decoder = new InstructionDecoder ();
+	static readonly InstructionDecoder Decoder = InstructionDecoder.Instance;
 
     [Fact]
 	public void Adcs ()
@@ -523,6 +523,35 @@ public unsafe class InstructionDecoderTests
 		// Arrange
 		var opcode = InstructionEmiter.Push (lr, (1 << R4) | (1 << R5) | (1 << R6));
 		var expectedPointer = lr ? AddressOf (&MemoryOps.PushLr) : AddressOf (&MemoryOps.Push);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+
+	[Fact]
+	public void Mrs ()
+	{
+		// Arrange
+		var opcode = (ushort)(InstructionEmiter.Mrs (R0, 5) & 0xFFFF);
+		var expectedPointer = AddressOf (&SystemOps.Mrs);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	
+	[Fact]
+	public void Msr ()
+	{
+		// Arrange
+		var opcode = (ushort)(InstructionEmiter.Msr (8, R0) & 0xFFFF);
+		var expectedPointer = AddressOf (&SystemOps.Msr);
 		
 		// Act
 		var handlerAddress = Decoder.GetHandler(opcode);

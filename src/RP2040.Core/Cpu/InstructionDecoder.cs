@@ -1,216 +1,198 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using RP2040.Core.Cpu.Instructions; 
-
+using RP2040.Core.Cpu.Instructions;
 using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.CortexM0Plus, void>;
 
 namespace RP2040.Core.Cpu;
 
 public unsafe class InstructionDecoder : IDisposable
 {
-    private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
-    private GCHandle _pinnedHandle;
-    private readonly InstructionHandler* _fastTablePtr;
-    
-    private readonly struct OpcodeRule (ushort mask, ushort pattern, InstructionHandler handler)
-    {
-        public readonly ushort Mask = mask;
-        public readonly ushort Pattern = pattern;
-        public readonly InstructionHandler Handler = handler;
-    }
+	public static InstructionDecoder Instance { get; } = new InstructionDecoder ();
 
-    public InstructionDecoder()
-    {
-        _pinnedHandle = GCHandle.Alloc(_lookupTable, GCHandleType.Pinned);
-        _fastTablePtr = (InstructionHandler*)_pinnedHandle.AddrOfPinnedObject();
-        
-        InstructionHandler undefinedPtr = &HandleUndefined;
-        fixed (InstructionHandler* ptrToArr = _lookupTable)
-        {
-            new Span<nuint>(ptrToArr, _lookupTable.Length).Fill((nuint)undefinedPtr);
-        }
+	private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
+	private GCHandle _pinnedHandle;
+	private readonly InstructionHandler* _fastTablePtr;
 
-        ReadOnlySpan<OpcodeRule> rules = [
-            // DMB, DSB, ISB
-            // Mask: 1111 1111 1111 1111 (FFFF) -> Pattern: 1111 0011 1011 1111 (F3BF)
-            new OpcodeRule(0xFFFF, 0xF3BF, &SystemOps.Barrier),
-            // ADCS (Rd, Rm)
-            // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0001 0100 0000 (4140)
-            new OpcodeRule (0xFFC0, 0x4140, &ArithmeticOps.Adcs),
-            // ADD (SP + imm7)
-            // Mask: 1111 1111 1000 0000 (FF80) -> Pattern: 1011 0000 0000 0000 (B000)
-            new OpcodeRule(0xFF80, 0xB000, &ArithmeticOps.AddSpImmediate7),
-            // ADD (Rd = SP + imm8)
-            // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1010 1000 0000 0000 (A800)
-            new OpcodeRule(0xF800, 0xA800, &ArithmeticOps.AddSpImmediate8),
-            // 1. High Priority: ADD PC, Rm (R15)
-            // Mask: Verify Opcode base + Bit 7 (DN=1) + Bits 0-2 (ddd=7)
-            // 0xFF00 (Base) | 0x0080 (DN) | 0x0007 (ddd) = 0xFF87
-            new OpcodeRule(0xFF87, 0x4487, &ArithmeticOps.AddHighToPc),
-            // 2. High Priority: ADD SP, Rm (R13)
-            // Pattern: Base 0x4400 | 0x0080 (DN) | 0x0005 (ddd) = 0x4485
-            new OpcodeRule(0xFF87, 0x4485, &ArithmeticOps.AddHighToSp),
-            // 3. Low Priority: ADD Genérico (R0-R12, R14)
-            new OpcodeRule(0xFF00, 0x4400, &ArithmeticOps.AddHighToReg),
-            // ADDS (Rd, Rn, Rm) - Encoding T1 Register
-            // Mask: 1111 1110 0000 0000 (FE00) -> Pattern: 0001 1000 0000 0000 (1800)
-            new OpcodeRule(0xFE00, 0x1800, &ArithmeticOps.AddsRegister),
-            // ADDS (Rd, Rn, imm3)
-            new OpcodeRule(0xFE00, 0x1C00, &ArithmeticOps.AddsImmediate3),
-            // ADDS (Rd, imm8)
-            new OpcodeRule(0xF800, 0x3000, &ArithmeticOps.AddsImmediate8),
-            // ADR (Rd, imm8)
-            // Mask: 1111 1000 0000 0000 -> Pattern: 1010 0000 0000 0000 (0000)
-            new OpcodeRule(0xF800, 0xA000, &ArithmeticOps.Adr),
-            
-            // ANDS (Rn, Rm)
-            // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0000 0000 0000 (4000)
-            new OpcodeRule(0xFFC0, 0x4000, &BitOps.Ands),
-            // ASRS (Rd, Rm, imm5)
-            // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 0001 0000 0000 0000 (1000)
-            new OpcodeRule(0xF800, 0x1000, &BitOps.AsrsImm5),
-            // ASRS (Register) - Encoding T2
-            // Mask: 1111 1111 1100 0000 (0xFFC0) -> Pattern: 0100 0001 0000 0000 (0x4100)
-            new OpcodeRule(0xFFC0, 0x4100, &BitOps.AsrsRegister),
-            // BICS (Rdn, Rm)
-            // Mask: 1111 1111 1100 0000 (0xFFC0) ->  Pattern: 0100 0011 1000 0000 (0x4380)
-            new OpcodeRule(0xFFC0, 0x4380, &BitOps.Bics),
-            // BL (Branch with Link)
-            // H1 Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1111 0000 0000 0000 (F000)
-            new OpcodeRule(0xF800, 0xF000, &FlowOps.Bl),
-            // BLX Rm
-            // Mask: 1111 1111 1000 0111 (FF87) -> Pattern: 0100 0111 1000 0000 (4780)
-            new OpcodeRule(0xFF87, 0x4780, &FlowOps.Blx),
-            
-            // B (Conditional) - T1
-            // Mask: 1111 0000 0000 0000 (F000) -> Pattern: 1101 0000 0000 0000 (D000)
-            // Nota: Esto captura SVC (cond=1111). Debemos asegurarnos de que SVC tenga prioridad 
-            // o filtrar en el handler. 
-            // MEJOR ESTRATEGIA: Filtrar cond != 1110 (UDF) y != 1111 (SVC) en la máscara es difícil.
-            // Lo ideal es registrar SVC *antes* o usar una máscara más específica para SVC.
+	private readonly struct OpcodeRule (ushort mask, ushort pattern, InstructionHandler handler)
+	{
+		public readonly ushort Mask = mask;
+		public readonly ushort Pattern = pattern;
+		public readonly InstructionHandler Handler = handler;
+	}
 
-            // Opción Recomendada: Registrar B Conditional genérico, y dentro del switch el default maneja 0xE/0xF.
-            // Y registrar SVC (0xDF) aparte con mayor prioridad en el array de reglas o asegurando que su patrón sea único.
+	public InstructionDecoder ()
+	{
+		_pinnedHandle = GCHandle.Alloc (_lookupTable, GCHandleType.Pinned);
+		_fastTablePtr = (InstructionHandler*)_pinnedHandle.AddrOfPinnedObject ();
 
-            new OpcodeRule(0xFF00, 0xD000, &FlowOps.Beq), // 0000 EQ
-            new OpcodeRule(0xFF00, 0xD100, &FlowOps.Bne), // 0001 NE
-            new OpcodeRule(0xFF00, 0xD200, &FlowOps.Bcs), // 0010 CS
-            new OpcodeRule(0xFF00, 0xD300, &FlowOps.Bcc), // 0011 CC
-            new OpcodeRule(0xFF00, 0xD400, &FlowOps.Bmi), // 0100 MI
-            new OpcodeRule(0xFF00, 0xD500, &FlowOps.Bpl), // 0101 PL
-            new OpcodeRule(0xFF00, 0xD600, &FlowOps.Bvs), // 0110 VS
-            new OpcodeRule(0xFF00, 0xD700, &FlowOps.Bvc), // 0111 VC
-            new OpcodeRule(0xFF00, 0xD800, &FlowOps.Bhi), // 1000 HI
-            new OpcodeRule(0xFF00, 0xD900, &FlowOps.Bls), // 1001 LS
-            new OpcodeRule(0xFF00, 0xDA00, &FlowOps.Bge), // 1010 GE
-            new OpcodeRule(0xFF00, 0xDB00, &FlowOps.Blt), // 1011 LT
-            new OpcodeRule(0xFF00, 0xDC00, &FlowOps.Bgt), // 1100 GT
-            new OpcodeRule(0xFF00, 0xDD00, &FlowOps.Ble), // 1101 LE
+		InstructionHandler undefinedPtr = &HandleUndefined;
+		fixed (InstructionHandler* ptrToArr = _lookupTable) {
+			new Span<nuint> (ptrToArr, _lookupTable.Length).Fill ((nuint)undefinedPtr);
+		}
 
-            // Nota: 0xDE00 (AL/Undefined) y 0xDF00 (SVC) se manejan aparte.
-            // SVC debe tener su propia regla.
-            // new OpcodeRule(0xFF00, 0xDF00, &FlowOps.Svc), // Ejemplo para SVC
+		ReadOnlySpan<OpcodeRule> rules = [
+			// ================================================================
+			// GROUP 1: Mask 0xFFFF (Exact Match - Max Priority)
+			// ================================================================
+			// MRS Rd, spec_reg (F3EF)
+			new OpcodeRule (0xFFFF, 0xF3EF, &SystemOps.Mrs),
+			// DMB, DSB, ISB (F3BF)
+			// Mask: 1111 1111 1111 1111
+			new OpcodeRule (0xFFFF, 0xF3BF, &SystemOps.Barrier),
 
-            // B (Unconditional) - T2
-            // Mask: 1111 1000 0000 0000 (F800) -> Pattern: 1110 0000 0000 0000 (E000)
-            new OpcodeRule(0xF800, 0xE000, &FlowOps.Branch),
-            
-            // BX Rm
-            // Mask: 1111 1111 1000 0111 (FF87) -> Pattern: 0100 0111 0000 0000 (4700)
-            new OpcodeRule(0xFF87, 0x4700, &FlowOps.Bx),
-            
-            // CMN (Rn, Rm)
-            // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0010 1100 0000 (42C0)
-            new OpcodeRule(0xFFC0, 0x42C0, &ArithmeticOps.Cmn),
-            
-            // CMP Rn, #imm8
-            // Encoding: 0010 1rrr iiii iiii (0x2800)
-            // Mask: F800 -> Pattern: 2800
-            new OpcodeRule(0xF800, 0x2800, &ArithmeticOps.CmpImmediate),
-            
-            // CMP Rn, Rm (Low Registers - Encoding T1)
-            // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0010 1000 0000 (4280)
-            new OpcodeRule(0xFFC0, 0x4280, &ArithmeticOps.CmpRegister),
+			// ================================================================
+			// GROUP 2: Mask 0xFFF0
+			// ================================================================
+			// MSR spec_reg, Rn (F38x)
+			new OpcodeRule (0xFFF0, 0xF380, &SystemOps.Msr),
 
-            // CMP Rn, Rm (High Registers - Encoding T2)
-            // Mask: 1111 1111 0000 0000 (FF00) -> Pattern: 0100 0101 0000 0000 (4500)
-            new OpcodeRule(0xFF00, 0x4500, &ArithmeticOps.CmpHighRegister),
-            
-            // EORS Rdn, Rm
-            // Mask: 1111 1111 1100 0000 (FFC0) -> Pattern: 0100 0000 0100 0000 (4040)
-            new OpcodeRule(0xFFC0, 0x4040, &BitOps.Eors),
-            
-            // 1. MOV PC, Rm (High Priority)
-            // Mask: verify Opcode + destination PC (15)
-            new OpcodeRule(0xFF87, 0x4687, &BitOps.MovToPc),
+			// ================================================================
+			// GROUP 3: Mask 0xFFC0 (10 bits significant)
+			// IMPORTANT: Must come before 0xFF00 to prevent generic instructions
+			// (like ORRS or ADD generic) from shadowing these specific opcodes.
+			// ================================================================
+			// ADCS (Rd, Rm)
+			new OpcodeRule (0xFFC0, 0x4140, &ArithmeticOps.Adcs),
+			// ANDS (Rn, Rm)
+			new OpcodeRule (0xFFC0, 0x4000, &BitOps.Ands),
+			// ASRS (Register) - Encoding T2
+			new OpcodeRule (0xFFC0, 0x4100, &BitOps.AsrsRegister),
+			// BICS (Rdn, Rm)
+			new OpcodeRule (0xFFC0, 0x4380, &BitOps.Bics),
+			// CMN (Rn, Rm)
+			new OpcodeRule (0xFFC0, 0x42C0, &ArithmeticOps.Cmn),
+			// CMP Rn, Rm (Low Registers - Encoding T1)
+			new OpcodeRule (0xFFC0, 0x4280, &ArithmeticOps.CmpRegister),
+			// EORS Rdn, Rm
+			new OpcodeRule (0xFFC0, 0x4040, &BitOps.Eors),
+			// MULS Rn, Rdm - (Must be before ORRS 0x4300)
+			new OpcodeRule (0xFFC0, 0x4340, &ArithmeticOps.Muls),
+			// MVNS Rd, Rm
+			new OpcodeRule (0xFFC0, 0x43C0, &BitOps.Mvns),
 
-            // 2. MOV SP, Rm (High Priority)
-            // Mask: verify Opcode + destination SP (13)
-            new OpcodeRule(0xFF87, 0x4685, &BitOps.MovToSp),
+			// ================================================================
+			// GROUP 4: Mask 0xFF87 (High Register Special Cases)
+			// CRITICAL: These are specific cases of the 0xFF00 generic group.
+			// They verify Bit 7 (DN) and Bits 0-2 (Rd/Rm).
+			// ================================================================
+			// 1. High Priority: ADD PC, Rm (R15)
+			new OpcodeRule (0xFF87, 0x4487, &ArithmeticOps.AddHighToPc),
+			// 2. High Priority: ADD SP, Rm (R13)
+			new OpcodeRule (0xFF87, 0x4485, &ArithmeticOps.AddHighToSp),
+			// BLX Rm
+			new OpcodeRule (0xFF87, 0x4780, &FlowOps.Blx),
+			// BX Rm
+			new OpcodeRule (0xFF87, 0x4700, &FlowOps.Bx),
+			// 1. MOV PC, Rm (High Priority)
+			new OpcodeRule (0xFF87, 0x4687, &BitOps.MovToPc),
+			// 2. MOV SP, Rm (High Priority)
+			new OpcodeRule (0xFF87, 0x4685, &BitOps.MovToSp),
 
-            // 3. MOV Rd, Rm (Generic Fallback)
-            // Captures all others (R0-R12, LR)
-            new OpcodeRule(0xFF00, 0x4600, &BitOps.MovRegister),
-            
-            // MULS Rn, Rdm
-            // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0011 0100 0000
-            new OpcodeRule(0xffc0, 0x4340, &ArithmeticOps.Muls),
-            
-            // MVNS Rd, Rm
-            // Mask: 1111 1111 1100 0000 -> Pattern: 0100 0011 1100 0000
-            new OpcodeRule(0xFFC0, 0x43C0, &BitOps.Mvns),
-            
-            // NOP
-            // Mask: 1011 1111 0000 0000 -> Pattern: 1011 1111 0000 0000 (BF00)
-            new OpcodeRule(0xBF00, 0xBF00, &SystemOps.Nop),
-            
-            // ORRS (Rd, Rm)
-            // Mask: 1111 1111 0000 0000 -> Pattern: 0100 0011 0000 0000 (0x4300)
-            new OpcodeRule(0xFF00, 0x4300, &ArithmeticOps.Orrs),
-            
-            // POP (Encoding T1)
-            new OpcodeRule(0xFF00, 0xBC00, &MemoryOps.Pop),
-            new OpcodeRule(0xFF00, 0xBD00, &MemoryOps.PopPc),
-            
-            // PUSH {regs}
-            // Mask: 1111 1111 0000 0000 (FF00) -> Pattern: B400
-            new OpcodeRule(0xFF00, 0xB400, &MemoryOps.Push),
+			// ================================================================
+			// GROUP 5: Mask 0xFF80
+			// ================================================================
+			// ADD (SP + imm7)
+			new OpcodeRule (0xFF80, 0xB000, &ArithmeticOps.AddSpImmediate7),
 
-            // PUSH {regs, LR}
-            // Mask: 1111 1111 0000 0000 (FF00) -> Pattern: B500
-            new OpcodeRule(0xFF00, 0xB500, &MemoryOps.PushLr),
-        ];
-        
-        for (var i = 0; i < 65536; i++)
-        {
-            var opcode = (ushort)i;
-            foreach (ref readonly var rule in rules) {
-                if ((opcode & rule.Mask) != rule.Pattern)
-                    continue;
-                _fastTablePtr[i] = rule.Handler;
-                break;
-            }
-        }
-    }
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Dispatch(ushort opcode, CortexM0Plus cpu)
-    {
-        _fastTablePtr[opcode](opcode, cpu);
-    }
+			// ================================================================
+			// GROUP 6: Mask 0xFF00 (8 bits significant - Broad Categories)
+			// ================================================================
+			// 3. Low Priority: ADD Generic (R0-R12, R14)
+			new OpcodeRule (0xFF00, 0x4400, &ArithmeticOps.AddHighToReg),
+			// CMP Rn, Rm (High Registers - Encoding T2)
+			new OpcodeRule (0xFF00, 0x4500, &ArithmeticOps.CmpHighRegister),
+			// 3. MOV Rd, Rm (Generic Fallback)
+			new OpcodeRule (0xFF00, 0x4600, &BitOps.MovRegister),
+			// ORRS (Rd, Rm) - NOTE: This covers 0x4300-0x43FF.
+			// MULS (0x4340) and MVNS (0x43C0) are subsets and were handled above.
+			new OpcodeRule (0xFF00, 0x4300, &ArithmeticOps.Orrs),
 
-    public nuint GetHandler(ushort opcode)
-    {
-        return (nuint)_fastTablePtr[opcode];
-    }
+			// Stack Operations
+			new OpcodeRule (0xFF00, 0xBC00, &MemoryOps.Pop),
+			new OpcodeRule (0xFF00, 0xBD00, &MemoryOps.PopPc),
+			new OpcodeRule (0xFF00, 0xB400, &MemoryOps.Push),
+			new OpcodeRule (0xFF00, 0xB500, &MemoryOps.PushLr),
 
-    private static void HandleUndefined(ushort opcode, CortexM0Plus cpu)
-    {
-        throw new Exception($"Undefined Opcode: 0x{opcode:X4} PC={cpu.Registers.PC:X8}");
-    }
-    
-    public void Dispose()
-    {
-        if (_pinnedHandle.IsAllocated) _pinnedHandle.Free();
-    }
+			// Conditional Branches (T1)
+			// SVC (0xDF00) is technically caught here if not handled separately.
+			// Ensure the handler filters 0xF (SVC) or add a specific SVC rule with higher priority.
+			new OpcodeRule (0xFF00, 0xD000, &FlowOps.Beq),
+			new OpcodeRule (0xFF00, 0xD100, &FlowOps.Bne),
+			new OpcodeRule (0xFF00, 0xD200, &FlowOps.Bcs),
+			new OpcodeRule (0xFF00, 0xD300, &FlowOps.Bcc),
+			new OpcodeRule (0xFF00, 0xD400, &FlowOps.Bmi),
+			new OpcodeRule (0xFF00, 0xD500, &FlowOps.Bpl),
+			new OpcodeRule (0xFF00, 0xD600, &FlowOps.Bvs),
+			new OpcodeRule (0xFF00, 0xD700, &FlowOps.Bvc),
+			new OpcodeRule (0xFF00, 0xD800, &FlowOps.Bhi),
+			new OpcodeRule (0xFF00, 0xD900, &FlowOps.Bls),
+			new OpcodeRule (0xFF00, 0xDA00, &FlowOps.Bge),
+			new OpcodeRule (0xFF00, 0xDB00, &FlowOps.Blt),
+			new OpcodeRule (0xFF00, 0xDC00, &FlowOps.Bgt),
+			new OpcodeRule (0xFF00, 0xDD00, &FlowOps.Ble),
+
+			// ================================================================
+			// GROUP 7: Mask 0xFE00
+			// ================================================================
+			// ADDS (Rd, Rn, Rm) - Encoding T1 Register
+			new OpcodeRule (0xFE00, 0x1800, &ArithmeticOps.AddsRegister),
+			// ADDS (Rd, Rn, imm3)
+			new OpcodeRule (0xFE00, 0x1C00, &ArithmeticOps.AddsImmediate3),
+
+			// ================================================================
+			// GROUP 8: Mask 0xF800 (5 bits significant - Most Generic)
+			// ================================================================
+			// ADD (Rd = SP + imm8)
+			new OpcodeRule (0xF800, 0xA800, &ArithmeticOps.AddSpImmediate8),
+			// ADDS (Rd, imm8)
+			new OpcodeRule (0xF800, 0x3000, &ArithmeticOps.AddsImmediate8),
+			// ADR (Rd, imm8)
+			new OpcodeRule (0xF800, 0xA000, &ArithmeticOps.Adr),
+			// ASRS (Rd, Rm, imm5)
+			new OpcodeRule (0xF800, 0x1000, &BitOps.AsrsImm5),
+			// BL (Branch with Link)
+			new OpcodeRule (0xF800, 0xF000, &FlowOps.Bl),
+			// B (Unconditional) - T2
+			new OpcodeRule (0xF800, 0xE000, &FlowOps.Branch),
+			// CMP Rn, #imm8
+			new OpcodeRule (0xF800, 0x2800, &ArithmeticOps.CmpImmediate),
+
+			// ================================================================
+			// GROUP 9: Mask 0xBF00
+			// ================================================================
+			// NOP (Hint)
+			new OpcodeRule (0xBF00, 0xBF00, &SystemOps.Nop),
+		];
+
+		for (var i = 0; i < 65536; i++) {
+			var opcode = (ushort)i;
+			foreach (ref readonly var rule in rules) {
+				if ((opcode & rule.Mask) != rule.Pattern)
+					continue;
+				_fastTablePtr[i] = rule.Handler;
+				break;
+			}
+		}
+	}
+
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public void Dispatch (ushort opcode, CortexM0Plus cpu)
+	{
+		_fastTablePtr[opcode] (opcode, cpu);
+	}
+
+	public nuint GetHandler (ushort opcode)
+	{
+		return (nuint)_fastTablePtr[opcode];
+	}
+
+	private static void HandleUndefined (ushort opcode, CortexM0Plus cpu)
+	{
+		throw new Exception ($"Undefined Opcode: 0x{opcode:X4} PC={cpu.Registers.PC:X8}");
+	}
+
+	public void Dispose ()
+	{
+		if (_pinnedHandle.IsAllocated) _pinnedHandle.Free ();
+	}
 }
