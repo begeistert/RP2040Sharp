@@ -6,34 +6,30 @@ namespace RP2040.Core.Cpu.Instructions;
 
 public unsafe static class MemoryOps
 {
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Pop(ushort opcode, CortexM0Plus cpu)
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Pop (ushort opcode, CortexM0Plus cpu)
 	{
 		var mask = (uint)(opcode & 0xFF);
-		var regCount = (uint)BitOperations.PopCount(mask);
-    
+		var regCount = (uint)BitOperations.PopCount (mask);
+
 		var sp = cpu.Registers.SP;
-		var finalSp = sp + (regCount * 4); 
+		var finalSp = sp + (regCount * 4);
 
-		if ((sp >> 28) == BusInterconnect.REGION_SRAM)
-		{
-			var rawPtr = (uint*)(cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM));
+		if ((sp >> 28) == BusInterconnect.REGION_SRAM) {
+			var rawPtr = cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM);
 
-			while (mask != 0)
-			{
-				var regIdx = BitOperations.TrailingZeroCount(mask);
-				cpu.Registers[regIdx] = *rawPtr;
-            
-				rawPtr++;
+			while (mask != 0) {
+				var regIdx = BitOperations.TrailingZeroCount (mask);
+				cpu.Registers[regIdx] = Unsafe.ReadUnaligned<uint> (rawPtr);
+
+				rawPtr += 4;
 				mask &= (mask - 1);
 			}
 		}
-		else
-		{
-			while (mask != 0)
-			{
-				var regIdx = BitOperations.TrailingZeroCount(mask);
-				cpu.Registers[regIdx] = cpu.Bus.ReadWord(sp);
+		else {
+			while (mask != 0) {
+				var regIdx = BitOperations.TrailingZeroCount (mask);
+				cpu.Registers[regIdx] = cpu.Bus.ReadWord (sp);
 				sp += 4;
 				mask &= (mask - 1);
 			}
@@ -43,45 +39,41 @@ public unsafe static class MemoryOps
 		cpu.Cycles += 1 + regCount;
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void PopPc(ushort opcode, CortexM0Plus cpu)
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void PopPc (ushort opcode, CortexM0Plus cpu)
 	{
 		var mask = (uint)(opcode & 0xFF);
-		var regCount = (uint)BitOperations.PopCount(mask);
-    
+		var regCount = (uint)BitOperations.PopCount (mask);
+
 		var sp = cpu.Registers.SP;
 		var finalSp = sp + ((regCount + 1) * 4);
 
-		if ((sp >> 28) == BusInterconnect.REGION_SRAM)
-		{
-			var rawPtr = (uint*)(cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM));
+		if ((sp >> 28) == BusInterconnect.REGION_SRAM) {
+			var rawPtr = cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM);
 
-			while (mask != 0)
-			{
-				var regIdx = BitOperations.TrailingZeroCount(mask);
-				cpu.Registers[regIdx] = *rawPtr;
-				rawPtr++;
+			while (mask != 0) {
+				var regIdx = BitOperations.TrailingZeroCount (mask);
+				cpu.Registers[regIdx] = Unsafe.ReadUnaligned<uint> (rawPtr);
+				rawPtr += 4;
 				mask &= (mask - 1);
 			}
-			var newPc = *rawPtr;
-			
+			var newPc = Unsafe.ReadUnaligned<uint> (rawPtr);
+
 			cpu.Registers.PC = newPc & 0xFFFFFFFE;
 		}
-		else
-		{
-			while (mask != 0)
-			{
-				var regIdx = BitOperations.TrailingZeroCount(mask);
-				cpu.Registers[regIdx] = cpu.Bus.ReadWord(sp);
+		else {
+			while (mask != 0) {
+				var regIdx = BitOperations.TrailingZeroCount (mask);
+				cpu.Registers[regIdx] = cpu.Bus.ReadWord (sp);
 				sp += 4;
 				mask &= (mask - 1);
 			}
-			var newPc = cpu.Bus.ReadWord(sp);
+			var newPc = cpu.Bus.ReadWord (sp);
 			cpu.Registers.PC = newPc & 0xFFFFFFFE;
 		}
 
 		cpu.Registers.SP = finalSp;
-		cpu.Cycles += 4 + regCount; 
+		cpu.Cycles += 4 + regCount;
 	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
@@ -95,19 +87,18 @@ public unsafe static class MemoryOps
 		var newSp = oldSp - totalBytes;
 
 		if ((newSp >> 28) == BusInterconnect.REGION_SRAM) {
-			var rawPtr = (uint*)(cpu.Bus.PtrSram + (newSp & BusInterconnect.MASK_SRAM));
+			var rawPtr = cpu.Bus.PtrSram + (newSp & BusInterconnect.MASK_SRAM);
 
 			while (mask != 0) {
 				var regIdx = BitOperations.TrailingZeroCount (mask);
 
-				*rawPtr = cpu.Registers[regIdx];
+				Unsafe.WriteUnaligned<uint> (rawPtr, cpu.Registers[regIdx]);
 
-				rawPtr++;
+				rawPtr += 4;
 				mask &= (mask - 1);
 			}
 		}
-		else
-		{
+		else {
 			var writePtr = newSp;
 			while (mask != 0) {
 				var regIdx = BitOperations.TrailingZeroCount (mask);

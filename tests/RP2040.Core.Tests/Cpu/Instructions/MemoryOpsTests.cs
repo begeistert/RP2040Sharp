@@ -46,8 +46,8 @@ public class MemoryOpsTests
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			_bus.WriteWord (STACK_BASE, 0x10101010);
-			_bus.WriteWord (STACK_BASE + 4, 0x20202020); 
-			_bus.WriteWord (STACK_BASE + 8, 0x30303030); 
+			_bus.WriteWord (STACK_BASE + 4, 0x20202020);
+			_bus.WriteWord (STACK_BASE + 8, 0x30303030);
 
 			// Act
 			_cpu.Step ();
@@ -83,14 +83,11 @@ public class MemoryOpsTests
 		public void ShouldPopInAscendingIndexOrder ()
 		{
 			// Arrange
-			// POP {R7, R0}
-			// Aunque pongamos R7 primero en la máscara o llamada, 
-			// ARM especifica que R0 (índice menor) se lee de la dirección menor.
 			var opcode = InstructionEmiter.Pop (false, (1 << R7) | (1 << R0));
 			_bus.WriteHalfWord (0x20000000, opcode);
 
-			_bus.WriteWord (STACK_BASE, 0xAAAAAAAA); // Debería ir a R0
-			_bus.WriteWord (STACK_BASE + 4, 0xBBBBBBBB); // Debería ir a R7
+			_bus.WriteWord (STACK_BASE, 0xAAAAAAAA); 
+			_bus.WriteWord (STACK_BASE + 4, 0xBBBBBBBB); 
 
 			// Act
 			_cpu.Step ();
@@ -104,7 +101,7 @@ public class MemoryOpsTests
 		public void ShouldConsumeExtraCyclesForPcPop ()
 		{
 			// Arrange
-			var opcode = InstructionEmiter.Pop (true, 0); 
+			var opcode = InstructionEmiter.Pop (true, 0);
 			_bus.WriteHalfWord (0x20000000, opcode);
 
 			var cyclesBefore = _cpu.Cycles;
