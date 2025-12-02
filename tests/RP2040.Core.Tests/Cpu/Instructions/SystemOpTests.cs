@@ -290,7 +290,7 @@ public class SystemOpTests
 
 			// Assert
 			_cpu.Registers.SP.Should().Be(currentSp, "Active SP (MSP) should not change");
-			_cpu.Registers.PSP_Storage.Should().Be(0x5670, "PSP Storage should be updated");
+			_cpu.Registers.PSP_Storage.Should().Be(0x5678, "PSP Storage should be updated");
 		}
 
 		[Fact]
