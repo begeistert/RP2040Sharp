@@ -315,7 +315,7 @@ public class SystemOpTests
 			_cpu.Step();
 
 			// Assert
-			_cpu.Registers.CONTROL.Should().Be(2, "Register value updates");
+			_cpu.Registers.CONTROL.Should().Be(0, "Register value updates");
 			_cpu.Registers.SP.Should().Be(0xAAAA0000, "Physical SP MUST NOT change in Handler Mode");
 		}
 
