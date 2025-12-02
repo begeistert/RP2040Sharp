@@ -118,20 +118,18 @@ public static class SystemOps
 
 					case 20: // CONTROL
 						var oldControl = cpu.Registers.CONTROL;
-						var newControl = oldControl;
+						var newNpriv = value & 1;
+						var newSpsel = (cpu.Registers.IPSR == 0) ? (value & 2) : (oldControl & 2);
+						
+						var newControl = newNpriv | newSpsel;
 
-						newControl = (newControl & ~1u) | (value & 1);
-
-						if (cpu.Registers.IPSR == 0) {
-							var newSpsel = value & 2;
-							newControl = (newControl & ~2u) | newSpsel;
-						}
-
-						if (cpu.Registers.IPSR == 0 && ((oldControl ^ newControl) & 2) != 0) {
+						if (((oldControl ^ newControl) & 2) != 0)
+						{
 							cpu.Registers.CONTROL = newControl;
-							cpu.UpdateStackPointerSource ();
+							cpu.UpdateStackPointerSource();
 						}
-						else {
+						else
+						{
 							cpu.Registers.CONTROL = newControl;
 						}
 						break;
