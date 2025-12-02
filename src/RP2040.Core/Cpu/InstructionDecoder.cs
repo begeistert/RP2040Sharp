@@ -156,6 +156,8 @@ public unsafe class InstructionDecoder : IDisposable
 			new OpcodeRule (0xF800, 0xE000, &FlowOps.Branch),
 			// CMP Rn, #imm8
 			new OpcodeRule (0xF800, 0x2800, &ArithmeticOps.CmpImmediate),
+			// LDMIA (Load Multiple Increment After)
+			new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
 
 			// ================================================================
 			// GROUP 9: Mask 0xBF00

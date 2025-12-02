@@ -237,4 +237,77 @@ public class MemoryOpsTests
 			(_cpu.Cycles - initialCycles).Should ().Be (5);
 		}
 	}
+
+	public class Ldmia
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		private const uint CODE_BASE = 0x20000000;
+
+		public Ldmia ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus (_bus);
+
+			_cpu.Registers.PC = CODE_BASE;
+		}
+
+		[Fact]
+		public void ShouldExecuteLdmiaWithWriteBack ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Ldmia (R0, 1 << R1 | 1 << R2);
+			_bus.WriteHalfWord (CODE_BASE, opcode);
+			const uint baseAddr = 0x20000010;
+			_cpu.Registers[R0] = baseAddr;
+
+			_bus.WriteWord (baseAddr, 0xF00DF00D);
+			_bus.WriteWord (baseAddr + 4, 0x4242);
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers.PC.Should ().Be (CODE_BASE + 2);
+			_cpu.Registers[R0].Should ().Be (baseAddr + 8);
+			_cpu.Registers[R1].Should ().Be (0xF00DF00D);
+			_cpu.Registers[R2].Should ().Be (0x4242);
+		}
+
+		[Fact]
+		public void ShouldExecuteLdmiaWithoutWriteBackIfBaseInList ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Ldmia (R5, 1 << R5);
+			_bus.WriteHalfWord (CODE_BASE, opcode);
+			const uint baseAddr = 0x20000010;
+			_cpu.Registers[R5] = baseAddr;
+			_bus.WriteWord (baseAddr, 0xF00DF00D);
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers.PC.Should ().Be (CODE_BASE + 2);
+			_cpu.Registers[R5].Should ().Be (0xF00DF00D);
+		}
+
+		[Fact]
+		public void ShouldConsumeCorrectCycles ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Ldmia (R0, 1 << R1 | 1 << R2);
+			_bus.WriteHalfWord (CODE_BASE, opcode);
+			_cpu.Registers[R0] = 0x20000010;
+
+			var initialCycles = _cpu.Cycles;
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			(_cpu.Cycles - initialCycles).Should ().Be (3);
+		}
+	}
 }

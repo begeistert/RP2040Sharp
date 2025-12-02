@@ -229,4 +229,11 @@ public static class InstructionEmiter
 		if (specialRegister > 255) throw new ArgumentException("Special register index out of range (0-15)");
 		return 0x88000000 | (specialRegister & 0xFF) << 16 | 0xf380 | rd & 0xf ;
 	}
+	
+	public static ushort Ldmia (uint rn, uint registerList)
+	{
+		if (registerList > 255) throw new ArgumentException("Register list too large (0-15)");
+		if (rn > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0xC800 | (rn & 0x7) << 8 | registerList & 0xFF);
+	}
 }

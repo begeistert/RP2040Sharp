@@ -559,4 +559,18 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+	
+	[Fact]
+	public void Ldmia ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.Ldmia (R0, (1 << R1) | (1 << R2));
+		var expectedPointer = AddressOf (&MemoryOps.Ldmia);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
