@@ -255,8 +255,24 @@ public class SystemOpTests
 			_cpu.Step();
 
 			// Assert
-			_cpu.Registers.SP.Should().Be(0x1230); // 0x1234 aligned to 4 bytes
+			_cpu.Registers.SP.Should().Be(0x1234); // 0x1234 aligned to 4 bytes
 			_cpu.Registers.PC.Should().Be(0x20000004);
+		}
+		
+		[Fact]
+		public void ShouldAlignMsp_WhenWritingUnaligned()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Msr(SYSM_MSP, R0);
+			_bus.WriteWord(0x20000000, opcode);
+
+			_cpu.Registers[R0] = 0x1233;
+
+			// Act
+			_cpu.Step();
+
+			// Assert
+			_cpu.Registers.SP.Should().Be(0x1230, "Should align value to 4 bytes");
 		}
 
 		[Fact]
