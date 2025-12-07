@@ -181,6 +181,13 @@ public static class InstructionEmiter
 		return (ushort)(0x4600 | ((rd & 8) << 4) | ((rm & 0xF) << 3) | (rd & 7));
 	}
 
+	public static ushort Movs (uint rd, uint imm8)
+	{
+		if (rd > 15) throw new ArgumentException("Register index out of range (0-15)");
+		if (imm8 > 255) throw new ArgumentException("Immediate too large for MOVS");
+		return (ushort)(0x2000 | (rd & 7) << 8 | imm8 & 0xFF);
+	}
+	
 	public static ushort Muls (uint rn, uint rdm)
 	{
 		if (rn > 7 || rdm > 7) throw new ArgumentException("Register index out of range (0-7)");
