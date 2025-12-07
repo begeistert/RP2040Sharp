@@ -342,35 +342,7 @@ public class BitOpsTests
 			// Assert
 			_cpu.Registers[SP].Should ().Be (52);
 		}
-	}
 
-	public class MovsImm8
-	{
-		private readonly CortexM0Plus _cpu;
-		private readonly BusInterconnect _bus;
-
-		public MovsImm8()
-		{
-			_bus = new BusInterconnect();
-			_cpu = new CortexM0Plus(_bus);
-			_cpu.Registers.PC = 0x20000000;
-		}
-
-		[Fact]
-		public void ShouldExecute ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.MovsImm8 (R5, 128);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			// Act
-			_cpu.Step();
-			
-			// Assert
-			_cpu.Registers[R5].Should().Be(128);
-			_cpu.Registers.PC.Should().Be(0x20000002);
-		}
-		
 		[Fact]
 		public void MOV_Should_Clear_Lower_2Bits_Of_SP()
 		{
@@ -399,6 +371,35 @@ public class BitOpsTests
     
 			_cpu.Registers.PC.Should().Be(0x52); 
 		}
+	}
+
+	public class Movs
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		public Movs()
+		{
+			_bus = new BusInterconnect();
+			_cpu = new CortexM0Plus(_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecute ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Movs (R5, 128);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers[R5].Should().Be(128);
+			_cpu.Registers.PC.Should().Be(0x20000002);
+		}
+	
 	}
 	
 	[Fact]

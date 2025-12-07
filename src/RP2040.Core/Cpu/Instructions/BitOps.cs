@@ -148,15 +148,13 @@ public static class BitOps
 	}
 
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void MovsImm8(ushort opcode, CortexM0Plus cpu)
+	public static void Movs(ushort opcode, CortexM0Plus cpu)
 	{
 		var value = (uint)(opcode & 0xFF);
-		var rd = (opcode >> 8) & 7;
 
-		ref var ptrRd = ref cpu.Registers[rd];
-		ptrRd = value;
+		cpu.Registers[(opcode >> 8) & 7] = value;
 		
-		cpu.Registers.N = false; // imm8 is always positive (0-255)
+		cpu.Registers.N = false;
 		cpu.Registers.Z = value == 0;
 	}
 	

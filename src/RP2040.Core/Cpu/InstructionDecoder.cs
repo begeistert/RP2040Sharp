@@ -157,7 +157,7 @@ public unsafe class InstructionDecoder : IDisposable
 			// CMP Rn, #imm8
 			new OpcodeRule (0xF800, 0x2800, &ArithmeticOps.CmpImmediate),
 			// MOVS (Rd, #imm8)
-			new OpcodeRule (0xF800, 0x2000, &BitOps.MovsImm8),
+			new OpcodeRule (0xF800, 0x2000, &BitOps.Movs),
 			// LDMIA (Load Multiple Increment After)
 			new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
 
