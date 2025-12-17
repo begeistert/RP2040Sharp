@@ -241,56 +241,56 @@ public class SystemOpTests
 			_cpu.Registers.CONTROL = 0;
 			_cpu.Registers.IPSR = 0;
 		}
-		
+
 		[Fact]
-		public void ShouldWriteMsp_WhenActive()
+		public void ShouldWriteMsp_WhenActive ()
 		{
 			// Arrange
-			var opcode = InstructionEmiter.Msr(SYSM_MSP, R0); 
-			_bus.WriteWord(0x20000000, opcode);
+			var opcode = InstructionEmiter.Msr (SYSM_MSP, R0);
+			_bus.WriteWord (0x20000000, opcode);
 
 			_cpu.Registers[R0] = 0x1234;
 
 			// Act
-			_cpu.Step();
+			_cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should().Be(0x1234); // 0x1234 aligned to 4 bytes
-			_cpu.Registers.PC.Should().Be(0x20000004);
+			_cpu.Registers.SP.Should ().Be (0x1234); // 0x1234 aligned to 4 bytes
+			_cpu.Registers.PC.Should ().Be (0x20000004);
 		}
-		
+
 		[Fact]
-		public void ShouldAlignMsp_WhenWritingUnaligned()
+		public void ShouldAlignMsp_WhenWritingUnaligned ()
 		{
 			// Arrange
-			var opcode = InstructionEmiter.Msr(SYSM_MSP, R0);
-			_bus.WriteWord(0x20000000, opcode);
+			var opcode = InstructionEmiter.Msr (SYSM_MSP, R0);
+			_bus.WriteWord (0x20000000, opcode);
 
 			_cpu.Registers[R0] = 0x1233;
 
 			// Act
-			_cpu.Step();
+			_cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should().Be(0x1230, "Should align value to 4 bytes");
+			_cpu.Registers.SP.Should ().Be (0x1230, "Should align value to 4 bytes");
 		}
 
 		[Fact]
-		public void ShouldWritePsp_WhenInactive()
+		public void ShouldWritePsp_WhenInactive ()
 		{
 			// Arrange
-			var opcode = InstructionEmiter.Msr(SYSM_PSP, R0);
-			_bus.WriteWord(0x20000000, opcode);
+			var opcode = InstructionEmiter.Msr (SYSM_PSP, R0);
+			_bus.WriteWord (0x20000000, opcode);
 
 			_cpu.Registers[R0] = 0x5678;
 			var currentSp = _cpu.Registers.SP; // MSP actual
 
 			// Act
-			_cpu.Step();
+			_cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should().Be(currentSp, "Active SP (MSP) should not change");
-			_cpu.Registers.PSP_Storage.Should().Be(0x5678, "PSP Storage should be updated");
+			_cpu.Registers.SP.Should ().Be (currentSp, "Active SP (MSP) should not change");
+			_cpu.Registers.PSP_Storage.Should ().Be (0x5678, "PSP Storage should be updated");
 		}
 
 		[Fact]
@@ -299,8 +299,8 @@ public class SystemOpTests
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_CONTROL, R0);
 			_bus.WriteWord (0x20000000, opcode);
-			
-			_cpu.Registers.SP = 0xAAAA0000; 
+
+			_cpu.Registers.SP = 0xAAAA0000;
 			_cpu.Registers.PSP_Storage = 0xBBBB0000;
 			_cpu.Registers[R0] = 2; // Bit 1 = SPSEL=1 (Switch to PSP)
 
@@ -314,11 +314,11 @@ public class SystemOpTests
 		}
 
 		[Fact]
-		public void ShouldNotSwitchStack_IfInHandlerMode()
+		public void ShouldNotSwitchStack_IfInHandlerMode ()
 		{
 			// Arrange
-			var opcode = InstructionEmiter.Msr(SYSM_CONTROL, R0);
-			_bus.WriteWord(0x20000000, opcode);
+			var opcode = InstructionEmiter.Msr (SYSM_CONTROL, R0);
+			_bus.WriteWord (0x20000000, opcode);
 
 			_cpu.Registers.IPSR = 1; // Handler Mode!
 			_cpu.Registers.SP = 0xAAAA0000;
@@ -328,11 +328,11 @@ public class SystemOpTests
 			_cpu.Registers[R0] = 2; // Try set SPSEL=1
 
 			// Act
-			_cpu.Step();
+			_cpu.Step ();
 
 			// Assert
-			_cpu.Registers.CONTROL.Should().Be(0, "Register value updates");
-			_cpu.Registers.SP.Should().Be(0xAAAA0000, "Physical SP MUST NOT change in Handler Mode");
+			_cpu.Registers.CONTROL.Should ().Be (0, "Register value updates");
+			_cpu.Registers.SP.Should ().Be (0xAAAA0000, "Physical SP MUST NOT change in Handler Mode");
 		}
 
 		[Fact]

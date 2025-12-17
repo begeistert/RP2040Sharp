@@ -19,7 +19,7 @@ public class ArithmeticOpsTests
 	const int R10 = 10;
 	const int R11 = 11;
 	const int R12 = 12;
-	
+
 	const int IP = 12;
 	const int SP = 13;
 	const int PC = 15;
