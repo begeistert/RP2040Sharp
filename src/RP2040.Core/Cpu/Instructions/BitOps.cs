@@ -171,4 +171,63 @@ public static class BitOps
 		cpu.Registers.N = (int)ptrRd < 0; 
 		cpu.Registers.Z = (ptrRd == 0);
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void LslsImm5(ushort opcode, CortexM0Plus cpu)
+	{
+		var imm5 = (opcode >> 6) & 0x1F;
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+    
+		ref var ptrRd = ref cpu.Registers[rd];
+		var valRm = cpu.Registers[rm];
+    
+		var extended = (ulong)valRm << imm5;
+		var result = (uint)extended;
+		var carry = (extended & 0x1_0000_0000) != 0;
+    
+		ptrRd = result;
+    
+		cpu.Registers.N = (int)result < 0;
+		cpu.Registers.Z = (result == 0);
+		cpu.Registers.C = carry;
+	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void LslsZero(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+
+		ref var ptrRd = ref cpu.Registers[rd];
+		var valRm = cpu.Registers[rm];
+		ptrRd = valRm;
+
+		cpu.Registers.N = (int)valRm < 0;
+		cpu.Registers.Z = (valRm == 0);
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void LslsRegister(ushort opcode, CortexM0Plus cpu)
+	{
+		var rdn = opcode & 0x7;
+		var rm = (opcode >> 3) & 0x7;
+
+		ref var ptrRdn = ref cpu.Registers[rdn];
+    
+		var valRdn = ptrRdn;
+		var shift = (int)(cpu.Registers[rm] & 0xFF); 
+
+		var extended = (ulong)valRdn << shift;
+		var result = shift >= 32 ? 0 : (uint)extended;
+
+		var calcCarry = (extended & 0x1_0000_0000) != 0;
+		var finalCarry = (shift == 0) ? (cpu.Registers.GetC() != 0) : calcCarry;
+
+		ptrRdn = result;
+    
+		cpu.Registers.N = (int)result < 0;
+		cpu.Registers.Z = (result == 0);
+		cpu.Registers.C = finalCarry;
+	}
 }
