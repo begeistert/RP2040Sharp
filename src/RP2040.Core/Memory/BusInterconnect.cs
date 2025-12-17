@@ -33,6 +33,9 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 
 	public BusInterconnect ()
 	{
+		_pageTable = (byte**)NativeMemory.AllocZeroed(16, (nuint)sizeof(byte*));
+		_maskTable = (uint*)NativeMemory.AllocZeroed(16, sizeof(uint));
+		
 		_sram = new RandomAccessMemory (512 * 1024);
 		_flash = new RandomAccessMemory (2 * 1024 * 1024);
 		_bootRom = new RandomAccessMemory (16 * 1024);
@@ -41,14 +44,14 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 		PtrFlash = _flash.BasePtr;
 		PtrBootRom = _bootRom.BasePtr;
 
-		_fastBasePtrs[REGION_BOOTROM] = PtrBootRom;
-		_fastMasks[REGION_BOOTROM] = MASK_BOOTROM;
+		_pageTable[REGION_BOOTROM] = PtrBootRom;
+		_maskTable[REGION_BOOTROM] = MASK_BOOTROM;
 
-		_fastBasePtrs[REGION_FLASH] = PtrFlash;
-		_fastMasks[REGION_FLASH] = MASK_FLASH;
+		_pageTable[REGION_FLASH] = PtrFlash;
+		_maskTable[REGION_FLASH] = MASK_FLASH;
 
-		_fastBasePtrs[REGION_SRAM] = PtrSram;
-		_fastMasks[REGION_SRAM] = MASK_SRAM;
+		_pageTable[REGION_SRAM] = PtrSram;
+		_maskTable[REGION_SRAM] = MASK_SRAM;
 
 		MapDevice ((int)REGION_BOOTROM, _bootRom);
 		MapDevice ((int)REGION_FLASH, _flash);
