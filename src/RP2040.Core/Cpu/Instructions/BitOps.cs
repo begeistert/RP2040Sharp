@@ -140,10 +140,9 @@ public static class BitOps
 		var rd = ((opcode >> 4) & 0x8) | (opcode & 0x7);
 
 		ref var ptrRd = ref cpu.Registers[rd];
-        
 		var valRm = cpu.Registers[rm];
-		valRm += (uint)((rm + 1) >> 4) << 1;
 		
+		valRm += (uint)((rm + 1) >> 4) << 1;
 		ptrRd = valRm;
 	}
 
