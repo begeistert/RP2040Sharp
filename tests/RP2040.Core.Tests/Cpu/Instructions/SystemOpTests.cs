@@ -38,7 +38,7 @@ public class SystemOpTests
 	public void Bmb ()
 	{
 		// Arrange
-		var opcode = InstructionEmiter.Dmb ();
+		var opcode = InstructionEmiter.Dmb;
 		_bus.WriteWord (0x20000000, opcode);
 
 		// Act
@@ -52,7 +52,7 @@ public class SystemOpTests
 	public void Bsb ()
 	{
 		// Arrange
-		var opcode = InstructionEmiter.Dsb ();
+		var opcode = InstructionEmiter.Dsb;
 		_bus.WriteWord (0x20000000, opcode);
 
 		// Act
@@ -66,7 +66,7 @@ public class SystemOpTests
 	public void Nop ()
 	{
 		// Arrange
-		var opcode = InstructionEmiter.Nop ();
+		var opcode = InstructionEmiter.Nop;
 		_bus.WriteWord (0x20000000, opcode);
 
 		// Act

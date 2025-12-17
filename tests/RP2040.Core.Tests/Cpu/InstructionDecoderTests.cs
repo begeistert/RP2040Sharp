@@ -100,10 +100,10 @@ public unsafe class InstructionDecoderTests
 		Add ("Bx", InstructionEmiter.Bx (LR), &FlowOps.Bx);
 
 		// --- System & Memory ---
-		Add ("Dmb", (ushort)(InstructionEmiter.Dmb () & 0xFFFF), &SystemOps.Barrier);
-		Add ("Dsb", (ushort)(InstructionEmiter.Dsb () & 0xFFFF), &SystemOps.Barrier);
-		Add ("Isb", (ushort)(InstructionEmiter.Isb () & 0xFFFF), &SystemOps.Barrier);
-		Add ("Nop", InstructionEmiter.Nop (), &SystemOps.Nop);
+		Add ("Dmb", (ushort)(InstructionEmiter.Dmb & 0xFFFF), &SystemOps.Barrier);
+		Add ("Dsb", (ushort)(InstructionEmiter.Dsb & 0xFFFF), &SystemOps.Barrier);
+		Add ("Isb", (ushort)(InstructionEmiter.Isb & 0xFFFF), &SystemOps.Barrier);
+		Add ("Nop", InstructionEmiter.Nop, &SystemOps.Nop);
 		Add ("Mrs", (ushort)(InstructionEmiter.Mrs (R0, 5) & 0xFFFF), &SystemOps.Mrs);
 		Add ("Msr", (ushort)(InstructionEmiter.Msr (8, R0) & 0xFFFF), &SystemOps.Msr);
 
