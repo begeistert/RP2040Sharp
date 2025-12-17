@@ -573,4 +573,46 @@ public unsafe class InstructionDecoderTests
 		// Assert
 		handlerAddress.Should ().Be (expectedPointer);
 	}
+
+	[Fact]
+	public void LslsImm ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.LslsImm5 (R5, R5, 18);
+		var expectedPointer = AddressOf (&BitOps.LslsImm5);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	[Fact]
+	public void LslsImmZero ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.LslsImm5 (R5, R5, 0);
+		var expectedPointer = AddressOf (&BitOps.LslsZero);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
+	
+	[Fact]
+	public void LslsRegister ()
+	{
+		// Arrange
+		var opcode = InstructionEmiter.LslsRegister (R5, R0);
+		var expectedPointer = AddressOf (&BitOps.LslsRegister);
+		
+		// Act
+		var handlerAddress = Decoder.GetHandler(opcode);
+		
+		// Assert
+		handlerAddress.Should ().Be (expectedPointer);
+	}
 }
