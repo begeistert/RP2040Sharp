@@ -1,5 +1,5 @@
-using System;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace RP2040.Core.Memory;
 
@@ -20,8 +20,8 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 	public readonly byte* PtrFlash;
 	public readonly byte* PtrBootRom;
 
-	private readonly byte*[] _fastBasePtrs = new byte*[16];
-	private readonly uint[] _fastMasks = new uint[16];
+	private readonly byte** _pageTable;
+	private readonly uint* _maskTable;
 
 	private readonly IMemoryMappedDevice[] _memoryMap = new IMemoryMappedDevice[16];
 
