@@ -68,27 +68,27 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 	public byte ReadByte (uint address)
 	{
 		var region = address >> 28;
-		var basePtr = _fastBasePtrs[region];
+		var basePtr = _pageTable[region];
 
-		return basePtr != null ? basePtr[address & _fastMasks[region]] : ReadByteDispatch (address);
+		return basePtr != null ? basePtr[address & _maskTable[region]] : ReadByteDispatch (address);
 	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public ushort ReadHalfWord (uint address)
 	{
 		var region = address >> 28;
-		var basePtr = _fastBasePtrs[region];
+		var basePtr = _pageTable[region];
 
-		return basePtr != null ? Unsafe.ReadUnaligned<ushort> (basePtr + (address & _fastMasks[region])) : ReadHalfWordDispatch (address);
+		return basePtr != null ? Unsafe.ReadUnaligned<ushort> (basePtr + (address & _maskTable[region])) : ReadHalfWordDispatch (address);
 	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public uint ReadWord (uint address)
 	{
 		var region = address >> 28;
-		var basePtr = _fastBasePtrs[region];
+		var basePtr = _pageTable[region];
 
-		return basePtr != null ? Unsafe.ReadUnaligned<uint> (basePtr + (address & _fastMasks[region])) : ReadWordDispatch (address);
+		return basePtr != null ? Unsafe.ReadUnaligned<uint> (basePtr + (address & _maskTable[region])) : ReadWordDispatch (address);
 
 	}
 
