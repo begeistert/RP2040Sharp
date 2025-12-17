@@ -52,7 +52,7 @@ public static class FlowOps
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void Branch (ushort opcode, CortexM0Plus cpu)
 	{
-		var offset = (int)(opcode << 21) >> 20;
+		var offset = (opcode << 21) >> 20;
 
 		ref var pc = ref cpu.Registers.PC;
 

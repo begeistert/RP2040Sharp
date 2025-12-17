@@ -746,7 +746,7 @@ public class ArithmeticOpsTests
 			var opcode = InstructionEmiter.Muls (R0, R2);
 			_bus.WriteHalfWord (0x20000000, opcode);
 			
-			_cpu.Registers[R0] = (uint)(-1 & 0xFFFFFFFF);
+			_cpu.Registers[R0] = 0xFFFFFFFF;
 			_cpu.Registers[R2] = 1000000;
 			
 			// Act
