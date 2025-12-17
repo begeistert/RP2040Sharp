@@ -143,10 +143,24 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 
 	public void Dispose ()
 	{
-		if (_disposed) return;
-		_sram.Dispose ();
-		_flash.Dispose ();
-		_bootRom.Dispose ();
+		Dispose (true);
+		GC.SuppressFinalize (this);
+	}
+
+	protected virtual void Dispose (bool disposing)
+	{
+		if (_disposed) {
+			return;
+		}
+
+		if (disposing) {
+			_sram?.Dispose ();
+			_flash?.Dispose ();
+			_bootRom?.Dispose ();
+		}
+
+		Array.Clear (_fastBasePtrs, 0, _fastBasePtrs.Length);
+
 		_disposed = true;
 	}
 }

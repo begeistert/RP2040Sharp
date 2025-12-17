@@ -54,7 +54,4 @@ public unsafe class RandomAccessMemory : IMemoryMappedDevice, IDisposable
 			_pinnedHandle.Free ();
 		}
 	}
-
-	[MethodImpl (MethodImplOptions.NoInlining)]
-	private static void ThrowOutOfRange () => throw new IndexOutOfRangeException ();
 }

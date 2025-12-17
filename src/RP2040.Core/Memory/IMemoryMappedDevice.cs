@@ -4,11 +4,11 @@ public interface IMemoryMappedDevice
 {
 	uint Size { get; }
 
-	byte ReadByte (uint offset);
-	ushort ReadHalfWord (uint offset);
-	uint ReadWord (uint offset);
+	byte ReadByte (uint address);
+	ushort ReadHalfWord (uint address);
+	uint ReadWord (uint address);
 
-	void WriteByte (uint offset, byte value);
-	void WriteHalfWord (uint offset, ushort value);
-	void WriteWord (uint offset, uint value);
+	void WriteByte (uint address, byte value);
+	void WriteHalfWord (uint address, ushort value);
+	void WriteWord (uint address, uint value);
 }
