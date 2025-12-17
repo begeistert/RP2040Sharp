@@ -319,26 +319,26 @@ public class BitOpsTests
 			// Arrange
 			var opcode = InstructionEmiter.Mov (R3, PC);
 			_bus.WriteHalfWord (0x20000000, opcode);
-			
+
 			// Act
 			_cpu.Step ();
-			
+
 			// Assert
 			_cpu.Registers[R3].Should ().Be (0x20000004);
 		}
-		
+
 		[Fact]
 		public void ShouldExecuteWithSp ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mov (SP, R8);
 			_bus.WriteHalfWord (0x20000000, opcode);
-			
+
 			_cpu.Registers[R8] = 55;
-			
+
 			// Act
 			_cpu.Step ();
-			
+
 			// Assert
 			_cpu.Registers[SP].Should ().Be (52);
 		}
@@ -401,22 +401,133 @@ public class BitOpsTests
 		}
 	
 	}
-	
+
 	[Fact]
 	public void Mvns ()
 	{
 		// Arrange
 		var opcode = InstructionEmiter.Mvns (R4, R3);
 		_bus.WriteHalfWord (0x20000000, opcode);
-			
+
 		_cpu.Registers[R3] = 0x11115555;
-			
+
 		// Act
 		_cpu.Step ();
-			
+
 		// Assert
 		_cpu.Registers[R4].Should ().Be (0xeeeeaaaa);
 		_cpu.Registers.N.Should ().BeTrue ();
 		_cpu.Registers.Z.Should ().BeFalse ();
+	}
+
+	public class Lsls
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+
+		public Lsls ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus (_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+
+		[Fact]
+		public void ShouldExecuteImmSimple ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.LslsImm5 (R5, R5, 18);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R5] = 0b00000000000000000011; // 0b11
+			_cpu.Registers.C = false;
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers[R5].Should ().Be (0b11000000000000000000);
+			_cpu.Registers.C.Should ().BeFalse ();
+			_cpu.Registers.PC.Should ().Be (0x20000002);
+		}
+
+		[Fact]
+		public void ShouldExecuteRegisterBottomByteOnly ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.LslsRegister (R5, R0);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R5] = 0b00000000000000000011;
+			_cpu.Registers[R0] = 0xFF003302;
+			_cpu.Registers.C = false;
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers[R5].Should ().Be (0b00000000000000001100);
+			_cpu.Registers.PC.Should ().Be (0x20000002);
+			_cpu.Registers.C.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void ShouldExecuteRegisterSaturation32 ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.LslsRegister (R3, R4);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R3] = 1;
+			_cpu.Registers[R4] = 0x20;
+			_cpu.Registers.C = false;
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers[R3].Should ().Be (0);
+			_cpu.Registers.PC.Should ().Be (0x20000002);
+			_cpu.Registers.N.Should ().BeFalse ();
+			_cpu.Registers.Z.Should ().BeTrue (); // Result is 0
+			_cpu.Registers.C.Should ().BeTrue (); // Bit 0 shifted out
+		}
+
+		[Fact]
+		public void ShouldExecuteImmWithCarry ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.LslsImm5 (R5, R5, 18);
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R5] = 0x4001;
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers[R5].Should ().Be (0x40000);
+			_cpu.Registers.C.Should ().BeTrue ();
+		}
+
+		[Fact]
+		public void ShouldExecuteWithImmZeroDispatchAsMovs ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.LslsImm5 (R5, R5, 0); // LSLS R5, R5, #0
+			_bus.WriteHalfWord (0x20000000, opcode);
+
+			_cpu.Registers[R5] = 0xFFFF;
+			_cpu.Registers.C = true;
+
+			// Act
+			_cpu.Step ();
+
+			// Assert
+			_cpu.Registers[R5].Should ().Be (0xFFFF);
+			_cpu.Registers.C.Should ().BeTrue ("LSL #0 should preserve Carry flag (MOVS behavior)");
+			_cpu.Registers.Z.Should ().BeFalse ();
+			_cpu.Registers.N.Should ().BeFalse ();
+		}
 	}
 }
