@@ -145,19 +145,19 @@ public static class BitOps
 		ptrRd = valRm;
 	}
 
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Movs(ushort opcode, CortexM0Plus cpu)
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Movs (ushort opcode, CortexM0Plus cpu)
 	{
 		var value = (uint)(opcode & 0xFF);
 
 		cpu.Registers[(opcode >> 8) & 7] = value;
-		
+
 		cpu.Registers.N = false;
 		cpu.Registers.Z = value == 0;
 	}
-	
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Mvns(ushort opcode, CortexM0Plus cpu)
+
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Mvns (ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 7;
 		var rd = opcode & 7;
