@@ -2,8 +2,6 @@ using FluentAssertions;
 using RP2040.Core.Cpu;
 using RP2040.Core.Cpu.Instructions;
 using RP2040.Core.Helpers;
-using RP2040.Core.Memory;
-
 using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.CortexM0Plus, void>;
 
 namespace RP2040.tests.Cpu;
@@ -27,550 +25,104 @@ public unsafe class InstructionDecoderTests
 	const int SP = 13;
 	const int LR = 14;
 	const int PC = 15;
-	
-	public static nuint AddressOf(InstructionHandler handler) => (nuint)handler;
+
+	static nuint AddressOf (InstructionHandler handler) => (nuint)handler;
 	static readonly InstructionDecoder Decoder = InstructionDecoder.Instance;
 
-    [Fact]
-	public void Adcs ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Adcs (R4, R4);
-		var expectedPointer = AddressOf(&ArithmeticOps.Adcs);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-
-	[Fact]
-	public void AddSpImm7 ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.AddSpImm7 (0x10);
-		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImmediate7);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-
-	[Fact]
-	public void AddSpImm8 ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.AddSpImm8 (R1, 0x10);
-		var expectedPointer = AddressOf(&ArithmeticOps.AddSpImmediate8);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
 	[Theory]
-	[InlineData(R1, "Reg")] // 1
-	[InlineData(SP, "Sp")]  // 13
-	[InlineData(PC, "Pc")]  // 15
-	public void AddHighRegisters(uint targetReg, string expectedType)
+	[MemberData (nameof (GetInstructionTestCases))]
+	public void ShouldMapCorrectly (string name, ushort opcode, nuint expectedHandlerAddress)
 	{
-		// Arrange
-		var opcode = InstructionEmiter.AddHighRegisters(targetReg, R2);
-    
-		nuint expectedPointer = expectedType switch {
-			"Reg" => AddressOf(&ArithmeticOps.AddHighToReg),
-			"Sp"  => AddressOf(&ArithmeticOps.AddHighToSp),
-			"Pc"  => AddressOf(&ArithmeticOps.AddHighToPc),
-			_ => 0
-		};
-		
 		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
+		var actualHandler = Decoder.GetHandler (opcode);
+
 		// Assert
-		handlerAddress.Should().Be(expectedPointer);
+		// El mensaje personalizado ayuda a saber cuál instrucción falló exactamente
+		actualHandler.Should ().Be (expectedHandlerAddress, $"la instrucción '{name}' debería decodificarse correctamente");
 	}
 
-	[Fact]
-	public void AddsImm3 ()
+	public static IEnumerable<object[]> GetInstructionTestCases ()
 	{
-		// Arrange
-		var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
-		var expectedPointer = AddressOf (&ArithmeticOps.AddsImmediate3);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		var cases = new List<object[]> ();
 
-	[Fact]
-	public void AddsImm8 ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.AddsImm8 (R1, 1);
-		var expectedPointer = AddressOf (&ArithmeticOps.AddsImmediate8);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		// --- Arithmetic Operations ---
+		Add ("Adcs", InstructionEmiter.Adcs (R4, R4), &ArithmeticOps.Adcs);
+		Add ("AddSpImm7", InstructionEmiter.AddSpImm7 (0x10), &ArithmeticOps.AddSpImmediate7);
+		Add ("AddSpImm8", InstructionEmiter.AddSpImm8 (R1, 0x10), &ArithmeticOps.AddSpImmediate8);
+		Add ("AddsImm3", InstructionEmiter.AddsImm3 (R1, R2, 3), &ArithmeticOps.AddsImmediate3);
+		Add ("AddsImm8", InstructionEmiter.AddsImm8 (R1, 1), &ArithmeticOps.AddsImmediate8);
+		Add ("AddsRegister", InstructionEmiter.AddsRegister (R1, R2, R7), &ArithmeticOps.AddsRegister);
+		Add ("Adr", InstructionEmiter.Adr (R4, 0x50), &ArithmeticOps.Adr);
 
-	[Fact]
-	public void AddsRegister ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.AddsRegister (R1, R2, R7);
-		var expectedPointer = AddressOf (&ArithmeticOps.AddsRegister);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		// Special Cases for AddHighRegister
+		Add ("AddHighReg (Reg)", InstructionEmiter.AddHighRegisters (R1, R2), &ArithmeticOps.AddHighToReg);
+		Add ("AddHighReg (Sp)", InstructionEmiter.AddHighRegisters (SP, R2), &ArithmeticOps.AddHighToSp);
+		Add ("AddHighReg (Pc)", InstructionEmiter.AddHighRegisters (PC, R2), &ArithmeticOps.AddHighToPc);
 
-	[Fact]
-	public void Adr ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Adr (R4, 0x50);
-		var expectedPointer = AddressOf (&ArithmeticOps.Adr);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		Add ("Cmn", InstructionEmiter.Cmn (R7, R2), &ArithmeticOps.Cmn);
+		Add ("CmpImm", InstructionEmiter.CmpImm (R5, 66), &ArithmeticOps.CmpImmediate);
+		Add ("CmpRegister", InstructionEmiter.CmpRegister (R5, R0), &ArithmeticOps.CmpRegister);
+		Add ("CmpHighRegister", InstructionEmiter.CmpHighRegister (R11, R3), &ArithmeticOps.CmpHighRegister);
+		Add ("Muls", InstructionEmiter.Muls (R0, R2), &ArithmeticOps.Muls);
+		Add ("Orrs", InstructionEmiter.Orrs (R5, R0), &ArithmeticOps.Orrs);
 
-	[Fact]
-	public void Ands ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Ands (R5, R0);
-		var expectedPointer = AddressOf (&BitOps.Ands);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		// --- Bit Operations ---
+		Add ("Ands", InstructionEmiter.Ands (R5, R0), &BitOps.Ands);
+		Add ("AsrsImm5", InstructionEmiter.AsrsImm5 (R3, R2, 31), &BitOps.AsrsImm5);
+		Add ("AsrsRegister", InstructionEmiter.AsrsRegister (R3, R4), &BitOps.AsrsRegister);
+		Add ("Bics", InstructionEmiter.Bics (R0, R3), &BitOps.Bics);
+		Add ("Eors", InstructionEmiter.Eors (R1, R3), &BitOps.Eors);
+		Add ("LslsImm", InstructionEmiter.LslsImm5 (R5, R5, 18), &BitOps.LslsImm5);
+		Add ("LslsImmZero", InstructionEmiter.LslsImm5 (R5, R5, 0), &BitOps.LslsZero);
+		Add ("LslsRegister", InstructionEmiter.LslsRegister (R5, R0), &BitOps.LslsRegister);
+		Add ("Mvns", InstructionEmiter.Mvns (R0, R2), &BitOps.Mvns);
 
-	[Fact]
-	public void AsrsImm5 ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.AsrsImm5 (R3, R2, 31);
-		var expectedPointer = AddressOf (&BitOps.AsrsImm5);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		// Mov Variations
+		Add ("Mov (Reg)", InstructionEmiter.Mov (R3, R8), &BitOps.MovRegister);
+		Add ("Mov (Pc)", InstructionEmiter.Mov (PC, R8), &BitOps.MovToPc);
+		Add ("Mov (Sp)", InstructionEmiter.Mov (SP, R8), &BitOps.MovToSp);
 
-	[Fact]
-	public void AsrsRegister ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.AsrsRegister (R3, R4);
-		var expectedPointer = AddressOf (&BitOps.AsrsRegister);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		// --- Flow Control ---
+		for (uint cond = 0; cond <= 13; cond++) {
+			InstructionHandler expected = cond switch {
+				0x0 => &FlowOps.Beq, 0x1 => &FlowOps.Bne, 0x2 => &FlowOps.Bcs, 0x3 => &FlowOps.Bcc,
+				0x4 => &FlowOps.Bmi, 0x5 => &FlowOps.Bpl, 0x6 => &FlowOps.Bvs, 0x7 => &FlowOps.Bvc,
+				0x8 => &FlowOps.Bhi, 0x9 => &FlowOps.Bls, 0xA => &FlowOps.Bge, 0xB => &FlowOps.Blt,
+				0xC => &FlowOps.Bgt, 0xD => &FlowOps.Ble,
+				_ => throw new System.Exception ()
+			};
+			Add ($"BranchConditional ({cond})", InstructionEmiter.BranchConditional (cond, 0), expected);
+		}
 
-	[Fact]
-	public void Bics ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Bics (R0, R3);
-		var expectedPointer = AddressOf (&BitOps.Bics);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		Add ("Bl", (ushort)(InstructionEmiter.Bl (0x34) & 0xFFFF), &FlowOps.Bl);
+		Add ("Blx", InstructionEmiter.Blx (R3), &FlowOps.Blx);
+		Add ("Branch", InstructionEmiter.Branch (0xfec), &FlowOps.Branch);
+		Add ("Bx", InstructionEmiter.Bx (LR), &FlowOps.Bx);
 
-	[Fact]
-	public void Bl ()
-	{
-		// Arrange
-		var opcode = (ushort)(InstructionEmiter.Bl  (0x34) & 0xFFFF);
-		var expectedPointer = AddressOf (&FlowOps.Bl);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
+		// --- System & Memory ---
+		Add ("Dmb", (ushort)(InstructionEmiter.Dmb & 0xFFFF), &SystemOps.Barrier);
+		Add ("Dsb", (ushort)(InstructionEmiter.Dsb & 0xFFFF), &SystemOps.Barrier);
+		Add ("Isb", (ushort)(InstructionEmiter.Isb & 0xFFFF), &SystemOps.Barrier);
+		Add ("Nop", InstructionEmiter.Nop, &SystemOps.Nop);
+		Add ("Mrs", (ushort)(InstructionEmiter.Mrs (R0, 5) & 0xFFFF), &SystemOps.Mrs);
+		Add ("Msr", (ushort)(InstructionEmiter.Msr (8, R0) & 0xFFFF), &SystemOps.Msr);
 
-	[Fact]
-	public void Blx ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Blx  (R3);
-		var expectedPointer = AddressOf (&FlowOps.Blx);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Theory]
-	[InlineData(0)]  // EQ
-	[InlineData(1)]  // NE
-	[InlineData(2)]  // CS
-	[InlineData(3)]  // CC
-	[InlineData(4)]  // MI
-	[InlineData(5)]  // PL
-	[InlineData(6)]  // VS
-	[InlineData(7)]  // VC
-	[InlineData(8)]  // HI
-	[InlineData(9)]  // LS
-	[InlineData(10)] // GE
-	[InlineData(11)] // LT
-	[InlineData(12)] // GT
-	[InlineData(13)] // LE
-	public void BranchConditional(uint cond)
-	{
-		// Arrange
-		InstructionHandler expectedHandler = cond switch
+		Add ("Ldmia", InstructionEmiter.Ldmia (R0, (1 << R1) | (1 << R2)), &MemoryOps.Ldmia);
+
+		// Push / Pop
+		Add ("Pop", InstructionEmiter.Pop (false, (1 << R4)), &MemoryOps.Pop);
+		Add ("Pop (PC)", InstructionEmiter.Pop (true, (1 << R4)), &MemoryOps.PopPc);
+		Add ("Push", InstructionEmiter.Push (false, (1 << R4)), &MemoryOps.Push);
+		Add ("Push (LR)", InstructionEmiter.Push (true, (1 << R4)), &MemoryOps.PushLr);
+
+		return cases;
+
+		void Add (string name, ushort opcode, InstructionHandler handler)
 		{
-			0x0 => &FlowOps.Beq,
-			0x1 => &FlowOps.Bne,
-			0x2 => &FlowOps.Bcs,
-			0x3 => &FlowOps.Bcc,
-			0x4 => &FlowOps.Bmi,
-			0x5 => &FlowOps.Bpl,
-			0x6 => &FlowOps.Bvs,
-			0x7 => &FlowOps.Bvc,
-			0x8 => &FlowOps.Bhi,
-			0x9 => &FlowOps.Bls,
-			0xA => &FlowOps.Bge,
-			0xB => &FlowOps.Blt,
-			0xC => &FlowOps.Bgt,
-			0xD => &FlowOps.Ble,
-			_ => throw new ArgumentException("Unexpected condition")
-		};
-		var opcode = InstructionEmiter.BranchConditional(cond, 0);
-    
-		// Act
-		var actualAddress = Decoder.GetHandler(opcode);
-    
-		// Assert
-		actualAddress.Should().Be((nuint)expectedHandler);
-	}
-	
-	[Fact]
-	public void Branch ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Branch  (0xfec);
-		var expectedPointer = AddressOf (&FlowOps.Branch);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Bx ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Bx  (LR);
-		var expectedPointer = AddressOf (&FlowOps.Bx);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Cmn ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Cmn  (R7, R2);
-		var expectedPointer = AddressOf (&ArithmeticOps.Cmn);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void CmpImm ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.CmpImm  (R5, 66);
-		var expectedPointer = AddressOf (&ArithmeticOps.CmpImmediate);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void CmpRegister ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.CmpRegister  (R5, R0);
-		var expectedPointer = AddressOf (&ArithmeticOps.CmpRegister);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void CmpHighRegister ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
-		var expectedPointer = AddressOf (&ArithmeticOps.CmpHighRegister);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-
-	[Fact]
-	public void Dmb ()
-	{
-		// Arrange
-		var opcode = (ushort)(InstructionEmiter.Dmb  () & 0xFFFF);
-		var expectedPointer = AddressOf (&SystemOps.Barrier);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Dsb ()
-	{
-		// Arrange
-		var opcode = (ushort)(InstructionEmiter.Dsb  () & 0xFFFF);
-		var expectedPointer = AddressOf (&SystemOps.Barrier);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Eors ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Eors (R1, R3) ;
-		var expectedPointer = AddressOf (&BitOps.Eors);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Isb ()
-	{
-		// Arrange
-		var opcode = (ushort)(InstructionEmiter.Isb  () & 0xFFFF);
-		var expectedPointer = AddressOf (&SystemOps.Barrier);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Theory]
-	[InlineData(R3, "Reg")] // Registro normal
-	[InlineData(PC, "Pc")]  // Salto
-	[InlineData(SP, "Sp")]  // Stack
-	public void Mov_Routing(uint targetReg, string expectedType)
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Mov(targetReg, R8);
-		nuint expectedPointer = expectedType switch {
-			"Reg" => AddressOf(&BitOps.MovRegister),
-			"Pc"  => AddressOf(&BitOps.MovToPc),
-			"Sp"  => AddressOf(&BitOps.MovToSp),
-			_ => 0
-		};
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-    
-		// Assert
-		handlerAddress.Should().Be(expectedPointer);
-	}
-
-	[Fact]
-	public void Muls ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Muls (R0, R2);
-		var expectedPointer = AddressOf (&ArithmeticOps.Muls);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Mvns ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Mvns (R0, R2);
-		var expectedPointer = AddressOf (&BitOps.Mvns);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Nop ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Nop ();
-		var expectedPointer = AddressOf (&SystemOps.Nop);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Orrs ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Orrs (R5, R0);
-		var expectedPointer = AddressOf (&ArithmeticOps.Orrs);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Theory]
-	[InlineData(false)]
-	[InlineData(true)]
-	public void Pop (bool pc)
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Pop (pc, (1 << R4) | (1 << R5) | (1 << R6));
-		var expectedPointer = pc ? AddressOf (&MemoryOps.PopPc) : AddressOf (&MemoryOps.Pop);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Theory]
-	[InlineData(false)]
-	[InlineData(true)]
-	public void Push (bool lr)
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Push (lr, (1 << R4) | (1 << R5) | (1 << R6));
-		var expectedPointer = lr ? AddressOf (&MemoryOps.PushLr) : AddressOf (&MemoryOps.Push);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-
-	[Fact]
-	public void Mrs ()
-	{
-		// Arrange
-		var opcode = (ushort)(InstructionEmiter.Mrs (R0, 5) & 0xFFFF);
-		var expectedPointer = AddressOf (&SystemOps.Mrs);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	
-	[Fact]
-	public void Msr ()
-	{
-		// Arrange
-		var opcode = (ushort)(InstructionEmiter.Msr (8, R0) & 0xFFFF);
-		var expectedPointer = AddressOf (&SystemOps.Msr);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
-	}
-	
-	[Fact]
-	public void Ldmia ()
-	{
-		// Arrange
-		var opcode = InstructionEmiter.Ldmia (R0, (1 << R1) | (1 << R2));
-		var expectedPointer = AddressOf (&MemoryOps.Ldmia);
-		
-		// Act
-		var handlerAddress = Decoder.GetHandler(opcode);
-		
-		// Assert
-		handlerAddress.Should ().Be (expectedPointer);
+			cases.Add ([
+				name, opcode,
+				AddressOf (handler)
+			]);
+		}
 	}
 }

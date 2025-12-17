@@ -96,7 +96,7 @@ public static class SystemOps
 				switch (sysm) {
 					case 8: // MSP
 						var alignedMsp = value & 0xFFFFFFFC;
-						
+
 						var isMspActive = (cpu.Registers.IPSR != 0) || ((cpu.Registers.CONTROL & 2) == 0);
 
 						if (isMspActive) cpu.Registers.SP = alignedMsp;
@@ -105,7 +105,7 @@ public static class SystemOps
 
 					case 9: // PSP
 						var alignedPsp = value & 0xFFFFFFFC;
-						
+
 						var isPspActive = (cpu.Registers.IPSR == 0) && ((cpu.Registers.CONTROL & 2) != 0);
 
 						if (isPspActive) cpu.Registers.SP = alignedPsp;
@@ -120,16 +120,14 @@ public static class SystemOps
 						var oldControl = cpu.Registers.CONTROL;
 						var newNpriv = value & 1;
 						var newSpsel = (cpu.Registers.IPSR == 0) ? (value & 2) : (oldControl & 2);
-						
+
 						var newControl = newNpriv | newSpsel;
 
-						if (((oldControl ^ newControl) & 2) != 0)
-						{
+						if (((oldControl ^ newControl) & 2) != 0) {
 							cpu.Registers.CONTROL = newControl;
-							cpu.UpdateStackPointerSource();
+							cpu.UpdateStackPointerSource ();
 						}
-						else
-						{
+						else {
 							cpu.Registers.CONTROL = newControl;
 						}
 						break;

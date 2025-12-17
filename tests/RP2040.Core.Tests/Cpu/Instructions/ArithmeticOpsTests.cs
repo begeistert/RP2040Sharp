@@ -19,7 +19,7 @@ public class ArithmeticOpsTests
 	const int R10 = 10;
 	const int R11 = 11;
 	const int R12 = 12;
-	
+
 	const int IP = 12;
 	const int SP = 13;
 	const int PC = 15;
@@ -746,7 +746,7 @@ public class ArithmeticOpsTests
 			var opcode = InstructionEmiter.Muls (R0, R2);
 			_bus.WriteHalfWord (0x20000000, opcode);
 			
-			_cpu.Registers[R0] = (uint)(-1 & 0xFFFFFFFF);
+			_cpu.Registers[R0] = 0xFFFFFFFF;
 			_cpu.Registers[R2] = 1000000;
 			
 			// Act

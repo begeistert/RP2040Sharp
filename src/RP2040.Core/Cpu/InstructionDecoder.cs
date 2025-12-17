@@ -69,6 +69,10 @@ public unsafe class InstructionDecoder : IDisposable
 			new OpcodeRule (0xFFC0, 0x4340, &ArithmeticOps.Muls),
 			// MVNS Rd, Rm
 			new OpcodeRule (0xFFC0, 0x43C0, &BitOps.Mvns),
+			// LSLS Rd, Rm, #0
+			new OpcodeRule (0xFFC0, 0x0000, &BitOps.LslsZero),
+			// LSLS (Register) - Encoding T2
+			new OpcodeRule (0xFFC0, 0x4080, &BitOps.LslsRegister),
 
 			// ================================================================
 			// GROUP 4: Mask 0xFF87 (High Register Special Cases)
@@ -159,7 +163,9 @@ public unsafe class InstructionDecoder : IDisposable
 			// MOVS (Rd, #imm8)
 			new OpcodeRule (0xF800, 0x2000, &BitOps.Movs),
 			// LDMIA (Load Multiple Increment After)
-			new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
+			new OpcodeRule (0xF800, 0xC800, &MemoryOps.Ldmia),
+			// LSLS (Rd, Rm, imm5)
+			new OpcodeRule (0xF800, 0x0000, &BitOps.LslsImm5),
 
 			// ================================================================
 			// GROUP 9: Mask 0xBF00

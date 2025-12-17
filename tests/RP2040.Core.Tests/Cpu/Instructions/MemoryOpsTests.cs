@@ -86,8 +86,8 @@ public class MemoryOpsTests
 			var opcode = InstructionEmiter.Pop (false, (1 << R7) | (1 << R0));
 			_bus.WriteHalfWord (0x20000000, opcode);
 
-			_bus.WriteWord (STACK_BASE, 0xAAAAAAAA); 
-			_bus.WriteWord (STACK_BASE + 4, 0xBBBBBBBB); 
+			_bus.WriteWord (STACK_BASE, 0xAAAAAAAA);
+			_bus.WriteWord (STACK_BASE + 4, 0xBBBBBBBB);
 
 			// Act
 			_cpu.Step ();
