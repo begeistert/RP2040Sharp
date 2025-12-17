@@ -162,7 +162,8 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 			_bootRom?.Dispose ();
 		}
 
-		Array.Clear (_fastBasePtrs, 0, _fastBasePtrs.Length);
+		if (_pageTable != null) NativeMemory.Free(_pageTable);
+		if (_maskTable != null) NativeMemory.Free(_maskTable);
 
 		_disposed = true;
 	}
