@@ -243,4 +243,17 @@ public static class InstructionEmiter
 		if (rn > 7) throw new ArgumentException("Register index out of range (0-7)");
 		return (ushort)(0xC800 | (rn & 0x7) << 8 | registerList & 0xFF);
 	}
+	
+	public static ushort LslsImm5 (uint rd, uint rm, uint imm5)
+	{
+		if (rd > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		if (imm5 > 31) throw new ArgumentException("Immediate too large for LSLS");
+		return (ushort)(0x0000 | (imm5 & 0x1F) << 6 | ((rm & 7) << 3) | (rd & 7));
+	}
+	
+	public static ushort LslsRegister (uint rdn, uint rm)
+	{
+		if (rdn > 7 || rm > 7) throw new ArgumentException("Register index out of range (0-7)");
+		return (ushort)(0x4080 | ((rm & 7) << 3) | rdn);
+	}
 }
