@@ -2,7 +2,6 @@ using FluentAssertions;
 using RP2040.Core.Cpu;
 using RP2040.Core.Cpu.Instructions;
 using RP2040.Core.Helpers;
-using RP2040.Core.Memory;
 using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.CortexM0Plus, void>;
 
 namespace RP2040.tests.Cpu;
