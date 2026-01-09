@@ -229,4 +229,17 @@ public static class BitOps
 		cpu.Registers.Z = (result == 0);
 		cpu.Registers.C = finalCarry;
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void Rev (ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+		var input = cpu.Registers[rm];
+		cpu.Registers[rd] =
+			((input & 0xff) << 24) |
+			(((input >> 8) & 0xff) << 16) |
+			(((input >> 16) & 0xff) << 8) |
+			((input >> 24) & 0xff);
+	}
 }

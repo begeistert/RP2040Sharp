@@ -214,6 +214,13 @@ public static class InstructionEmiter
 		return (ushort)(0xB400 | (m ? 0x100u : 0u) | registerList);
 	}
 
+	public static ushort Rev(uint rd, uint rn)
+	{
+		if (rd > 15) throw new ArgumentException (HighRegisterIndexOutOfRange);
+		if (rn > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
+		return (ushort)(0xBA00 | ((rn & 7) << 3)  | (rd & 7));
+	}
+
 	public static uint Mrs (uint rd, uint specialRegister)
 	{
 		if (rd > 15) throw new ArgumentException (HighRegisterIndexOutOfRange);
