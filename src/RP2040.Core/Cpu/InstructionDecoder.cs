@@ -73,6 +73,8 @@ public unsafe class InstructionDecoder : IDisposable
 			new OpcodeRule (0xFFC0, 0x0000, &BitOps.LslsZero),
 			// LSLS (Register) - Encoding T2
 			new OpcodeRule (0xFFC0, 0x4080, &BitOps.LslsRegister),
+			// Rev16 Rd, Rn
+			new OpcodeRule (0xFFC0, 0xBA40, &BitOps.Rev16),
 
 			// ================================================================
 			// GROUP 4: Mask 0xFF87 (High Register Special Cases)
