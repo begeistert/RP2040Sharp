@@ -26,23 +26,23 @@ public unsafe class InstructionDecoderTests
 	const int LR = 14;
 	const int PC = 15;
 
-	static nuint AddressOf (InstructionHandler handler) => (nuint)handler;
+	static ulong AddressOf (InstructionHandler handler) => (ulong)handler;
 	static readonly InstructionDecoder Decoder = InstructionDecoder.Instance;
 
 	[Theory]
 	[MemberData (nameof (GetInstructionTestCases))]
-	public void ShouldMapCorrectly (string name, ushort opcode, nuint expectedHandlerAddress)
+	public void ShouldMapCorrectly (string name, ushort opcode, ulong expectedHandlerAddress)
 	{
 		// Act
-		var actualHandler = Decoder.GetHandler (opcode);
+		var actualHandler = (ulong)Decoder.GetHandler (opcode);
 
 		// Assert
 		actualHandler.Should ().Be (expectedHandlerAddress, $"The instruction '{name}' should decode correctly");
 	}
 
-	public static IEnumerable<object[]> GetInstructionTestCases ()
+	public static TheoryData<string, ushort, ulong> GetInstructionTestCases ()
 	{
-		var cases = new List<object[]> ();
+		var cases = new TheoryData<string, ushort, ulong> ();
 
 		// --- Arithmetic Operations ---
 		Add ("Adcs", InstructionEmiter.Adcs (R4, R4), &ArithmeticOps.Adcs);
@@ -118,10 +118,7 @@ public unsafe class InstructionDecoderTests
 
 		void Add (string name, ushort opcode, InstructionHandler handler)
 		{
-			cases.Add ([
-				name, opcode,
-				AddressOf (handler)
-			]);
+			cases.Add (name, opcode, AddressOf (handler));
 		}
 	}
 }
