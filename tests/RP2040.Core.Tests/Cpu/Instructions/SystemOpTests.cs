@@ -1,86 +1,63 @@
 using FluentAssertions;
-using RP2040.Core.Cpu;
 using RP2040.Core.Helpers;
-using RP2040.Core.Memory;
+using RP2040.tests.Fixtures;
 namespace RP2040.tests.Cpu.Instructions;
 
-public class SystemOpTests
+public abstract class SystemOpTests
 {
-	const int R0 = 0;
-	const int R1 = 1;
-	const int R2 = 2;
-	const int R3 = 3;
-	const int R4 = 4;
-	const int R5 = 5;
-	const int R6 = 6;
-	const int R7 = 7;
-	const int R8 = 8;
-	const int R9 = 9;
-	const int R10 = 10;
-	const int R11 = 11;
-	const int R12 = 12;
-
-	const int IP = 12;
-	const int SP = 13;
-	const int PC = 15;
-
-	private readonly CortexM0Plus _cpu;
-	private readonly BusInterconnect _bus;
-
-	public SystemOpTests ()
+	public class Dmb : CpuTestBase
 	{
-		_bus = new BusInterconnect ();
-		_cpu = new CortexM0Plus (_bus);
-		_cpu.Registers.PC = 0x20000000;
+		[Fact]
+		public void Should_ExecuteDataMemoryBarrier ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Dmb;
+			Bus.WriteWord (0x20000000, opcode);
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers.PC.Should ().Be (0x20000004);
+		}
 	}
 
-	[Fact]
-	public void Bmb ()
+	public class Dsb : CpuTestBase
 	{
-		// Arrange
-		var opcode = InstructionEmiter.Dmb;
-		_bus.WriteWord (0x20000000, opcode);
+		[Fact]
+		public void Should_ExecuteDataSynchronizationBarrier ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Dsb;
+			Bus.WriteWord (0x20000000, opcode);
 
-		// Act
-		_cpu.Step ();
+			// Act
+			Cpu.Step ();
 
-		// Assert
-		_cpu.Registers.PC.Should ().Be (0x20000004);
+			// Assert
+			Cpu.Registers.PC.Should ().Be (0x20000004);
+		}
 	}
 
-	[Fact]
-	public void Bsb ()
+	public class Nop : CpuTestBase
 	{
-		// Arrange
-		var opcode = InstructionEmiter.Dsb;
-		_bus.WriteWord (0x20000000, opcode);
+		[Fact]
+		public void Should_ExecuteNoOperation ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Nop;
+			Bus.WriteWord (0x20000000, opcode);
 
-		// Act
-		_cpu.Step ();
+			// Act
+			Cpu.Step ();
 
-		// Assert
-		_cpu.Registers.PC.Should ().Be (0x20000004);
+			// Assert
+			Cpu.Registers.PC.Should ().Be (0x20000002);
+		}
 	}
 
-	[Fact]
-	public void Nop ()
+	public class Mrs : CpuTestBase
 	{
-		// Arrange
-		var opcode = InstructionEmiter.Nop;
-		_bus.WriteWord (0x20000000, opcode);
-
-		// Act
-		_cpu.Step ();
-
-		// Assert
-		_cpu.Registers.PC.Should ().Be (0x20000002);
-	}
-
-	public class Mrs
-	{
-		private readonly CortexM0Plus _cpu;
-		private readonly BusInterconnect _bus;
-
 		private const int SYSM_APSR = 0;
 		private const int SYSM_IPSR = 5;
 		private const int SYSM_MSP = 8;
@@ -90,142 +67,136 @@ public class SystemOpTests
 
 		public Mrs ()
 		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus (_bus);
-			_cpu.Registers.PC = 0x20000000;
-			_cpu.Registers.CONTROL = 0;
-			_cpu.Registers.IPSR = 0;
+			Cpu.Registers.CONTROL = 0;
+			Cpu.Registers.IPSR = 0;
 		}
 
 		[Fact]
-		public void ShouldExecuteMrsIpsr ()
+		public void Should_ReadIpsr_And_MaskReservedBits ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R0, SYSM_IPSR);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 55; // Dirty value
-			_cpu.Registers.IPSR = 0; // Thread Mode
+			Cpu.Registers[R0] = 55; // Dirty value
+			Cpu.Registers.IPSR = 0; // Thread Mode
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R0].Should ().Be (0, "IPSR should be 0 in Thread Mode");
-			_cpu.Registers.PC.Should ().Be (0x20000004);
+			Cpu.Registers[R0].Should ().Be (0, "IPSR should be 0 in Thread Mode");
+			Cpu.Registers.PC.Should ().Be (0x20000004);
 		}
 
 		[Fact]
-		public void ShouldReadApsrFlags ()
+		public void Should_ReadApsr_WithCurrentFlags ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R1, SYSM_APSR);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.N = true;
-			_cpu.Registers.Z = true;
-			_cpu.Registers.C = true;
-			_cpu.Registers.V = true;
+			Cpu.Registers.N = true;
+			Cpu.Registers.Z = true;
+			Cpu.Registers.C = true;
+			Cpu.Registers.V = true;
 
 			const uint expectedApsr = 0xF0000000; // N=1, Z=1, C=1, V=1, others 0
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R1].Should ().Be (expectedApsr);
+			Cpu.Registers[R1].Should ().Be (expectedApsr);
 		}
 
 		[Fact]
-		public void ShouldReadMsp ()
+		public void Should_ReadMainStackPointer_WhenActive ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R2, SYSM_MSP);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
 			const uint stackValue = 0x20004000;
-			_cpu.Registers.SP = stackValue;
-			_cpu.Registers[R2] = 0;
+			Cpu.Registers.SP = stackValue;
+			Cpu.Registers[R2] = 0;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R2].Should ().Be (stackValue, "MRS MSP should read current SP when using MSP");
+			Cpu.Registers[R2].Should ().Be (stackValue, "MRS MSP should read current SP when using MSP");
 		}
 
 		[Fact]
-		public void ShouldReadPsp ()
+		public void Should_ReadProcessStackPointer_FromStorage_WhenUsingMsp ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R3, SYSM_PSP);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
 			const uint stackValue = 0x20008000;
-			_cpu.Registers.PSP_Storage = stackValue;
+			Cpu.Registers.PSP_Storage = stackValue;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R3].Should ().Be (stackValue, "MRS PSP should read Storage when using MSP");
+			Cpu.Registers[R3].Should ().Be (stackValue, "MRS PSP should read Storage when using MSP");
 		}
 
 		[Fact]
-		public void ShouldReadPrimask ()
+		public void Should_ReadPrimask ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R4, SYSM_PRIMASK);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.PRIMASK = 1; // disable interrupts
+			Cpu.Registers.PRIMASK = 1; // disable interrupts
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R4].Should ().Be (1);
+			Cpu.Registers[R4].Should ().Be (1);
 		}
 
 		[Fact]
-		public void ShouldReadControl ()
+		public void Should_ReadControlRegister ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R5, SYSM_CONTROL);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.CONTROL = 2; // SPSEL=1
+			Cpu.Registers.CONTROL = 2; // SPSEL=1
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R5].Should ().Be (2);
+			Cpu.Registers[R5].Should ().Be (2);
 		}
 
 		[Fact]
-		public void ShouldIsolateRegisters ()
+		public void Should_MaskApsrFlags_WhenReadingIpsr ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Mrs (R0, SYSM_IPSR);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.N = true; // Dirty flag
-			_cpu.Registers.IPSR = 0;
+			Cpu.Registers.N = true; // Dirty flag
+			Cpu.Registers.IPSR = 0;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers[R0].Should ().Be (0, "MRS IPSR mask should exclude APSR flags (Bit 31)");
+			Cpu.Registers[R0].Should ().Be (0, "MRS IPSR mask should exclude APSR flags (Bit 31)");
 		}
 	}
 
-	public class Msr
+	public class Msr : CpuTestBase
 	{
-		private readonly CortexM0Plus _cpu;
-		private readonly BusInterconnect _bus;
-
 		private const int SYSM_APSR = 0;
 		private const int SYSM_IPSR = 5;
 		private const int SYSM_MSP = 8;
@@ -235,159 +206,156 @@ public class SystemOpTests
 
 		public Msr ()
 		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus (_bus);
-			_cpu.Registers.PC = 0x20000000;
-			_cpu.Registers.CONTROL = 0;
-			_cpu.Registers.IPSR = 0;
+			Cpu.Registers.CONTROL = 0;
+			Cpu.Registers.IPSR = 0;
 		}
 
 		[Fact]
-		public void ShouldWriteMsp_WhenActive ()
+		public void Should_UpdateMainStackPointer_WhenActive ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_MSP, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 0x1234;
+			Cpu.Registers[R0] = 0x1234;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should ().Be (0x1234); // 0x1234 aligned to 4 bytes
-			_cpu.Registers.PC.Should ().Be (0x20000004);
+			Cpu.Registers.SP.Should ().Be (0x1234);
+			Cpu.Registers.PC.Should ().Be (0x20000004);
 		}
 
 		[Fact]
-		public void ShouldAlignMsp_WhenWritingUnaligned ()
+		public void Should_AlignStackPointer_To4Bytes ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_MSP, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 0x1233;
+			Cpu.Registers[R0] = 0x1233;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should ().Be (0x1230, "Should align value to 4 bytes");
+			Cpu.Registers.SP.Should ().Be (0x1230, "Should align value to 4 bytes");
 		}
 
 		[Fact]
-		public void ShouldWritePsp_WhenInactive ()
+		public void Should_UpdateProcessStackPointer_Storage_WhenInactive ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_PSP, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 0x5678;
-			var currentSp = _cpu.Registers.SP; // MSP actual
+			Cpu.Registers[R0] = 0x5678;
+			var currentSp = Cpu.Registers.SP; // MSP actual
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should ().Be (currentSp, "Active SP (MSP) should not change");
-			_cpu.Registers.PSP_Storage.Should ().Be (0x5678, "PSP Storage should be updated");
+			Cpu.Registers.SP.Should ().Be (currentSp, "Active SP (MSP) should not change");
+			Cpu.Registers.PSP_Storage.Should ().Be (0x5678, "PSP Storage should be updated");
 		}
 
 		[Fact]
-		public void ShouldSwitchStack_WhenWritingControl ()
+		public void Should_SwitchToProcessStack_WhenSettingSpsel ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_CONTROL, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.SP = 0xAAAA0000;
-			_cpu.Registers.PSP_Storage = 0xBBBB0000;
-			_cpu.Registers[R0] = 2; // Bit 1 = SPSEL=1 (Switch to PSP)
+			Cpu.Registers.SP = 0xAAAA0000;
+			Cpu.Registers.PSP_Storage = 0xBBBB0000;
+			Cpu.Registers[R0] = 2; // Bit 1 = SPSEL=1 (Switch to PSP)
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.CONTROL.Should ().Be (2);
-			_cpu.Registers.SP.Should ().Be (0xBBBB0000, "SP should execute hot-swap to PSP value");
-			_cpu.Registers.MSP_Storage.Should ().Be (0xAAAA0000, "Old SP should be saved to MSP Storage");
+			Cpu.Registers.CONTROL.Should ().Be (2);
+			Cpu.Registers.SP.Should ().Be (0xBBBB0000, "SP should execute hot-swap to PSP value");
+			Cpu.Registers.MSP_Storage.Should ().Be (0xAAAA0000, "Old SP should be saved to MSP Storage");
 		}
 
 		[Fact]
-		public void ShouldNotSwitchStack_IfInHandlerMode ()
+		public void Should_NotSwitchStacks_WhenInHandlerMode ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_CONTROL, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.IPSR = 1; // Handler Mode!
-			_cpu.Registers.SP = 0xAAAA0000;
-			_cpu.Registers.PSP_Storage = 0xBBBB0000;
-			_cpu.Registers.CONTROL = 0;
+			Cpu.Registers.IPSR = 1; // Handler Mode!
+			Cpu.Registers.SP = 0xAAAA0000;
+			Cpu.Registers.PSP_Storage = 0xBBBB0000;
+			Cpu.Registers.CONTROL = 0;
 
-			_cpu.Registers[R0] = 2; // Try set SPSEL=1
+			Cpu.Registers[R0] = 2; // Try set SPSEL=1
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.CONTROL.Should ().Be (0, "Register value updates");
-			_cpu.Registers.SP.Should ().Be (0xAAAA0000, "Physical SP MUST NOT change in Handler Mode");
+			Cpu.Registers.CONTROL.Should ().Be (0, "Register value updates");
+			Cpu.Registers.SP.Should ().Be (0xAAAA0000, "Physical SP MUST NOT change in Handler Mode");
 		}
 
 		[Fact]
-		public void ShouldWriteFlags_Apsr ()
+		public void Should_UpdateFlags_WhenWritingToApsr ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_APSR, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 0xF0000000; // Set N, Z, C, V
+			Cpu.Registers[R0] = 0xF0000000; // Set N, Z, C, V
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeTrue ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeTrue ();
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeTrue ();
+			Cpu.Registers.C.Should ().BeTrue ();
+			Cpu.Registers.V.Should ().BeTrue ();
 		}
 
 		[Fact]
-		public void ShouldNotCorruptFlags_WhenWritingIpsr ()
+		public void Should_IgnoreWrites_ToReadOnlyIpsr ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_IPSR, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 0xF0000000;
-			_cpu.Registers.N = false;
+			Cpu.Registers[R0] = 0xF0000000;
+			Cpu.Registers.N = false;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.N.Should ().BeFalse ("Writing to IPSR should ignore flags");
-			_cpu.Registers.IPSR.Should ().Be (0, "IPSR is read-only");
+			Cpu.Registers.N.Should ().BeFalse ("Writing to IPSR should ignore flags");
+			Cpu.Registers.IPSR.Should ().Be (0, "IPSR is read-only");
 		}
 
 		[Fact]
-		public void ShouldIgnorePrivilegedWrites_WhenUnprivileged ()
+		public void Should_IgnorePrivilegedWrites_WhenInUnprivilegedMode ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Msr (SYSM_MSP, R0);
-			_bus.WriteWord (0x20000000, opcode);
+			Bus.WriteWord (0x20000000, opcode);
 
-			_cpu.Registers.CONTROL = 1; // nPRIV = 1 (Unprivileged)
-			_cpu.Registers[R0] = 0xDEADBEEF;
-			var originalSp = _cpu.Registers.SP;
+			Cpu.Registers.CONTROL = 1; // nPRIV = 1 (Unprivileged)
+			Cpu.Registers[R0] = 0xDEADBEEF;
+			var originalSp = Cpu.Registers.SP;
 
 			// Act
-			_cpu.Step ();
+			Cpu.Step ();
 
 			// Assert
-			_cpu.Registers.SP.Should ().Be (originalSp, "Unprivileged write to MSP should be ignored");
+			Cpu.Registers.SP.Should ().Be (originalSp, "Unprivileged write to MSP should be ignored");
 		}
 	}
 }
