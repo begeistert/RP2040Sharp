@@ -53,7 +53,7 @@ jobs:
 
       - name: Execute xUnit Tests
         run: |
-          dotnet test --no-build --verbosity normal \
+          dotnet test --configuration Release --no-build --verbosity normal \
           --collect:"XPlat Code Coverage" \
           -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
 
