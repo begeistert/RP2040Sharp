@@ -39,7 +39,7 @@ public abstract class CpuTestBase : IDisposable
 		GC.SuppressFinalize(this);
 	}
 
-	void Dispose(bool disposing)
+	protected void Dispose(bool disposing)
 	{
 		Bus.Dispose();
 	}
