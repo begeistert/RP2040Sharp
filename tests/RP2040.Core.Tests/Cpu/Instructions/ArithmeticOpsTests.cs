@@ -1,8 +1,7 @@
 using FluentAssertions;
-using RP2040.Core.Cpu;
 using RP2040.Core.Helpers;
-using RP2040.Core.Memory;
 using RP2040.tests.Fixtures;
+
 namespace RP2040.tests.Cpu.Instructions;
 
 public abstract class ArithmeticOpsTests
