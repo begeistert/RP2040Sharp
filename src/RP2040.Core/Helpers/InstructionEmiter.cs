@@ -247,4 +247,10 @@ public static class InstructionEmiter
 		if (rdn > 7 || rm > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
 		return (ushort)(0x4080 | ((rm & 7) << 3) | rdn);
 	}
+	
+	public static ushort Revsh (uint rd, uint rm)
+	{
+		if (rd > 7 || rm > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
+		return (ushort)(0xBAC0 | ((rm & 7) << 3) | (rd & 7));
+	}
 }
