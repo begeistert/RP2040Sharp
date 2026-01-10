@@ -26,103 +26,113 @@ public unsafe class InstructionDecoderTests
 	const int LR = 14;
 	const int PC = 15;
 
-	static nuint AddressOf (InstructionHandler handler) => (nuint)handler;
+	static nuint Addr (InstructionHandler handler) => (nuint)handler;
+	static ushort FirstHalf(uint opcode32) => (ushort)(opcode32 & 0xFFFF);
 	static readonly InstructionDecoder Decoder = InstructionDecoder.Instance;
 
 	[Theory]
-	[MemberData (nameof (GetInstructionTestCases))]
+	[MemberData(nameof(ArithmeticCases))]
+	[MemberData(nameof(BitOpsCases))]
+	[MemberData(nameof(FlowCases))]
+	[MemberData(nameof(SystemCases))]
+	[MemberData(nameof(MemoryCases))]
 	public void ShouldMapCorrectly (string name, ushort opcode, nuint expectedHandlerAddress)
 	{
 		// Act
 		var actualHandler = Decoder.GetHandler (opcode);
 
 		// Assert
-		// El mensaje personalizado ayuda a saber cuál instrucción falló exactamente
-		actualHandler.Should ().Be (expectedHandlerAddress, $"la instrucción '{name}' debería decodificarse correctamente");
+		actualHandler.Should ().Be (expectedHandlerAddress, $"The instruction '{name}' should decode correctly");
 	}
-
-	public static IEnumerable<object[]> GetInstructionTestCases ()
+	
+	public static TheoryData<string, ushort, nuint> ArithmeticCases => new TheoryData<string, ushort, UIntPtr>
 	{
-		var cases = new List<object[]> ();
+		{ "Adcs", InstructionEmiter.Adcs(R4, R4), Addr(&ArithmeticOps.Adcs) },
+		{ "AddSpImm7", InstructionEmiter.AddSpImm7(0x10), Addr(&ArithmeticOps.AddSpImmediate7) },
+		{ "AddSpImm8", InstructionEmiter.AddSpImm8(R1, 0x10), Addr(&ArithmeticOps.AddSpImmediate8) },
+		{ "AddsImm3", InstructionEmiter.AddsImm3(R1, R2, 3), Addr(&ArithmeticOps.AddsImmediate3) },
+		{ "AddsImm8", InstructionEmiter.AddsImm8(R1, 1), Addr(&ArithmeticOps.AddsImmediate8) },
+		{ "AddsRegister", InstructionEmiter.AddsRegister(R1, R2, R7), Addr(&ArithmeticOps.AddsRegister) },
+		{ "Adr", InstructionEmiter.Adr(R4, 0x50), Addr(&ArithmeticOps.Adr) },
+        
+		// Special Cases (High Register)
+		{ "AddHighReg (Reg)", InstructionEmiter.AddHighRegisters(R1, R2), Addr(&ArithmeticOps.AddHighToReg) },
+		{ "AddHighReg (Sp)", InstructionEmiter.AddHighRegisters(SP, R2), Addr(&ArithmeticOps.AddHighToSp) },
+		{ "AddHighReg (Pc)", InstructionEmiter.AddHighRegisters(PC, R2), Addr(&ArithmeticOps.AddHighToPc) },
 
-		// --- Arithmetic Operations ---
-		Add ("Adcs", InstructionEmiter.Adcs (R4, R4), &ArithmeticOps.Adcs);
-		Add ("AddSpImm7", InstructionEmiter.AddSpImm7 (0x10), &ArithmeticOps.AddSpImmediate7);
-		Add ("AddSpImm8", InstructionEmiter.AddSpImm8 (R1, 0x10), &ArithmeticOps.AddSpImmediate8);
-		Add ("AddsImm3", InstructionEmiter.AddsImm3 (R1, R2, 3), &ArithmeticOps.AddsImmediate3);
-		Add ("AddsImm8", InstructionEmiter.AddsImm8 (R1, 1), &ArithmeticOps.AddsImmediate8);
-		Add ("AddsRegister", InstructionEmiter.AddsRegister (R1, R2, R7), &ArithmeticOps.AddsRegister);
-		Add ("Adr", InstructionEmiter.Adr (R4, 0x50), &ArithmeticOps.Adr);
+		{ "Cmn", InstructionEmiter.Cmn(R7, R2), Addr(&ArithmeticOps.Cmn) },
+		{ "CmpImm", InstructionEmiter.CmpImm(R5, 66), Addr(&ArithmeticOps.CmpImmediate) },
+		{ "CmpRegister", InstructionEmiter.CmpRegister(R5, R0), Addr(&ArithmeticOps.CmpRegister) },
+		{ "CmpHighRegister", InstructionEmiter.CmpHighRegister(R11, R3), Addr(&ArithmeticOps.CmpHighRegister) },
+		{ "Muls", InstructionEmiter.Muls(R0, R2), Addr(&ArithmeticOps.Muls) },
+		{ "Orrs", InstructionEmiter.Orrs(R5, R0), Addr(&ArithmeticOps.Orrs) }
+	};
+	
+	public static TheoryData<string, ushort, nuint> BitOpsCases => new TheoryData<string, ushort, UIntPtr>
+	{
+        { "Ands", InstructionEmiter.Ands(R5, R0), Addr(&BitOps.Ands) },
+        { "AsrsImm5", InstructionEmiter.AsrsImm5(R3, R2, 31), Addr(&BitOps.AsrsImm5) },
+        { "AsrsRegister", InstructionEmiter.AsrsRegister(R3, R4), Addr(&BitOps.AsrsRegister) },
+        { "Bics", InstructionEmiter.Bics(R0, R3), Addr(&BitOps.Bics) },
+        { "Eors", InstructionEmiter.Eors(R1, R3), Addr(&BitOps.Eors) },
+        { "LslsImm", InstructionEmiter.LslsImm5(R5, R5, 18), Addr(&BitOps.LslsImm5) },
+        { "LslsImmZero", InstructionEmiter.LslsImm5(R5, R5, 0), Addr(&BitOps.LslsZero) },
+        { "LslsRegister", InstructionEmiter.LslsRegister(R5, R0), Addr(&BitOps.LslsRegister) },
+        { "Mvns", InstructionEmiter.Mvns(R0, R2), Addr(&BitOps.Mvns) },
+        
+        // Mov Variations
+        { "Mov (Reg)", InstructionEmiter.Mov(R3, R8), Addr(&BitOps.MovRegister) },
+        { "Mov (Pc)", InstructionEmiter.Mov(PC, R8), Addr(&BitOps.MovToPc) },
+        { "Mov (Sp)", InstructionEmiter.Mov(SP, R8), Addr(&BitOps.MovToSp) }
+    };
 
-		// Special Cases for AddHighRegister
-		Add ("AddHighReg (Reg)", InstructionEmiter.AddHighRegisters (R1, R2), &ArithmeticOps.AddHighToReg);
-		Add ("AddHighReg (Sp)", InstructionEmiter.AddHighRegisters (SP, R2), &ArithmeticOps.AddHighToSp);
-		Add ("AddHighReg (Pc)", InstructionEmiter.AddHighRegisters (PC, R2), &ArithmeticOps.AddHighToPc);
+    public static TheoryData<string, ushort, nuint> FlowCases
+    {
+        get
+        {
+            var data = new TheoryData<string, ushort, nuint>();
+            
+            // BranchConditional Generation
+            for (uint cond = 0; cond <= 13; cond++)
+            {
+                InstructionHandler expected = cond switch {
+                    0x0 => &FlowOps.Beq, 0x1 => &FlowOps.Bne, 0x2 => &FlowOps.Bcs, 0x3 => &FlowOps.Bcc,
+                    0x4 => &FlowOps.Bmi, 0x5 => &FlowOps.Bpl, 0x6 => &FlowOps.Bvs, 0x7 => &FlowOps.Bvc,
+                    0x8 => &FlowOps.Bhi, 0x9 => &FlowOps.Bls, 0xA => &FlowOps.Bge, 0xB => &FlowOps.Blt,
+                    0xC => &FlowOps.Bgt, 0xD => &FlowOps.Ble,
+                    _ => throw new Exception("Invalid condition")
+                };
+                data.Add($"BranchConditional ({cond})", InstructionEmiter.BranchConditional(cond, 0), Addr(expected));
+            }
 
-		Add ("Cmn", InstructionEmiter.Cmn (R7, R2), &ArithmeticOps.Cmn);
-		Add ("CmpImm", InstructionEmiter.CmpImm (R5, 66), &ArithmeticOps.CmpImmediate);
-		Add ("CmpRegister", InstructionEmiter.CmpRegister (R5, R0), &ArithmeticOps.CmpRegister);
-		Add ("CmpHighRegister", InstructionEmiter.CmpHighRegister (R11, R3), &ArithmeticOps.CmpHighRegister);
-		Add ("Muls", InstructionEmiter.Muls (R0, R2), &ArithmeticOps.Muls);
-		Add ("Orrs", InstructionEmiter.Orrs (R5, R0), &ArithmeticOps.Orrs);
+            // Other Flow Ops (Using FirstHalf for 32-bit instructions)
+            data.Add("Bl", FirstHalf(InstructionEmiter.Bl(0x34)), Addr(&FlowOps.Bl));
+            data.Add("Blx", InstructionEmiter.Blx(R3), Addr(&FlowOps.Blx));
+            data.Add("Branch", InstructionEmiter.Branch(0xfec), Addr(&FlowOps.Branch));
+            data.Add("Bx", InstructionEmiter.Bx(LR), Addr(&FlowOps.Bx));
 
-		// --- Bit Operations ---
-		Add ("Ands", InstructionEmiter.Ands (R5, R0), &BitOps.Ands);
-		Add ("AsrsImm5", InstructionEmiter.AsrsImm5 (R3, R2, 31), &BitOps.AsrsImm5);
-		Add ("AsrsRegister", InstructionEmiter.AsrsRegister (R3, R4), &BitOps.AsrsRegister);
-		Add ("Bics", InstructionEmiter.Bics (R0, R3), &BitOps.Bics);
-		Add ("Eors", InstructionEmiter.Eors (R1, R3), &BitOps.Eors);
-		Add ("LslsImm", InstructionEmiter.LslsImm5 (R5, R5, 18), &BitOps.LslsImm5);
-		Add ("LslsImmZero", InstructionEmiter.LslsImm5 (R5, R5, 0), &BitOps.LslsZero);
-		Add ("LslsRegister", InstructionEmiter.LslsRegister (R5, R0), &BitOps.LslsRegister);
-		Add ("Mvns", InstructionEmiter.Mvns (R0, R2), &BitOps.Mvns);
+            return data;
+        }
+    }
 
-		// Mov Variations
-		Add ("Mov (Reg)", InstructionEmiter.Mov (R3, R8), &BitOps.MovRegister);
-		Add ("Mov (Pc)", InstructionEmiter.Mov (PC, R8), &BitOps.MovToPc);
-		Add ("Mov (Sp)", InstructionEmiter.Mov (SP, R8), &BitOps.MovToSp);
+    public static TheoryData<string, ushort, nuint> SystemCases => new TheoryData<string, ushort, UIntPtr>
+    {
+        { "Dmb", FirstHalf(InstructionEmiter.Dmb), Addr(&SystemOps.Barrier) },
+        { "Dsb", FirstHalf(InstructionEmiter.Dsb), Addr(&SystemOps.Barrier) },
+        { "Isb", FirstHalf(InstructionEmiter.Isb), Addr(&SystemOps.Barrier) },
+        { "Nop", InstructionEmiter.Nop, Addr(&SystemOps.Nop) },
+        { "Mrs", FirstHalf(InstructionEmiter.Mrs(R0, 5)), Addr(&SystemOps.Mrs) },
+        { "Msr", FirstHalf(InstructionEmiter.Msr(8, R0)), Addr(&SystemOps.Msr) }
+    };
 
-		// --- Flow Control ---
-		for (uint cond = 0; cond <= 13; cond++) {
-			InstructionHandler expected = cond switch {
-				0x0 => &FlowOps.Beq, 0x1 => &FlowOps.Bne, 0x2 => &FlowOps.Bcs, 0x3 => &FlowOps.Bcc,
-				0x4 => &FlowOps.Bmi, 0x5 => &FlowOps.Bpl, 0x6 => &FlowOps.Bvs, 0x7 => &FlowOps.Bvc,
-				0x8 => &FlowOps.Bhi, 0x9 => &FlowOps.Bls, 0xA => &FlowOps.Bge, 0xB => &FlowOps.Blt,
-				0xC => &FlowOps.Bgt, 0xD => &FlowOps.Ble,
-				_ => throw new System.Exception ()
-			};
-			Add ($"BranchConditional ({cond})", InstructionEmiter.BranchConditional (cond, 0), expected);
-		}
-
-		Add ("Bl", (ushort)(InstructionEmiter.Bl (0x34) & 0xFFFF), &FlowOps.Bl);
-		Add ("Blx", InstructionEmiter.Blx (R3), &FlowOps.Blx);
-		Add ("Branch", InstructionEmiter.Branch (0xfec), &FlowOps.Branch);
-		Add ("Bx", InstructionEmiter.Bx (LR), &FlowOps.Bx);
-
-		// --- System & Memory ---
-		Add ("Dmb", (ushort)(InstructionEmiter.Dmb & 0xFFFF), &SystemOps.Barrier);
-		Add ("Dsb", (ushort)(InstructionEmiter.Dsb & 0xFFFF), &SystemOps.Barrier);
-		Add ("Isb", (ushort)(InstructionEmiter.Isb & 0xFFFF), &SystemOps.Barrier);
-		Add ("Nop", InstructionEmiter.Nop, &SystemOps.Nop);
-		Add ("Mrs", (ushort)(InstructionEmiter.Mrs (R0, 5) & 0xFFFF), &SystemOps.Mrs);
-		Add ("Msr", (ushort)(InstructionEmiter.Msr (8, R0) & 0xFFFF), &SystemOps.Msr);
-
-		Add ("Ldmia", InstructionEmiter.Ldmia (R0, (1 << R1) | (1 << R2)), &MemoryOps.Ldmia);
-
-		// Push / Pop
-		Add ("Pop", InstructionEmiter.Pop (false, (1 << R4)), &MemoryOps.Pop);
-		Add ("Pop (PC)", InstructionEmiter.Pop (true, (1 << R4)), &MemoryOps.PopPc);
-		Add ("Push", InstructionEmiter.Push (false, (1 << R4)), &MemoryOps.Push);
-		Add ("Push (LR)", InstructionEmiter.Push (true, (1 << R4)), &MemoryOps.PushLr);
-
-		return cases;
-
-		void Add (string name, ushort opcode, InstructionHandler handler)
-		{
-			cases.Add ([
-				name, opcode,
-				AddressOf (handler)
-			]);
-		}
-	}
+    public static TheoryData<string, ushort, nuint> MemoryCases => new()
+    {
+        { "Ldmia", InstructionEmiter.Ldmia(R0, (1 << R1) | (1 << R2)), Addr(&MemoryOps.Ldmia) },
+        
+        // Push / Pop Variants
+        { "Pop", InstructionEmiter.Pop(false, (1 << R4)), Addr(&MemoryOps.Pop) },
+        { "Pop (PC)", InstructionEmiter.Pop(true, (1 << R4)), Addr(&MemoryOps.PopPc) },
+        { "Push", InstructionEmiter.Push(false, (1 << R4)), Addr(&MemoryOps.Push) },
+        { "Push (LR)", InstructionEmiter.Push(true, (1 << R4)), Addr(&MemoryOps.PushLr) }
+    };
 }
