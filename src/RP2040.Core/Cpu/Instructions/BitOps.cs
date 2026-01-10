@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -228,5 +229,15 @@ public static class BitOps
 		cpu.Registers.N = (int)result < 0;
 		cpu.Registers.Z = (result == 0);
 		cpu.Registers.C = finalCarry;
+	}
+	
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Revsh (ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+		var val = (ushort)cpu.Registers[rm];
+		var reversed = BinaryPrimitives.ReverseEndianness(val);
+		cpu.Registers[rd] = (uint)(short)reversed;
 	}
 }
