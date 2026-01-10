@@ -499,4 +499,32 @@ public class BitOpsTests
 			Cpu.Registers[R1].Should ().Be (0xfffff055);
 		}
 	}
+
+	public class Rev
+	{
+		private readonly CortexM0Plus _cpu;
+		private readonly BusInterconnect _bus;
+		
+		public Rev ()
+		{
+			_bus = new BusInterconnect ();
+			_cpu = new CortexM0Plus (_bus);
+			_cpu.Registers.PC = 0x20000000;
+		}
+		
+		[Fact]
+		public void ShouldExecuteRevR3R1Instruction ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Rev (R2, R3);
+			_bus.WriteHalfWord (0x20000000, opcode);
+			_cpu.Registers[R3] = 0x11223344;
+			
+			// Act
+			_cpu.Step();
+			
+			// Assert
+			_cpu.Registers.R2.Should ().Be (0x44332211);
+		}
+	}
 }

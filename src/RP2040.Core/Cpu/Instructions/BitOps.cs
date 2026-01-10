@@ -231,6 +231,16 @@ public static class BitOps
 		cpu.Registers.C = finalCarry;
 	}
 	
+  [MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void Rev(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+		var val = cpu.Registers[rm];
+    
+		cpu.Registers[rd] = BinaryPrimitives.ReverseEndianness(val);
+  }
+  
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void Revsh (ushort opcode, CortexM0Plus cpu)
 	{
