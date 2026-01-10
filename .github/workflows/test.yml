@@ -9,7 +9,7 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests & SonarQube
+    name: Unit Tests
     runs-on: ubuntu-latest
 
     steps:
