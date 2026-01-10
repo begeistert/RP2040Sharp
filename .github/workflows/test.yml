@@ -28,7 +28,7 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.100'
-          cache: 'dotnet'
+          cache: 'true'
 
       - name: Install SonarCloud scanner
         run: dotnet tool install --global dotnet-sonarscanner
