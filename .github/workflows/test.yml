@@ -43,7 +43,8 @@ jobs:
             /d:sonar.host.url="${SONAR_HOST_URL}" \
             /d:sonar.token="${SONAR_TOKEN}" \
             /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
-            /d:sonar.exclusions="tests/**"
+            /d:sonar.exclusions="tests/**" \
+            /d:sonar.scanner.scanAll=false
           
       - name: Build
         run: dotnet build --no-restore
