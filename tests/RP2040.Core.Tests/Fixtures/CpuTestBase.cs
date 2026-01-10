@@ -24,6 +24,7 @@ public abstract class CpuTestBase : IDisposable
 
 	protected const int IP = 12;
 	protected const int SP = 13;
+	protected const int LR = 14;
 	protected const int PC = 15;
 
 	protected CpuTestBase()

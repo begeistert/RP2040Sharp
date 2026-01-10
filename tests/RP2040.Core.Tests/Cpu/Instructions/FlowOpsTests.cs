@@ -5,24 +5,8 @@ using RP2040.Core.Memory;
 using RP2040.tests.Fixtures;
 namespace RP2040.tests.Cpu.Instructions;
 
-public class FlowOpsTests
+public abstract class FlowOpsTests
 {
-	const int R0 = 0;
-	const int R1 = 1;
-	const int R2 = 2;
-	const int R3 = 3;
-	const int R4 = 4;
-	const int R5 = 5;
-	const int R6 = 6;
-	const int R7 = 7;
-	const int R8 = 8;
-	const int R12 = 12;
-
-	const int IP = 12;
-	const int SP = 13;
-	const int LR = 14;
-	const int PC = 15;
-
 	public class Bl : CpuTestBase
 	{
 		[Fact]
@@ -95,7 +79,7 @@ public class FlowOpsTests
 		}
 	}
 
-	public class Branch : CpuTestBase
+	public abstract class Branch : CpuTestBase
 	{
 		public class Unconditional : CpuTestBase
 		{
