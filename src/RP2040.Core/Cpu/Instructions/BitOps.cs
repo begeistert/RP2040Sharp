@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
@@ -235,11 +236,14 @@ public static class BitOps
 	{
 		var rm = (opcode >> 3) & 0x7;
 		var rd = opcode & 0x7;
-		var input = cpu.Registers[rm];
-		cpu.Registers[rd] =
-			(((input >> 16) & 0xff) << 24) |
-			(((input >> 24) & 0xff) << 16) |
-			((input & 0xff) << 8) |
-			((input >> 8) & 0xff);
+		var val = cpu.Registers[rm];
+
+		var low = (ushort)(val & 0xFFFF);
+		var high = (ushort)(val >> 16);
+
+		uint reversedLow = BinaryPrimitives.ReverseEndianness(low);
+		uint reversedHigh = BinaryPrimitives.ReverseEndianness(high);
+
+		cpu.Registers[rd] = (reversedHigh << 16) | reversedLow;
 	}
 }
