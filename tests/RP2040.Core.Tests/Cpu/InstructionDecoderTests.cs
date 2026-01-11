@@ -75,6 +75,7 @@ public unsafe class InstructionDecoderTests
 		Add ("LslsImmZero", InstructionEmiter.LslsImm5 (R5, R5, 0), &BitOps.LslsZero);
 		Add ("LslsRegister", InstructionEmiter.LslsRegister (R5, R0), &BitOps.LslsRegister);
 		Add ("Mvns", InstructionEmiter.Mvns (R0, R2), &BitOps.Mvns);
+		Add ("Rev", InstructionEmiter.Rev (R0, R1), &BitOps.Rev);
 		Add ("Revsh", InstructionEmiter.Revsh (R0, R1), &BitOps.Revsh);
 
 		// Mov Variations

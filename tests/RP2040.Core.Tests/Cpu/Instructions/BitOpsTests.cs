@@ -6,7 +6,7 @@ using RP2040.tests.Fixtures;
 
 namespace RP2040.tests.Cpu.Instructions;
 
-public class BitOpsTests
+public abstract class BitOpsTests
 {
 	public class Ands : CpuTestBase
 	{
@@ -480,6 +480,24 @@ public class BitOpsTests
 			}
 		}
 	}
+	
+	public class Rev : CpuTestBase
+	{
+		[Fact]
+		public void Should_ReverseByteOrder_Of_32BitWord ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Rev (R2, R3);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers[R3] = 0x11223344;
+			
+			// Act
+			Cpu.Step();
+			
+			// Assert
+			Cpu.Registers.R2.Should ().Be (0x44332211);
+		}
+	}
 
 	public class Revsh : CpuTestBase
 	{
@@ -497,34 +515,6 @@ public class BitOpsTests
 			
 			// Assert
 			Cpu.Registers[R1].Should ().Be (0xfffff055);
-		}
-	}
-
-	public class Rev
-	{
-		private readonly CortexM0Plus _cpu;
-		private readonly BusInterconnect _bus;
-		
-		public Rev ()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus (_bus);
-			_cpu.Registers.PC = 0x20000000;
-		}
-		
-		[Fact]
-		public void ShouldExecuteRevR3R1Instruction ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.Rev (R2, R3);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			_cpu.Registers[R3] = 0x11223344;
-			
-			// Act
-			_cpu.Step();
-			
-			// Assert
-			_cpu.Registers.R2.Should ().Be (0x44332211);
 		}
 	}
 }
