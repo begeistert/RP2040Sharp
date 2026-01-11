@@ -481,6 +481,28 @@ public abstract class BitOpsTests
 		}
 	}
 	
+	public class Orrs : CpuTestBase
+	{
+		[Fact]
+		public void Should_CalculateBitwiseOr_And_UpdateNegativeFlag ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Orrs (R5, R0);
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R5] = 0xf00f0000;
+			Cpu.Registers[R0] = 0xf000ffff;
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers[R5].Should ().Be (0xf00fffff);
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+		}
+	}
+	
 	public class Rev : CpuTestBase
 	{
 		[Fact]

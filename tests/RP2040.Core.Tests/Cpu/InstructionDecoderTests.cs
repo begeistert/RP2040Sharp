@@ -63,7 +63,6 @@ public unsafe class InstructionDecoderTests
 		Add ("CmpRegister", InstructionEmiter.CmpRegister (R5, R0), &ArithmeticOps.CmpRegister);
 		Add ("CmpHighRegister", InstructionEmiter.CmpHighRegister (R11, R3), &ArithmeticOps.CmpHighRegister);
 		Add ("Muls", InstructionEmiter.Muls (R0, R2), &ArithmeticOps.Muls);
-		Add ("Orrs", InstructionEmiter.Orrs (R5, R0), &ArithmeticOps.Orrs);
 
 		// --- Bit Operations ---
 		Add ("Ands", InstructionEmiter.Ands (R5, R0), &BitOps.Ands);
@@ -75,6 +74,7 @@ public unsafe class InstructionDecoderTests
 		Add ("LslsImmZero", InstructionEmiter.LslsImm5 (R5, R5, 0), &BitOps.LslsZero);
 		Add ("LslsRegister", InstructionEmiter.LslsRegister (R5, R0), &BitOps.LslsRegister);
 		Add ("Mvns", InstructionEmiter.Mvns (R0, R2), &BitOps.Mvns);
+		Add ("Orrs", InstructionEmiter.Orrs (R5, R0), &BitOps.Orrs);
 		Add ("Rev", InstructionEmiter.Rev (R0, R1), &BitOps.Rev);
 		Add ("Revsh", InstructionEmiter.Revsh (R0, R1), &BitOps.Revsh);
 
