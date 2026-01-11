@@ -111,9 +111,9 @@ public unsafe class InstructionDecoder : IDisposable
 			new OpcodeRule (0xFF00, 0x4500, &ArithmeticOps.CmpHighRegister),
 			// 3. MOV Rd, Rm (Generic Fallback)
 			new OpcodeRule (0xFF00, 0x4600, &BitOps.MovRegister),
+			// MULS (0x4340) and MVNS (0x43C0) are subsets and were handled above
 			// ORRS (Rd, Rm) - NOTE: This covers 0x4300-0x43FF.
-			// MULS (0x4340) and MVNS (0x43C0) are subsets and were handled above.
-			new OpcodeRule (0xFF00, 0x4300, &ArithmeticOps.Orrs),
+			new OpcodeRule (0xFF00, 0x4300, &BitOps.Orrs),
 
 			// Stack Operations
 			new OpcodeRule (0xFF00, 0xBC00, &MemoryOps.Pop),

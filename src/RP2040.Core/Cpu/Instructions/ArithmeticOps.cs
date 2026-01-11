@@ -204,21 +204,6 @@ public static class ArithmeticOps
 	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
-	public static void Orrs (ushort opcode, CortexM0Plus cpu)
-	{
-		var rm = (opcode >> 3) & 0x7;
-		var rdn = opcode & 0x7;
-
-		var valRm = cpu.Registers[rm];
-		ref var ptrRdn = ref cpu.Registers[rdn];
-
-		ptrRdn |= valRm;
-
-		cpu.Registers.N = (int)ptrRdn < 0;
-		cpu.Registers.Z = (ptrRdn == 0);
-	}
-
-	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void SubsImmediate3 (ushort opcode, CortexM0Plus cpu)
 	{
 		// SUBS Rd, Rn, #imm3
