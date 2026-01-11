@@ -1,780 +1,708 @@
 using FluentAssertions;
-using RP2040.Core.Cpu;
 using RP2040.Core.Helpers;
-using RP2040.Core.Memory;
+using RP2040.tests.Fixtures;
+
 namespace RP2040.tests.Cpu.Instructions;
 
-public class ArithmeticOpsTests
+public abstract class ArithmeticOpsTests
 {
-	const int R0 = 0;
-	const int R1 = 1;
-	const int R2 = 2;
-	const int R3 = 3;
-	const int R4 = 4;
-	const int R5 = 5;
-	const int R6 = 6;
-	const int R7 = 7;
-	const int R8 = 8;
-	const int R9 = 9;
-	const int R10 = 10;
-	const int R11 = 11;
-	const int R12 = 12;
-
-	const int IP = 12;
-	const int SP = 13;
-	const int PC = 15;
-	
-	readonly CortexM0Plus _cpu;
-	readonly BusInterconnect _bus;
-	public ArithmeticOpsTests ()
+	public class Adcs : CpuTestBase
 	{
-		_bus = new BusInterconnect ();
-		_cpu = new CortexM0Plus(_bus);
-        
-		// Configuración común opcional
-		_cpu.Registers.PC = 0x20000000;
-	}
-	
-	public class Adcs
-	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Adcs ()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
-        
-			// Configuración común opcional
-			_cpu.Registers.PC = 0x20000000;
-		}
-		
 		[Fact]
-		public void ShouldExecute()
+		public void Should_AddTwoRegisters_IncludingCarry ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Adcs (R5, R4);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R4] = 55;
-			_cpu.Registers[R5] = 66;
-			_cpu.Registers.C = true;
-			
+			Cpu.Registers[R4] = 55;
+			Cpu.Registers[R5] = 66;
+			Cpu.Registers.C = true;
+
 			// Act
-			_cpu.Step ();
-			
+			Cpu.Step ();
+
 			// Assert
-			_cpu.Registers[R5].Should ().Be (122u);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
+			Cpu.Registers[R5].Should ().Be (122u);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeFalse ();
+			Cpu.Registers.V.Should ().BeFalse ();
 		}
 
 		[Fact]
-		public void ShouldSetNegativeAndOverflowFlags ()
+		public void Should_SetNegativeAndOverflow_When_AddingMaxPositiveWithCarry ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Adcs (R5, R4);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R4] = 0x7fffffff;
-			_cpu.Registers[R5] = 0;
-			_cpu.Registers.C = true;
-			
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R4] = 0x7fffffff;
+			Cpu.Registers[R5] = 0;
+			Cpu.Registers.C = true;
+
 			// Act
-			_cpu.Step ();
-			
+			Cpu.Step ();
+
 			// Assert
-			_cpu.Registers[R5].Should ().Be (0x80000000u);
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeTrue ();
+			Cpu.Registers[R5].Should ().Be (0x80000000u);
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeFalse ();
+			Cpu.Registers.V.Should ().BeTrue ();
 		}
 
 		[Fact]
-		public void ShouldNotSetOverflowFlagWhenAddingZeroesWithCarry ()
+		public void Should_PropagateCarry_WithoutSettingOverflow_When_OperandsAreZero ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Adcs (R3, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R2] = 0;
-			_cpu.Registers[R3] = 0;
-			_cpu.Registers.C = true;
-			
+			Cpu.Registers[R2] = 0;
+			Cpu.Registers[R3] = 0;
+			Cpu.Registers.C = true;
+
 			// Act
-			_cpu.Step ();
-			
+			Cpu.Step ();
+
 			// Assert
-			_cpu.Registers[R3].Should ().Be (1u);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
+			Cpu.Registers[R3].Should ().Be (1u);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeFalse ();
+			Cpu.Registers.V.Should ().BeFalse ();
 		}
 
 		[Fact]
-		public void ShouldSetZeroCarryAndOverflowFlags ()
+		public void Should_SetZeroCarryAndOverflow_When_SelfAddingMinNegative ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Adcs (R0, R0);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R0] = 0x80000000;
-			_cpu.Registers.C = false;
-			
+			Cpu.Registers[R0] = 0x80000000;
+			Cpu.Registers.C = false;
+
 			// Act
-			_cpu.Step ();
-			
+			Cpu.Step ();
+
 			// Assert
-			_cpu.Registers[R0].Should ().Be (0);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeTrue ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeTrue ();
+			Cpu.Registers[R0].Should ().Be (0);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeTrue ();
+			Cpu.Registers.C.Should ().BeTrue ();
+			Cpu.Registers.V.Should ().BeTrue ();
 		}
 	}
 
-	public class Add
+	public abstract class Add
 	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Add ()
+		public class SpRelative : CpuTestBase
 		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
-        
-			_cpu.Registers.PC = 0x20000000;
-		}
-		
-		[Fact]
-		public void ShouldExecuteAddSp ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.AddSpImm7 (0x10);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers.SP = 0x10000040;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.SP.Should ().Be (0x10000050);
-		}
+			[Fact]
+			public void Should_IncrementStackPointer_ByImmediate7 ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddSpImm7 (0x10);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-		[Fact]
-		public void ShouldExecuteAddSpPlusImmediate ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.AddSpImm8 (R1, 0x10);
-			_bus.WriteHalfWord (0x20000000, opcode);
+				Cpu.Registers.SP = 0x10000040;
 
-			_cpu.Registers.SP = 0x54;
-			_cpu.Registers[R1] = 0;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.SP.Should ().Be (0x54);
-			_cpu.Registers[R1].Should ().Be (0x64);
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.SP.Should ().Be (0x10000050);
+			}
+
+			[Fact]
+			public void Should_CalculateAddressFromStackPointer_AndStoreInRegister ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddSpImm8 (R1, 0x10);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers.SP = 0x54;
+				Cpu.Registers[R1] = 0;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.SP.Should ().Be (0x54);
+				Cpu.Registers[R1].Should ().Be (0x64);
+			}
 		}
 
-		[Fact]
-		public void ShouldExecuteAddHighRegisters ()
+		public class Register : CpuTestBase
 		{
-			// Arrange
-			var opcode = InstructionEmiter.AddHighRegisters (R1, IP);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R1] = 66;
-			_cpu.Registers[R12] = 44;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R1].Should ().Be (110);
-		}
+			[Fact]
+			public void Should_AddHighRegister_To_LowRegister ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddHighRegisters (R1, IP);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-		[Fact]
-		public void ShouldExecuteAddHighRegistersWithoutUpdateTheFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.AddHighRegisters (R3, R12);
-			_bus.WriteHalfWord (0x20000000, opcode);
+				Cpu.Registers[R1] = 66;
+				Cpu.Registers[R12] = 44;
 
-			_cpu.Registers[R3] = 0x00002000;
-			_cpu.Registers[R12] = 0xffffe000;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R3].Should ().Be (0x00000000);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
+				// Act
+				Cpu.Step ();
 
-		[Fact]
-		public void ShouldExecuteAddHighRegistersWithSpWithoutUpdateTheFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.AddHighRegisters (SP, R8);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[SP] = 0x20030000;
-			_cpu.Registers.Z = true;
-			_cpu.Registers[R8] = 0x13;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[SP].Should ().Be (0x20030010);
-			_cpu.Registers.Z.Should ().BeTrue ();
-		}
+				// Assert
+				Cpu.Registers[R1].Should ().Be (110);
+			}
 
-		[Fact]
-		public void ShouldExecuteAddHighRegistersWithPc ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.AddHighRegisters (PC, R8);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			[Fact]
+			public void Should_NotUpdateFlags_When_ResultIsZero ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddHighRegisters (R3, R12);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R8] = 0x11;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[PC].Should ().Be (0x20000014);
-		}
-		
-		[Fact]
-		public void ShouldExecuteAddEncodingT2WithLowRegistersAndPreserveFlags()
-		{
-			// Arrange
-			// Esto genera el opcode 0x4411 (Encoding T2) en lugar de 0x1811 (Encoding T1)
-			var opcode = InstructionEmiter.AddHighRegisters(R1, R2); 
-			_bus.WriteHalfWord(0x20000000, opcode);
+				Cpu.Registers[R3] = 0x00002000;
+				Cpu.Registers[R12] = 0xffffe000;
 
-			_cpu.Registers[R1] = 10;
-			_cpu.Registers[R2] = 20;
+				// Act
+				Cpu.Step ();
 
-			_cpu.Registers.N = true;
-			_cpu.Registers.Z = true; 
-			_cpu.Registers.C = true; 
-			_cpu.Registers.V = true;
+				// Assert
+				Cpu.Registers[R3].Should ().Be (0x00000000);
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
 
-			// Act
-			_cpu.Step();
+			[Fact]
+			public void Should_AddRegisterToStackPointer_And_PreserveFlags ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddHighRegisters (SP, R8);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-			// Assert
-			_cpu.Registers[R1].Should().Be(30); // 10 + 20
+				Cpu.Registers[SP] = 0x20030000;
+				Cpu.Registers.Z = true;
+				Cpu.Registers[R8] = 0x13;
 
-			// Verificamos que NO cambiaron, a pesar de que:
-			// - El resultado (30) NO es negativo (N debería ser false si se actualizara)
-			// - El resultado NO es cero (Z debería ser false si se actualizara)
-			_cpu.Registers.N.Should().BeTrue();
-			_cpu.Registers.Z.Should().BeTrue();
-			_cpu.Registers.C.Should().BeTrue();
-			_cpu.Registers.V.Should().BeTrue();
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[SP].Should ().Be (0x20030010);
+				Cpu.Registers.Z.Should ().BeTrue ();
+			}
+
+			[Fact]
+			public void Should_AddRegisterToProgramCounter_And_AlignResult ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddHighRegisters (PC, R8);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R8] = 0x11;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[PC].Should ().Be (0x20000014);
+			}
+
+			[Fact]
+			public void Should_PreserveFlags_When_UsingEncodingT2_WithLowRegisters ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddHighRegisters (R1, R2);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R1] = 10;
+				Cpu.Registers[R2] = 20;
+
+				Cpu.Registers.N = true;
+				Cpu.Registers.Z = true;
+				Cpu.Registers.C = true;
+				Cpu.Registers.V = true;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[R1].Should ().Be (30);
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeTrue ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeTrue ();
+			}
 		}
 	}
 
-	public class Adds
+	public abstract class Adds
 	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Adds ()
+		public class Immediate3 : CpuTestBase
 		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
-        
-			_cpu.Registers.PC = 0x20000000;
+			[Fact]
+			public void Should_AddSmallImmediate_And_ClearFlags ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R2] = 2;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[R1].Should ().Be (5);
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
 		}
 
-		[Fact]
-		public void ShouldExecuteImm3 ()
+		public class Immediate8 : CpuTestBase
 		{
-			// Arrange
-			var opcode = InstructionEmiter.AddsImm3 (R1, R2, 3);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			[Fact]
+			public void Should_AddLargeImmediate_And_SetZeroAndCarryFlags_OnUnsignedOverflow ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddsImm8 (R1, 1);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R2] = 2;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R1].Should ().Be (5);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
+				Cpu.Registers[R1] = 0xffffffff;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[R1].Should ().Be (0);
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeTrue ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
 		}
 
-		[Fact]
-		public void ShouldExecuteImm8 ()
+		public class Register : CpuTestBase
 		{
-			// Arrange
-			var opcode = InstructionEmiter.AddsImm8 (R1, 1);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			[Fact]
+			public void Should_AddTwoRegisters_StandardCase ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddsRegister (R1, R2, R7);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R1] = 0xffffffff;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R1].Should ().Be (0);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeTrue ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteRegister ()
-		{
-			// Test 1: ADDS R1, R2, R7 (2 + 27 = 29)
-			// Requiere: InstructionEmiter.AddsReg(rd, rn, rm)
-			var opcode = InstructionEmiter.AddsRegister (R1, R2, R7);
-			_bus.WriteHalfWord (0x20000000, opcode);
+				Cpu.Registers[R2] = 2;
+				Cpu.Registers[R7] = 27;
 
-			_cpu.Registers[R2] = 2;
-			_cpu.Registers[R7] = 27;
-       
-			_cpu.Step ();
-       
-			_cpu.Registers[R1].Should ().Be (29);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteRegisterWithSignedOverflow ()
-		{
-			// Test 2: ADDS R4, R4, R2 (Overflow Signed)
-			var opcode = InstructionEmiter.AddsRegister (R4, R4, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
+				// Act
+				Cpu.Step ();
 
-			_cpu.Registers[R2] = 0x74bc8000;
-			_cpu.Registers[R4] = 0x43740000;
-       
-			_cpu.Step ();
-       
-			_cpu.Registers[R4].Should ().Be (0xb8308000);
-			_cpu.Registers.N.Should ().BeTrue ();  // Resultado es negativo (bit 31=1)
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse (); // No hubo carry unsigned
-			_cpu.Registers.V.Should ().BeTrue ();  // Overflow Signed (Pos + Pos = Neg)
-		}
+				// Assert
+				Cpu.Registers[R1].Should ().Be (29);
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
 
-		[Fact]
-		public void ShouldExecuteRegisterSelfAddWithCarryAndOverflow ()
-		{
-			// Test 3: ADDS R1, R1, R1 (Neg + Neg = Pos + Carry)
-			var opcode = InstructionEmiter.AddsRegister (R1, R1, R1);
-			_bus.WriteHalfWord (0x20000000, opcode);
+			[Fact]
+			public void Should_SetOverflowFlag_When_AddingTwoPositiveNumbers_ResultsInNegative ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddsRegister (R4, R4, R2);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers[R1] = 0xbf8d1424;
-			_cpu.Registers.C = true; // Inyectamos C para probar que se SOBREESCRIBE, no que se usa.
-       
-			_cpu.Step ();
-       
-			_cpu.Registers[R1].Should ().Be (0x7f1a2848);
-			_cpu.Registers.N.Should ().BeFalse (); // Positivo
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();  // Carry generado
-			_cpu.Registers.V.Should ().BeTrue ();  // Overflow Signed
+				Cpu.Registers[R2] = 0x74bc8000;
+				Cpu.Registers[R4] = 0x43740000;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[R4].Should ().Be (0xb8308000);
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeTrue ();
+			}
+
+			[Fact]
+			public void Should_GenerateCarryAndOverflow_OnSelfAddition ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.AddsRegister (R1, R1, R1);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R1] = 0xbf8d1424;
+				Cpu.Registers.C = true;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers[R1].Should ().Be (0x7f1a2848);
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeTrue ();
+			}
 		}
 	}
 
-	public class Adr
+	public class Adr : CpuTestBase
 	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Adr ()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
-        
-			_cpu.Registers.PC = 0x20000000;
-		}
-
 		[Fact]
-		public void ShouldExecute ()
+		public void Should_CalculateAddress_RelativeToProgramCounter ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Adr (R4, 0x50);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
+			Bus.WriteHalfWord (0x20000000, opcode);
+
 			// Act
-			_cpu.Step ();
-			
+			Cpu.Step ();
+
 			// Assert
-			_cpu.Registers[R4].Should ().Be (0x20000054);
+			Cpu.Registers[R4].Should ().Be (0x20000054);
 		}
 	}
-	
-	public class Cmn
-	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Cmn ()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
-        
-			_cpu.Registers.PC = 0x20000000;
-		}
 
+	public class Cmn : CpuTestBase
+	{
 		[Fact]
-		public void ShouldExecute ()
+		public void Should_UpdateFlags_And_DiscardResult_When_AddingTwoRegisters ()
 		{
 			// Arrange
 			const uint negativeTwo = (uint)(-2 & 0xFFFFFFFF);
 			var opcode = InstructionEmiter.Cmn (R7, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R2] = 1;
-			_cpu.Registers[R7] = negativeTwo;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R2].Should ().Be (1);
-			_cpu.Registers[R7].Should ().Be (negativeTwo);
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-	}
-	
-	public class Cmp
-	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Cmp ()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus(_bus);
-        
-			_cpu.Registers.PC = 0x20000000;
-		}
+			Bus.WriteHalfWord (0x20000000, opcode);
 
-		[Fact]
-		public void ShouldExecuteImmp ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpImm  (R5, 66);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R5] = 60;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteImmpAndUpdateCarryFlag ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpImm  (R0, 0);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 0x80010133;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteRegister ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpRegister  (R5, R0);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 56;
-			_cpu.Registers[R5] = 60;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteRegisterAndNotSetFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpRegister  (R2, R0);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 0xb71b0000;
-			_cpu.Registers[R2] = 0x00b71b00;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteRegisterAndSetNegativeAndOverflowFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpRegister  (R3, R7);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R3] = 0;
-			_cpu.Registers[R7] = 0x80000000;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeTrue ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteRegisterAndSetNegativeAndCarryFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpRegister  (R3, R7);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R3] = 0x80000000;
-			_cpu.Registers[R7] = 0;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
+			Cpu.Registers[R2] = 1;
+			Cpu.Registers[R7] = negativeTwo;
 
-		[Fact]
-		public void ShouldExecuteHighRegisterAndSetCarryFlag ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R3] = 0x00000008;
-			_cpu.Registers[R11] = 0xffffffff;
-			
 			// Act
-			_cpu.Step ();
-			
+			Cpu.Step ();
+
 			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteHighRegister ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpHighRegister  (IP, R6);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R6] = 56;
-			_cpu.Registers[R12] = 60;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteHighRegisterAndUpdateNegativeAndCarryFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R3] = 0;
-			_cpu.Registers[R11] = 0x80000000;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeTrue ();
-			_cpu.Registers.V.Should ().BeFalse ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteHighRegisterAndUpdateNegativeAndOverflowFlags ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.CmpHighRegister  (R11, R3);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R3] = 0x80000000;
-			_cpu.Registers[R11] = 0;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
-			_cpu.Registers.C.Should ().BeFalse ();
-			_cpu.Registers.V.Should ().BeTrue ();
+			Cpu.Registers[R2].Should ().Be (1);
+			Cpu.Registers[R7].Should ().Be (negativeTwo);
+
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeFalse ();
+			Cpu.Registers.V.Should ().BeFalse ();
 		}
 	}
 
-	public class Muls
+	public abstract class Cmp
 	{
-		readonly CortexM0Plus _cpu;
-		readonly BusInterconnect _bus;
-		public Muls ()
+		public class Immediate : CpuTestBase
 		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus (_bus);
+			[Fact]
+			public void Should_SetNegativeFlag_When_RegisterIsLessThanImmediate ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpImm (R5, 66);
+				Bus.WriteHalfWord (0x20000000, opcode);
 
-			_cpu.Registers.PC = 0x20000000;
+				Cpu.Registers[R5] = 60;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
+
+			[Fact]
+			public void Should_SetCarryFlag_When_RegisterIsGreaterOrEqual_ToImmediate ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpImm (R0, 0);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R0] = 0x80010133;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
 		}
-		
-		[Fact]
-		public void ShouldExecute ()
+
+		public class Register : CpuTestBase
 		{
-			// Arrange
-			var opcode = InstructionEmiter.Muls (R0, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 5;
-			_cpu.Registers[R2] = 1000000;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R2].Should ().Be (5000000);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeFalse ();
+			[Fact]
+			public void Should_SetCarryFlag_When_RnIsGreaterThanRm ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpRegister (R5, R0);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R0] = 56;
+				Cpu.Registers[R5] = 60;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
+
+			[Fact]
+			public void Should_ClearCarryFlag_When_UnsignedBorrowOccurs ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpRegister (R2, R0);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R0] = 0xb71b0000;
+				Cpu.Registers[R2] = 0x00b71b00;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
+
+			[Fact]
+			public void Should_SetOverflowFlag_When_SubtractingMinNegativeFromZero ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpRegister (R3, R7);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R3] = 0;
+				Cpu.Registers[R7] = 0x80000000;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeTrue ();
+			}
+
+			[Fact]
+			public void Should_SetCarryFlag_When_SubtractingZeroFromMinNegative ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpRegister (R3, R7);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R3] = 0x80000000;
+				Cpu.Registers[R7] = 0;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
 		}
-		
-		[Fact]
-		public void ShouldExecuteWith32BitNumber ()
+
+		public class HighRegister : CpuTestBase
 		{
-			// Arrange
-			var opcode = InstructionEmiter.Muls (R0, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 2654435769;
-			_cpu.Registers[R2] = 340573321;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R2].Should ().Be (1);
-		}
-		
-		[Fact]
-		public void ShouldExecuteAndSetZeroFlag ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.Muls (R0, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 0;
-			_cpu.Registers[R2] = 1000000;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R2].Should ().Be (0);
-			_cpu.Registers.N.Should ().BeFalse ();
-			_cpu.Registers.Z.Should ().BeTrue ();
-		}
-		
-		[Fact]
-		public void ShouldExecuteAndSetNegativeFlag ()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.Muls (R0, R2);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			
-			_cpu.Registers[R0] = 0xFFFFFFFF;
-			_cpu.Registers[R2] = 1000000;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R2].Should ().Be ((uint)(-1000000 & 0xFFFFFFFF));
-			_cpu.Registers.N.Should ().BeTrue ();
-			_cpu.Registers.Z.Should ().BeFalse ();
+			[Fact]
+			public void Should_CompareHighAndLowRegisters_And_SetCarry ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpHighRegister (R11, R3);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R3] = 0x00000008;
+				Cpu.Registers[R11] = 0xffffffff;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
+
+			[Fact]
+			public void Should_CompareTwoHighRegisters_WithPositiveResult ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpHighRegister (IP, R6);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R6] = 56;
+				Cpu.Registers[R12] = 60;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeFalse ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
+
+			[Fact]
+			public void Should_SetCarryFlag_When_HighRegisterIsNegative_And_ComparedWithZero ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpHighRegister (R11, R3);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R3] = 0;
+				Cpu.Registers[R11] = 0x80000000;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeTrue ();
+				Cpu.Registers.V.Should ().BeFalse ();
+			}
+
+			[Fact]
+			public void Should_SetOverflowFlag_When_ZeroIsComparedWith_HighRegisterNegative ()
+			{
+				// Arrange
+				var opcode = InstructionEmiter.CmpHighRegister (R11, R3);
+				Bus.WriteHalfWord (0x20000000, opcode);
+
+				Cpu.Registers[R3] = 0x80000000;
+				Cpu.Registers[R11] = 0;
+
+				// Act
+				Cpu.Step ();
+
+				// Assert
+				Cpu.Registers.N.Should ().BeTrue ();
+				Cpu.Registers.Z.Should ().BeFalse ();
+				Cpu.Registers.C.Should ().BeFalse ();
+				Cpu.Registers.V.Should ().BeTrue ();
+			}
 		}
 	}
-	
-	[Fact]
-	public void Orrs ()
+
+	public class Muls : CpuTestBase
 	{
-		// Arrange
-		var opcode = InstructionEmiter.Orrs (R5, R0);
-		_bus.WriteHalfWord (0x20000000, opcode);
-			
-		_cpu.Registers[R5] = 0xf00f0000;
-		_cpu.Registers[R0] = 0xf000ffff;
-			
-		// Act
-		_cpu.Step ();
-			
-		// Assert
-		_cpu.Registers[R5].Should ().Be (0xf00fffff);
-		_cpu.Registers.N.Should ().BeTrue ();
-		_cpu.Registers.Z.Should ().BeFalse ();
+		[Fact]
+		public void Should_MultiplyTwoRegisters_And_StoreResult ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R0] = 5;
+			Cpu.Registers[R2] = 1000000;
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers[R2].Should ().Be (5000000);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void Should_WrapAround_When_ResultExceeds32Bits ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R0] = 2654435769;
+			Cpu.Registers[R2] = 340573321;
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers[R2].Should ().Be (1);
+		}
+
+		[Fact]
+		public void Should_SetZeroFlag_When_MultiplyingByZero ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R0] = 0;
+			Cpu.Registers[R2] = 1000000;
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers[R2].Should ().Be (0);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeTrue ();
+		}
+
+		[Fact]
+		public void Should_SetNegativeFlag_When_ResultIsInterpretedAsSignedNegative ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Muls (R0, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R0] = 0xFFFFFFFF;
+			Cpu.Registers[R2] = 1000000;
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers[R2].Should ().Be ((uint)(-1000000 & 0xFFFFFFFF));
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+		}
+	}
+
+	public class Orrs : CpuTestBase
+	{
+		[Fact]
+		public void Should_CalculateBitwiseOr_And_UpdateNegativeFlag ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Orrs (R5, R0);
+			Bus.WriteHalfWord (0x20000000, opcode);
+
+			Cpu.Registers[R5] = 0xf00f0000;
+			Cpu.Registers[R0] = 0xf000ffff;
+
+			// Act
+			Cpu.Step ();
+
+			// Assert
+			Cpu.Registers[R5].Should ().Be (0xf00fffff);
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+		}
 	}
 }
