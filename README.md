@@ -3,6 +3,7 @@
 ![Build Status](https://github.com/begeistert/RP2040Sharp/actions/workflows/test.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=begeistert_RP2040Sharp&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=begeistert_RP2040Sharp)
 
 **RP2040Sharp** is a high-performance emulator for the Raspberry Pi RP2040 microcontroller, written entirely in **modern C# (.NET 10)**.
 
