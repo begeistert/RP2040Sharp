@@ -498,11 +498,29 @@ public abstract class BitOpsTests
 			Cpu.Registers.R2.Should ().Be (0x44332211);
 		}
 	}
+	
+	public class Rev16 : CpuTestBase
+	{
+		[Fact]
+		public void ShouldExecuteRev16R0R5Instruction()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Rev16 (R0, R5);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers[R5] = 0x11223344;
+			
+			// Act
+			Cpu.Step ();
+			
+			// Assert
+			Cpu.Registers[R0].Should ().Be (0x22114433);
+		}
+	}
 
 	public class Revsh : CpuTestBase
 	{
 		[Fact]
-		public void Should_ReverseBytesInLowHalfword_And_SignExtend ()
+		public void Should_ReverseLowerHalfword_And_SignExtend ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Revsh (R1, R2);
@@ -515,33 +533,6 @@ public abstract class BitOpsTests
 			
 			// Assert
 			Cpu.Registers[R1].Should ().Be (0xfffff055);
-		}
-	}
-
-	public class Rev16
-	{
-		private readonly CortexM0Plus _cpu;
-		private readonly BusInterconnect _bus;
-		public Rev16()
-		{
-			_bus = new BusInterconnect ();
-			_cpu = new CortexM0Plus (_bus);
-			_cpu.Registers.PC = 0x20000000;
-		}
-
-		[Fact]
-		public void ShouldExecuteRev16R0R5Instruction()
-		{
-			// Arrange
-			var opcode = InstructionEmiter.Rev16 (R0, R5);
-			_bus.WriteHalfWord (0x20000000, opcode);
-			_cpu.Registers[R5] = 0x11223344;
-			
-			// Act
-			_cpu.Step ();
-			
-			// Assert
-			_cpu.Registers[R0].Should ().Be (0x22114433);
 		}
 	}
 }
