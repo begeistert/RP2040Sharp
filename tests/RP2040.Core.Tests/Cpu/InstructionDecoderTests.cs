@@ -26,24 +26,23 @@ public unsafe class InstructionDecoderTests
 	const int LR = 14;
 	const int PC = 15;
 
-	static nuint AddressOf (InstructionHandler handler) => (nuint)handler;
+	static ulong AddressOf (InstructionHandler handler) => (ulong)handler;
 	static readonly InstructionDecoder Decoder = InstructionDecoder.Instance;
 
 	[Theory]
 	[MemberData (nameof (GetInstructionTestCases))]
-	public void ShouldMapCorrectly (string name, ushort opcode, nuint expectedHandlerAddress)
+	public void ShouldMapCorrectly (string name, ushort opcode, ulong expectedHandlerAddress)
 	{
 		// Act
-		var actualHandler = Decoder.GetHandler (opcode);
+		var actualHandler = (ulong)Decoder.GetHandler (opcode);
 
 		// Assert
-		// El mensaje personalizado ayuda a saber cuál instrucción falló exactamente
-		actualHandler.Should ().Be (expectedHandlerAddress, $"la instrucción '{name}' debería decodificarse correctamente");
+		actualHandler.Should ().Be (expectedHandlerAddress, $"The instruction '{name}' should decode correctly");
 	}
 
-	public static IEnumerable<object[]> GetInstructionTestCases ()
+	public static TheoryData<string, ushort, ulong> GetInstructionTestCases ()
 	{
-		var cases = new List<object[]> ();
+		var cases = new TheoryData<string, ushort, ulong> ();
 
 		// --- Arithmetic Operations ---
 		Add ("Adcs", InstructionEmiter.Adcs (R4, R4), &ArithmeticOps.Adcs);
@@ -76,6 +75,8 @@ public unsafe class InstructionDecoderTests
 		Add ("LslsImmZero", InstructionEmiter.LslsImm5 (R5, R5, 0), &BitOps.LslsZero);
 		Add ("LslsRegister", InstructionEmiter.LslsRegister (R5, R0), &BitOps.LslsRegister);
 		Add ("Mvns", InstructionEmiter.Mvns (R0, R2), &BitOps.Mvns);
+		Add ("Rev", InstructionEmiter.Rev (R0, R1), &BitOps.Rev);
+		Add ("Revsh", InstructionEmiter.Revsh (R0, R1), &BitOps.Revsh);
 
 		// Mov Variations
 		Add ("Mov (Reg)", InstructionEmiter.Mov (R3, R8), &BitOps.MovRegister);
@@ -119,10 +120,7 @@ public unsafe class InstructionDecoderTests
 
 		void Add (string name, ushort opcode, InstructionHandler handler)
 		{
-			cases.Add ([
-				name, opcode,
-				AddressOf (handler)
-			]);
+			cases.Add (name, opcode, AddressOf (handler));
 		}
 	}
 }

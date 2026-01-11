@@ -1,17 +1,15 @@
+using System.Diagnostics.CodeAnalysis;
 namespace RP2040.Core.Helpers;
 
+[ExcludeFromCodeCoverage]
 public static class InstructionEmiter
 {
 	const string LowRegisterIndexOutOfRange = "Register index out of range (0-7)";
 	const string HighRegisterIndexOutOfRange = "Register index out of range (0-15)";
 	
-	// ADCS Rd, Rm
-	// Encoding: 0100 0001 01mm mddd (0x4140 base)
 	public static ushort Adcs (int rd, int rm)
 	{
-		// Validaciones de "Eminencia": Fail fast si el test está mal escrito
 		if (rd > 7 || rm > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
-
 		return (ushort)(0x4140 | (rm << 3) | rd);
 	}
 
@@ -253,5 +251,11 @@ public static class InstructionEmiter
 	{
 		if (rdn > 7 || rm > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
 		return (ushort)(0x4080 | ((rm & 7) << 3) | rdn);
+	}
+	
+	public static ushort Revsh (uint rd, uint rm)
+	{
+		if (rd > 7 || rm > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
+		return (ushort)(0xBAC0 | ((rm & 7) << 3) | (rd & 7));
 	}
 }
