@@ -1,5 +1,7 @@
+using System.Diagnostics.CodeAnalysis;
 namespace RP2040.Core.Helpers;
 
+[ExcludeFromCodeCoverage]
 public static class InstructionEmiter
 {
 	const string LowRegisterIndexOutOfRange = "Register index out of range (0-7)";
