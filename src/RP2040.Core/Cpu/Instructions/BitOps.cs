@@ -230,40 +230,35 @@ public static class BitOps
 		cpu.Registers.Z = (result == 0);
 		cpu.Registers.C = finalCarry;
 	}
-	
-  [MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Rev(ushort opcode, CortexM0Plus cpu)
+
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Rev (ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 0x7;
 		var rd = opcode & 0x7;
 		var val = cpu.Registers[rm];
-    
-		cpu.Registers[rd] = BinaryPrimitives.ReverseEndianness(val);
-  }
-  
+
+		cpu.Registers[rd] = BinaryPrimitives.ReverseEndianness (val);
+	}
+
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Rev16 (ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+		
+		var val = cpu.Registers[rm];
+
+		cpu.Registers[rd] = ((val & 0xFF00FF00u) >> 8) | ((val & 0x00FF00FFu) << 8);
+	}
+
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void Revsh (ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 0x7;
 		var rd = opcode & 0x7;
 		var val = (ushort)cpu.Registers[rm];
-		var reversed = BinaryPrimitives.ReverseEndianness(val);
+		var reversed = BinaryPrimitives.ReverseEndianness (val);
 		cpu.Registers[rd] = (uint)(short)reversed;
-	}
-
-	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	public static void Rev16(ushort opcode, CortexM0Plus cpu)
-	{
-		var rm = (opcode >> 3) & 0x7;
-		var rd = opcode & 0x7;
-		var val = cpu.Registers[rm];
-
-		var low = (ushort)(val & 0xFFFF);
-		var high = (ushort)(val >> 16);
-
-		uint reversedLow = BinaryPrimitives.ReverseEndianness(low);
-		uint reversedHigh = BinaryPrimitives.ReverseEndianness(high);
-
-		cpu.Registers[rd] = (reversedHigh << 16) | reversedLow;
 	}
 }

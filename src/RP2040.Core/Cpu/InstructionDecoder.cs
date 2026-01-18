@@ -5,13 +5,15 @@ using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.Cort
 
 namespace RP2040.Core.Cpu;
 
-public unsafe class InstructionDecoder : IDisposable
+public unsafe sealed class InstructionDecoder : IDisposable
 {
 	public static InstructionDecoder Instance { get; } = new InstructionDecoder ();
 
 	private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
 	private GCHandle _pinnedHandle;
 	private readonly InstructionHandler* _fastTablePtr;
+
+	bool _disposed;
 
 	private readonly struct OpcodeRule (ushort mask, ushort pattern, InstructionHandler handler)
 	{
@@ -209,6 +211,15 @@ public unsafe class InstructionDecoder : IDisposable
 
 	public void Dispose ()
 	{
-		if (_pinnedHandle.IsAllocated) _pinnedHandle.Free ();
+		Dispose (true);
+		GC.SuppressFinalize (this);
+	}
+
+	public void Dispose (bool disposing)
+	{
+		if (!disposing || _disposed || !_pinnedHandle.IsAllocated)
+			return;
+		_pinnedHandle.Free ();
+		_disposed = true;
 	}
 }
