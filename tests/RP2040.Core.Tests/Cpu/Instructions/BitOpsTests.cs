@@ -498,11 +498,29 @@ public abstract class BitOpsTests
 			Cpu.Registers.R2.Should ().Be (0x44332211);
 		}
 	}
+	
+	public class Rev16 : CpuTestBase
+	{
+		[Fact]
+		public void ShouldExecuteRev16R0R5Instruction()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.Rev16 (R0, R5);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers[R5] = 0x11223344;
+			
+			// Act
+			Cpu.Step ();
+			
+			// Assert
+			Cpu.Registers[R0].Should ().Be (0x22114433);
+		}
+	}
 
 	public class Revsh : CpuTestBase
 	{
 		[Fact]
-		public void Should_ReverseBytesInLowHalfword_And_SignExtend ()
+		public void Should_ReverseLowerHalfword_And_SignExtend ()
 		{
 			// Arrange
 			var opcode = InstructionEmiter.Revsh (R1, R2);

@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RP2040.Core.Cpu.Instructions;
@@ -5,13 +6,15 @@ using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.Cort
 
 namespace RP2040.Core.Cpu;
 
-public unsafe class InstructionDecoder : IDisposable
+public unsafe sealed class InstructionDecoder : IDisposable
 {
 	public static InstructionDecoder Instance { get; } = new InstructionDecoder ();
 
 	private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
 	private GCHandle _pinnedHandle;
 	private readonly InstructionHandler* _fastTablePtr;
+
+	bool _disposed;
 
 	private readonly struct OpcodeRule (ushort mask, ushort pattern, InstructionHandler handler)
 	{
@@ -73,6 +76,8 @@ public unsafe class InstructionDecoder : IDisposable
 			new OpcodeRule (0xFFC0, 0x0000, &BitOps.LslsZero),
 			// LSLS (Register) - Encoding T2
 			new OpcodeRule (0xFFC0, 0x4080, &BitOps.LslsRegister),
+			// Rev16 Rd, Rn
+			new OpcodeRule (0xFFC0, 0xBA40, &BitOps.Rev16),
 			// REVSH Rd, Rm
 			new OpcodeRule (0xFFC0, 0xBAC0, &BitOps.Revsh),
 			// REV (Rd, Rn)
@@ -188,6 +193,12 @@ public unsafe class InstructionDecoder : IDisposable
 			}
 		}
 	}
+	
+	[ExcludeFromCodeCoverage]
+	~InstructionDecoder()
+	{
+		Dispose(false);
+	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public void Dispatch (ushort opcode, CortexM0Plus cpu)
@@ -205,8 +216,24 @@ public unsafe class InstructionDecoder : IDisposable
 		throw new Exception ($"Undefined Opcode: 0x{opcode:X4} PC={cpu.Registers.PC:X8}");
 	}
 
+	[ExcludeFromCodeCoverage]
 	public void Dispose ()
 	{
-		if (_pinnedHandle.IsAllocated) _pinnedHandle.Free ();
+		Dispose (true);
+		GC.SuppressFinalize (this);
+	}
+
+	[ExcludeFromCodeCoverage]
+	private void Dispose(bool disposing)
+	{
+		_ = disposing;
+		if (_disposed) return;
+		
+		if (_pinnedHandle.IsAllocated)
+		{
+			_pinnedHandle.Free();
+		}
+
+		_disposed = true;
 	}
 }
