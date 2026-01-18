@@ -194,6 +194,7 @@ public unsafe sealed class InstructionDecoder : IDisposable
 		}
 	}
 	
+	[ExcludeFromCodeCoverage]
 	~InstructionDecoder()
 	{
 		Dispose(false);
