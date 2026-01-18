@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using RP2040.Core.Cpu.Instructions;
@@ -192,6 +193,11 @@ public unsafe sealed class InstructionDecoder : IDisposable
 			}
 		}
 	}
+	
+	~InstructionDecoder()
+	{
+		Dispose(false);
+	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public void Dispatch (ushort opcode, CortexM0Plus cpu)
@@ -209,17 +215,24 @@ public unsafe sealed class InstructionDecoder : IDisposable
 		throw new Exception ($"Undefined Opcode: 0x{opcode:X4} PC={cpu.Registers.PC:X8}");
 	}
 
+	[ExcludeFromCodeCoverage]
 	public void Dispose ()
 	{
 		Dispose (true);
 		GC.SuppressFinalize (this);
 	}
 
-	public void Dispose (bool disposing)
+	[ExcludeFromCodeCoverage]
+	private void Dispose(bool disposing)
 	{
-		if (!disposing || _disposed || !_pinnedHandle.IsAllocated)
-			return;
-		_pinnedHandle.Free ();
+		_ = disposing;
+		if (_disposed) return;
+		
+		if (_pinnedHandle.IsAllocated)
+		{
+			_pinnedHandle.Free();
+		}
+
 		_disposed = true;
 	}
 }
