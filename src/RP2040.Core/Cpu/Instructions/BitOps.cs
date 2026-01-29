@@ -261,6 +261,17 @@ public static class BitOps
 	}
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
+	public static void Rev16 (ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 3) & 0x7;
+		var rd = opcode & 0x7;
+		
+		var val = cpu.Registers[rm];
+
+		cpu.Registers[rd] = ((val & 0xFF00FF00u) >> 8) | ((val & 0x00FF00FFu) << 8);
+	}
+
+	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void Revsh (ushort opcode, CortexM0Plus cpu)
 	{
 		var rm = (opcode >> 3) & 0x7;
@@ -268,7 +279,6 @@ public static class BitOps
 
 		var val = (ushort)cpu.Registers[rm];
 		var reversed = BinaryPrimitives.ReverseEndianness (val);
-
 		cpu.Registers[rd] = (uint)(short)reversed;
 	}
 }
