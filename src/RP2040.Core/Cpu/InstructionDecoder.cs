@@ -106,6 +106,8 @@ public unsafe sealed class InstructionDecoder : IDisposable
 			// ================================================================
 			// ADD (SP + imm7)
 			new OpcodeRule (0xFF80, 0xB000, &ArithmeticOps.AddSpImmediate7),
+			// Sub (SP - imm)
+			new OpcodeRule (0xFF80, 0xB080, &ArithmeticOps.SubSp),
 
 			// ================================================================
 			// GROUP 6: Mask 0xFF00 (8 bits significant - Broad Categories)
@@ -151,7 +153,11 @@ public unsafe sealed class InstructionDecoder : IDisposable
 			new OpcodeRule (0xFE00, 0x1800, &ArithmeticOps.AddsRegister),
 			// ADDS (Rd, Rn, imm3)
 			new OpcodeRule (0xFE00, 0x1C00, &ArithmeticOps.AddsImmediate3),
-
+			// SUBS (imm3)
+			new OpcodeRule (0xFE00, 0x1E00, &ArithmeticOps.SubsImmediate3),
+			// SUBS (Register)
+			new OpcodeRule (0xFE00, 0x1A00, &ArithmeticOps.SubsRegister),
+			
 			// ================================================================
 			// GROUP 8: Mask 0xF800 (5 bits significant - Most Generic)
 			// ================================================================
@@ -159,6 +165,8 @@ public unsafe sealed class InstructionDecoder : IDisposable
 			new OpcodeRule (0xF800, 0xA800, &ArithmeticOps.AddSpImmediate8),
 			// ADDS (Rd, imm8)
 			new OpcodeRule (0xF800, 0x3000, &ArithmeticOps.AddsImmediate8),
+			// SUBS (imm8)
+			new OpcodeRule (0xF800, 0x3800, &ArithmeticOps.SubsImmediate8),
 			// ADR (Rd, imm8)
 			new OpcodeRule (0xF800, 0xA000, &ArithmeticOps.Adr),
 			// ASRS (Rd, Rm, imm5)

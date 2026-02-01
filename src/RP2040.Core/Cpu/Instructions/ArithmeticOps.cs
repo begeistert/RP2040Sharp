@@ -229,6 +229,27 @@ public static class ArithmeticOps
 
 		ptrRd = SubWithFlags (cpu, ptrRd, imm8);
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void SubSp(ushort opcode, CortexM0Plus cpu)
+	{
+		var imm32 = (opcode & 0x7f) << 2;
+		cpu.Registers.SP -= (ushort) imm32;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void SubsRegister(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 6) & 0x7;
+		var rn = (opcode >> 3) & 0x7;
+		var rd =  opcode & 0x7;
+		
+		ref var ptrRd = ref cpu.Registers[rd];
+		var valRn = cpu.Registers[rn];
+		var valRm = cpu.Registers[rm];
+		
+		ptrRd = SubWithFlags(cpu, valRn, valRm);
+	}
 
 	// =============================================================
 	// MATH HELPERS (Sin cambios, reciben valores)

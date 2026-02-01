@@ -683,4 +683,145 @@ public abstract class ArithmeticOpsTests
 			Cpu.Registers.Z.Should ().BeFalse ();
 		}
 	}
+
+	public class Sub : CpuTestBase
+	{
+		[Fact]
+		public void Should_Execute_SubSpInstruction()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubSp(0x10);
+			Cpu.Registers.SP = 0x10000040;
+			Bus.WriteHalfWord (0x20000000, opcode);
+			
+			// Act
+			Cpu.Step();
+
+			// Assert
+			Cpu.Registers.SP.Should ().Be (0x10000030);
+		}
+	}
+	
+	public class Subs : CpuTestBase
+	{
+		[Fact]
+		public void Should_Execute_SubsR1_With_Overflow ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubsImm8 (R1, 1);
+			Cpu.Registers[R1] = (uint)(-0x80000000 & uint.MaxValue);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			
+			// Act
+			Cpu.Step ();
+			
+			// Assert
+			Cpu.Registers[R1].Should ().Be (0x7fffffff);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeTrue ();
+			Cpu.Registers.V.Should ().BeTrue ();
+		}
+		
+		[Fact]
+		public void Should_Execute_SubsR5R3 ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubsImm3 (R5, R3, 5);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers.R3 = 0;
+			
+			// Act
+			Cpu.Step();
+
+			// Assert
+			Cpu.Registers[R5 | 0].Should ().Be ((uint)(-5 & uint.MaxValue));
+			Cpu.Registers.N.Should ().BeTrue();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeFalse ();
+			Cpu.Registers.V.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void Should_Execute_SubsR5R3R2()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubsReg (R5, R3, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers.R3 = 6;
+			Cpu.Registers.R2 = 5;
+			
+			// Act
+			Cpu.Step();
+			
+			// Assert
+			Cpu.Registers.R5.Should ().Be (1);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeTrue ();
+			Cpu.Registers.V.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void Should_Execute_SubsR3R3R2()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubsReg (R3, R3, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers.R2 = 8;
+			Cpu.Registers.R3 = 0xffffffff;
+			
+			// Act
+			Cpu.Step ();
+			
+			// Arrange
+			Cpu.Registers.R3.Should ().Be (0xfffffff7);
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeTrue ();
+			Cpu.Registers.V.Should ().BeFalse ();
+		}
+
+		[Fact]
+		public void Should_Execute_SubsR5R3R2_And_Set_NVFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubsReg (R5, R3, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers.R3 = 0;
+			Cpu.Registers.R2 = 0x80000000;
+			
+			// Act
+			Cpu.Step ();
+			
+			// Assert
+			Cpu.Registers.R5.Should ().Be (0x80000000);
+			Cpu.Registers.N.Should ().BeTrue ();
+			Cpu.Registers.Z.Should ().BeFalse ();
+			Cpu.Registers.C.Should ().BeFalse ();
+			Cpu.Registers.V.Should ().BeTrue ();
+		}
+
+		[Fact]
+		public void Should_Execute_SubsR5R3R2_And_Set_ZCFlags ()
+		{
+			// Arrange
+			var opcode = InstructionEmiter.SubsReg (R3, R3, R2);
+			Bus.WriteHalfWord (0x20000000, opcode);
+			Cpu.Registers.R3 = 0x80000000;
+			Cpu.Registers.R2 = 0x80000000;
+			
+			// Act
+			Cpu.Step ();
+			
+			// Assert
+			Cpu.Registers.R5.Should ().Be (0);
+			Cpu.Registers.N.Should ().BeFalse ();
+			Cpu.Registers.Z.Should ().BeTrue ();
+			Cpu.Registers.C.Should ().BeTrue ();
+			Cpu.Registers.V.Should ().BeFalse ();
+		}
+	}
+	
+	
 }

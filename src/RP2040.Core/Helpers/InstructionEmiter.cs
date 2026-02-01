@@ -54,6 +54,33 @@ public static class InstructionEmiter
 		return (ushort)(0x1800 | ((rm & 0x07) << 6) | (rn & 0x07) << 3 | (rd & 0x07));
 	}
 
+	public static ushort SubSp (uint imm)
+	{
+		if (imm > 508) throw new ArgumentOutOfRangeException(nameof(imm), "Immediate value must be between 0 and 508.");
+		return (ushort)(0xB080 | ((imm >> 2) & 0x7f)); 
+	}
+
+	public static ushort SubsImm3 (uint rd, uint rn, uint imm3)
+	{
+		if (rd > 7 || rn > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
+		if (imm3 > 7) throw new ArgumentException("Immediate too large for ADDS");
+
+		return (ushort)(0x1E00 | ((imm3 & 0x7) << 6) | ((rn & 7) << 3) | (rd & 7));
+	}
+
+	public static ushort SubsImm8 (uint rdn, uint imm8)
+	{
+		if (rdn > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
+		if (imm8 > 255) throw new ArgumentException ("Immediate too large for ADDS");
+		return (ushort)(0x3800 | ((rdn & 7) << 8) | (imm8 & 0xff));
+	}
+
+	public static ushort SubsReg(uint rd, uint rn, uint rm)
+	{
+		if (rd > 7 || rn > 7 || rm > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
+		return (ushort)(0x1A00 | ((rm & 0x7) << 6) | ((rn & 7) << 3) | (rd & 7));
+	}
+
 	public static ushort Adr (uint rd, uint imm8)
 	{
 		if (rd > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);

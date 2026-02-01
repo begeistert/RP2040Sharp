@@ -52,7 +52,11 @@ public unsafe class InstructionDecoderTests
 		Add ("AddsImm8", InstructionEmiter.AddsImm8 (R1, 1), &ArithmeticOps.AddsImmediate8);
 		Add ("AddsRegister", InstructionEmiter.AddsRegister (R1, R2, R7), &ArithmeticOps.AddsRegister);
 		Add ("Adr", InstructionEmiter.Adr (R4, 0x50), &ArithmeticOps.Adr);
-
+		Add("SubsRegister", InstructionEmiter.SubsReg(R1, R2, R4), &ArithmeticOps.SubsRegister);
+		Add("SubsImm3", InstructionEmiter.SubsImm3(R1, R2, 3), &ArithmeticOps.SubsImmediate3);
+		Add("SubsImm8", InstructionEmiter.SubsImm8(R1, 0x10), &ArithmeticOps.SubsImmediate8);
+		Add("SubSp", InstructionEmiter.SubSp(0x10), &ArithmeticOps.SubSp);
+ 
 		// Special Cases for AddHighRegister
 		Add ("AddHighReg (Reg)", InstructionEmiter.AddHighRegisters (R1, R2), &ArithmeticOps.AddHighToReg);
 		Add ("AddHighReg (Sp)", InstructionEmiter.AddHighRegisters (SP, R2), &ArithmeticOps.AddHighToSp);
