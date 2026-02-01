@@ -735,7 +735,7 @@ public abstract class ArithmeticOpsTests
 			Cpu.Step();
 
 			// Assert
-			Cpu.Registers[R5 | 0].Should ().Be ((uint)(-5 & uint.MaxValue));
+			Cpu.Registers[R5].Should ().Be ((uint)(-5 & uint.MaxValue));
 			Cpu.Registers.N.Should ().BeTrue();
 			Cpu.Registers.Z.Should ().BeFalse ();
 			Cpu.Registers.C.Should ().BeFalse ();
