@@ -9,14 +9,9 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests (${{ matrix.runner }})
-    
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, self-hosted]
+    name: Unit Tests
 
-    runs-on: ${{ matrix.runner }}
+    runs-on: [ubuntu-latest, self-hosted]
 
     steps:
       - name: Checkout code
