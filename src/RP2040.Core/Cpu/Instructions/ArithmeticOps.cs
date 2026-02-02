@@ -23,12 +23,9 @@ public static class ArithmeticOps
 		// ADDS Rd, #imm8 (Rd es Source y Destino)
 		var rd = (opcode >> 8) & 0x7;
 		var imm8 = (uint)(opcode & 0xFF);
-
-		// OPTIMIZACIÓN CLAVE: Read-Modify-Write
-		// Capturamos la dirección de Rd una sola vez.
+		
 		ref var ptrRd = ref cpu.Registers[rd];
 
-		// Pasamos 'ptrRd' (se lee implícitamente) y asignamos el resultado a 'ptrRd'
 		ptrRd = AddWithFlags (cpu, ptrRd, imm8, carryIn: 0);
 	}
 
@@ -40,7 +37,6 @@ public static class ArithmeticOps
 		var rn = (opcode >> 3) & 0x7;
 		var rm = (opcode >> 6) & 0x7;
 
-		// Preparamos puntero de escritura
 		ref var ptrRd = ref cpu.Registers[rd];
 		var valRn = cpu.Registers[rn];
 		var valRm = cpu.Registers[rm];
@@ -55,7 +51,6 @@ public static class ArithmeticOps
 		var rd = opcode & 0x7;
 		var rm = (opcode >> 3) & 0x7;
 
-		// Read-Modify-Write optimizado
 		ref var ptrRd = ref cpu.Registers[rd];
 		var valRm = cpu.Registers[rm];
 
@@ -64,14 +59,10 @@ public static class ArithmeticOps
 		ptrRd = AddWithFlags (cpu, ptrRd, valRm, carryIn);
 	}
 
-	// --- ADD SP (Sin Flags) ---
-
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void AddSpImmediate7 (ushort opcode, CortexM0Plus cpu)
 	{
 		// ADD SP, SP, #imm7
-		// Aquí no necesitamos ref porque SP es un campo directo, no un array indexado.
-		// El acceso a cpu.Registers.SP ya es directísimo.
 		var imm7 = (uint)((opcode & 0x7F) << 2);
 		cpu.Registers.SP += imm7;
 	}
@@ -83,7 +74,6 @@ public static class ArithmeticOps
 		var rd = (opcode >> 8) & 0x7;
 		var imm8 = (uint)((opcode & 0xFF) << 2);
 
-		// Escritura en Rd
 		cpu.Registers[rd] = cpu.Registers.SP + imm8;
 	}
 
@@ -134,7 +124,6 @@ public static class ArithmeticOps
 
 		var basePc = (cpu.Registers.PC + 2) & 0xFFFFFFFC;
 
-		// Escritura directa
 		cpu.Registers[rd] = basePc + (imm8 << 2);
 	}
 
@@ -206,7 +195,7 @@ public static class ArithmeticOps
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void SubsImmediate3 (ushort opcode, CortexM0Plus cpu)
 	{
-		// SUBS Rd, Rn, #imm3
+		// SUBS Rd, Rn, #imm3 (Encoding T1)
 		var rd = opcode & 0x7;
 		var rn = (opcode >> 3) & 0x7;
 		var imm3 = (uint)((opcode >> 6) & 0x7);
@@ -220,18 +209,39 @@ public static class ArithmeticOps
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
 	public static void SubsImmediate8 (ushort opcode, CortexM0Plus cpu)
 	{
-		// SUBS Rd, #imm8 (Rd es Source y Destino)
+		// SUBS Rd, #imm8 (Encoding T2)
 		var rd = (opcode >> 8) & 0x7;
 		var imm8 = (uint)(opcode & 0xFF);
 
-		// OPTIMIZACIÓN: Read-Modify-Write
 		ref var ptrRd = ref cpu.Registers[rd];
 
 		ptrRd = SubWithFlags (cpu, ptrRd, imm8);
 	}
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void SubSp(ushort opcode, CortexM0Plus cpu)
+	{
+		// SUB (SP minus immediate)
+		var imm32 = (opcode & 0x7f) << 2;
+		cpu.Registers.SP -= (ushort) imm32;
+	}
+
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static void SubsRegister(ushort opcode, CortexM0Plus cpu)
+	{
+		var rm = (opcode >> 6) & 0x7;
+		var rn = (opcode >> 3) & 0x7;
+		var rd =  opcode & 0x7;
+		
+		ref var ptrRd = ref cpu.Registers[rd];
+		var valRn = cpu.Registers[rn];
+		var valRm = cpu.Registers[rm];
+		
+		ptrRd = SubWithFlags(cpu, valRn, valRm);
+	}
 
 	// =============================================================
-	// MATH HELPERS (Sin cambios, reciben valores)
+	// MATH HELPERS
 	// =============================================================
 
 	[MethodImpl (MethodImplOptions.AggressiveInlining)]
