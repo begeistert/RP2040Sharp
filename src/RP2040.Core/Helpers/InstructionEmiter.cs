@@ -325,7 +325,11 @@ public static class InstructionEmiter
 
     public static ushort Rsbs(uint rd, uint rn)
     {
-        return 0;
+        if (rd > 15)
+            throw new ArgumentException(HighRegisterIndexOutOfRange);
+        if (rn > 15)
+            throw new ArgumentException(HighRegisterIndexOutOfRange);
+        return (ushort)(0x4240 | (rn & 0x7) << 3 | (rd & 0x7));
     }
 
     public static ushort SubSp(uint imm)

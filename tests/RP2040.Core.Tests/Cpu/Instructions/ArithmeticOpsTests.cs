@@ -705,6 +705,26 @@ public abstract class ArithmeticOpsTests
             Cpu.Registers.C.Should().BeFalse();
             Cpu.Registers.V.Should().BeFalse();
         }
+
+        [Fact]
+        public void Should_SetZeroAndCarryFlags_When_NegatingZero()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Rsbs(R0, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R3] = 0;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers[R0].Should().Be(0);
+            Cpu.Registers.N.Should().BeFalse();
+            Cpu.Registers.Z.Should().BeTrue();
+            Cpu.Registers.C.Should().BeTrue(); // No borrow en 0-0
+            Cpu.Registers.V.Should().BeFalse();
+        }
     }
 
     public class Sub : CpuTestBase

@@ -64,6 +64,8 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0x4380, &BitOps.Bics),
             // CMN (Rn, Rm)
             new OpcodeRule(0xFFC0, 0x42C0, &ArithmeticOps.Cmn),
+            // RSBS Rd, Rn, #0 (Negate)
+            new OpcodeRule(0xFFC0, 0x4240, &ArithmeticOps.Rsbs),
             // CMP Rn, Rm (Low Registers - Encoding T1)
             new OpcodeRule(0xFFC0, 0x4280, &ArithmeticOps.CmpRegister),
             // EORS Rdn, Rm
