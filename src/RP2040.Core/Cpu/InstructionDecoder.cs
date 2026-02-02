@@ -74,10 +74,14 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0x4340, &ArithmeticOps.Muls),
             // MVNS Rd, Rm
             new OpcodeRule(0xFFC0, 0x43C0, &BitOps.Mvns),
-            // LSLS Rd, Rm, #0
-            new OpcodeRule(0xFFC0, 0x0000, &BitOps.LslsZero),
+            // LSRS (Register) - Encoding T2
+            new OpcodeRule(0xFFC0, 0x40C0, &BitOps.LsrsRegister),
             // LSLS (Register) - Encoding T2
             new OpcodeRule(0xFFC0, 0x4080, &BitOps.LslsRegister),
+            // LSLS Rd, Rm, #0
+            new OpcodeRule(0xFFC0, 0x0000, &BitOps.LslsZero),
+            // LSRS Rd, Rm, #0 (Shift 32)
+            new OpcodeRule(0xFFC0, 0x0800, &BitOps.LsrsImm32),
             // Rev16 Rd, Rn
             new OpcodeRule(0xFFC0, 0xBA40, &BitOps.Rev16),
             // REVSH Rd, Rm
@@ -178,6 +182,8 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
             // LSLS (Rd, Rm, imm5)
             new OpcodeRule(0xF800, 0x0000, &BitOps.LslsImm5),
+            // LSRS (Rd, Rm, imm5)
+            new OpcodeRule(0xF800, 0x0800, &BitOps.LsrsImm5),
             // ================================================================
             // GROUP 9: Mask 0xBF00
             // ================================================================
