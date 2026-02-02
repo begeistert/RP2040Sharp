@@ -558,4 +558,41 @@ public abstract class BitOpsTests
             Cpu.Registers[R1].Should().Be(0xfffff055);
         }
     }
+
+    public class Tst : CpuTestBase
+    {
+        [Fact]
+        public void Should_SetNegativeFlag_When_ResultHasSignBitSet()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Tst(R1, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R1] = 0xf0000000;
+            Cpu.Registers[R3] = 0xf0004000;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.N.Should().BeTrue();
+        }
+
+        [Fact]
+        public void Should_SetZeroFlag_When_ResultIsZero()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Tst(R1, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R1] = 0xf0;
+            Cpu.Registers[R3] = 0x0f;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.Z.Should().BeTrue();
+        }
+    }
 }
