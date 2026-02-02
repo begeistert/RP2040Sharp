@@ -33,8 +33,7 @@ jobs:
       - name: Install SonarCloud scanner
         run: dotnet tool install --global dotnet-sonarscanner
 
-      - name: Add .NET tools to PATH (Self-Hosted fix)
-        if: matrix.runner == 'self-hosted'
+      - name: Add .NET tools to PATH
         run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
       - name: Restore dependencies
