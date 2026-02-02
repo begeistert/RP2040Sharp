@@ -9,8 +9,14 @@ on:
 
 jobs:
   unit-tests:
-    name: Unit Tests
-    runs-on: ubuntu-latest
+    name: Unit Tests (${{ matrix.runner }})
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, self-hosted]
+
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout code
@@ -31,6 +37,10 @@ jobs:
 
       - name: Install SonarCloud scanner
         run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Add .NET tools to PATH (Self-Hosted fix)
+        if: matrix.runner == 'self-hosted'
+        run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
       - name: Restore dependencies
         run: dotnet restore
