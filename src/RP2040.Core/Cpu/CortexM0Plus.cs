@@ -13,8 +13,6 @@ public unsafe class CortexM0Plus
 
     private readonly InstructionDecoder _decoder;
 
-    // CACHÉ DE FETCH LOCAL
-    // Apunta directamente al buffer interno de RandomAccessMemory
     private byte* _fetchPtr;
     private uint _fetchMask;
     private uint _currentRegionId;
@@ -35,7 +33,6 @@ public unsafe class CortexM0Plus
         Registers.SP = Bus.ReadWord(0x00000000);
         Registers.PC = Bus.ReadWord(0x00000004);
 
-        // Inicializar caché
         UpdateFetchCache(Registers.PC);
 
         Registers.N = false;
@@ -46,9 +43,6 @@ public unsafe class CortexM0Plus
         Cycles = 0;
     }
 
-    /// <summary>
-    /// Actualiza los punteros de caché cuando el PC salta a una región de memoria diferente.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void UpdateFetchCache(uint pc)
     {
@@ -69,7 +63,7 @@ public unsafe class CortexM0Plus
                 _fetchMask = BusInterconnect.MASK_BOOTROM & ~1u;
                 break;
             default:
-                _fetchPtr = null; // Detiene el fast-fetch
+                _fetchPtr = null;
                 break;
         }
     }
@@ -79,8 +73,6 @@ public unsafe class CortexM0Plus
     {
         var decoder = _decoder;
 
-        // 1. Cargar caché a registros del CPU Host (Stack)
-        // Esto elimina la indirección 'this._fetchPtr' dentro del while
         var fetchPtr = _fetchPtr;
         var fetchMask = _fetchMask;
         var regionId = _currentRegionId;
@@ -89,34 +81,29 @@ public unsafe class CortexM0Plus
         {
             var pc = Registers.PC;
 
-            // 2. FAST GUARD: ¿Seguimos en la misma región de memoria?
-            // (pc >> 28) es una operación de un solo ciclo.
+            // FAST GUARD
             if ((pc >> 28) != regionId)
             {
-                // FALLBACK: Cambio de región detectado.
+                // FALLBACK
                 UpdateFetchCache(pc);
 
-                // Recargar caché local
                 fetchPtr = _fetchPtr;
                 fetchMask = _fetchMask;
                 regionId = _currentRegionId;
 
-                // Si saltamos a memoria no ejecutable, abortamos el batch
                 if (fetchPtr == null)
                     break;
             }
 
-            // 3. FETCH ULTRA-RÁPIDO
-            // (pc & ~1u): Alineación obligatoria en ARM Thumb (elimina bit 0).
-            // & fetchMask: Mantiene el acceso dentro del buffer Pinned (seguridad).
+            // ULTRA-FAST FETCH
             var opcode = Unsafe.ReadUnaligned<ushort>(fetchPtr + (pc & fetchMask));
 
-            // 4. PRE-UPDATE PC (Speculative)
+            // PRE-UPDATE PC (Speculative)
             Registers.PC = pc + 2;
 
             Cycles++;
 
-            // 5. DISPATCH
+            // DISPATCH
             decoder.Dispatch(opcode, this);
         }
 
@@ -125,7 +112,6 @@ public unsafe class CortexM0Plus
         _fetchMask = fetchMask;
     }
 
-    // Step simple para Debugging
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Step()
     {
@@ -209,7 +195,7 @@ public unsafe class CortexM0Plus
         var targetPc = Bus.ReadWord(vectorAddress);
         Registers.PC = targetPc & 0xFFFFFFFE;
 
-        Cycles += 12; // Exception Entry cost (aprox 12-15 ciclos)
+        Cycles += 12; // Exception Entry cost (aprox 12-15 cycles)
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
