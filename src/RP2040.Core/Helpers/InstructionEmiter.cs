@@ -63,7 +63,7 @@ public static class InstructionEmiter
 	public static ushort SubsImm3 (uint rd, uint rn, uint imm3)
 	{
 		if (rd > 7 || rn > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
-		if (imm3 > 7) throw new ArgumentException("Immediate too large for ADDS");
+		if (imm3 > 7) throw new ArgumentException("Immediate too large for SUBS");
 
 		return (ushort)(0x1E00 | ((imm3 & 0x7) << 6) | ((rn & 7) << 3) | (rd & 7));
 	}
@@ -71,7 +71,7 @@ public static class InstructionEmiter
 	public static ushort SubsImm8 (uint rdn, uint imm8)
 	{
 		if (rdn > 7) throw new ArgumentException (LowRegisterIndexOutOfRange);
-		if (imm8 > 255) throw new ArgumentException ("Immediate too large for ADDS");
+		if (imm8 > 255) throw new ArgumentException ("Immediate too large for SUBS");
 		return (ushort)(0x3800 | ((rdn & 7) << 8) | (imm8 & 0xff));
 	}
 
