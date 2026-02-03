@@ -153,6 +153,8 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFE00, 0x1E00, &ArithmeticOps.SubsImmediate3),
             // SUBS (Register)
             new OpcodeRule(0xFE00, 0x1A00, &ArithmeticOps.SubsRegister),
+            // LDR (register)
+            new OpcodeRule(0xFE00, 0x5800, &MemoryOps.LdrRegister),
             // ================================================================
             // GROUP 8: Mask 0xF800 (5 bits significant - Most Generic)
             // ================================================================
@@ -176,6 +178,12 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xF800, 0x2000, &BitOps.Movs),
             // LDMIA (Load Multiple Increment After)
             new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
+            // LDR (literal)
+            new OpcodeRule(0xF800, 0x4800, &MemoryOps.LdrLiteral),
+            // LDR (imm5)
+            new OpcodeRule(0xF800, 0x6800, &MemoryOps.LdrImmediate),
+            // LDR (SP, imm8)
+            new OpcodeRule(0xF800, 0x9800, &MemoryOps.LdrSpRelative),
             // LSLS (Rd, Rm, imm5)
             new OpcodeRule(0xF800, 0x0000, &BitOps.LslsImm5),
             // ================================================================
