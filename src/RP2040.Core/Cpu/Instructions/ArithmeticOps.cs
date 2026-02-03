@@ -211,10 +211,10 @@ public static class ArithmeticOps
         var rm = (opcode >> 3) & 0x7;
         var rdn = opcode & 0x7;
 
-        ref var ptrRd = ref cpu.Registers[rdn];
-        var valRn = cpu.Registers[rm];
+        ref var ptrRdn = ref cpu.Registers[rdn];
+        var valRm = cpu.Registers[rm];
 
-        ptrRd = SubWithFlags(cpu, ptrRd, valRn + (uint)(1 - (cpu.Registers.C ? 1 : 0)));
+        ptrRdn = SubWithFlags(cpu, ptrRdn, valRm + (uint)(1 - (cpu.Registers.C ? 1 : 0)));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

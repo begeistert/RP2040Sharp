@@ -333,7 +333,7 @@ public static class InstructionEmiter
     public static ushort Sbcs(uint rn, uint rm)
     {
         if (rm > 7 || rn > 7)
-            throw new ArgumentException(HighRegisterIndexOutOfRange);
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
         return (ushort)(0x4180 | ((rm & 0x7) << 3) | (rn & 0x7));
     }
 
