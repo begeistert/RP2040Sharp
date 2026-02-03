@@ -291,6 +291,37 @@ public static class InstructionEmiter
         return (ushort)(0xC800 | (rn & 0x7) << 8 | registerList & 0xFF);
     }
 
+    public static ushort LdrImmediate(uint rt, uint rn, uint imm)
+    {
+        var imm5 = imm >> 2;
+        if (rt > 7 || rn > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x6800 | (imm5 & 0x1F) << 6 | (rn & 0x7) << 3 | (rt & 0x7));
+    }
+
+    public static ushort LdrLiteral(uint rt, uint imm)
+    {
+        var imm8 = imm >> 2;
+        if (rt > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x4800 | (rt & 0x7) << 8 | (imm8 & 0xFF));
+    }
+
+    public static ushort LdrRegister(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5800 | (rm & 0x7) << 6 | (rn & 0x7) << 3 | (rt & 0x7));
+    }
+
+    public static ushort LdrSpRelative(uint rt, uint imm)
+    {
+        var imm8 = imm >> 2;
+        if (rt > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x9800 | (rt & 0x7) << 8 | (imm8 & 0xFF));
+    }
+
     public static ushort LslsImm5(uint rd, uint rm, uint imm5)
     {
         if (rd > 7 || rm > 7)

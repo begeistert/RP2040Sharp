@@ -7,6 +7,43 @@ namespace RP2040.Core.Cpu.Instructions;
 public static unsafe class MemoryOps
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var imm5 = (uint)((opcode >> 6) & 0x1F) << 2;
+
+        cpu.Registers[rt] = ReadWordWithCycles(cpu, cpu.Registers[rn] + imm5);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrLiteral(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = (opcode >> 8) & 0x7;
+        var imm8 = (uint)(opcode & 0xFF) << 2;
+        var nextPc = cpu.Registers.PC + 2;
+        var addr = (nextPc & 0xFFFFFFFC) + imm8;
+        cpu.Registers[rt] = ReadWordWithCycles(cpu, addr);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        cpu.Registers[rt] = ReadWordWithCycles(cpu, cpu.Registers[rn] + cpu.Registers[rm]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrSpRelative(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = (opcode >> 8) & 0x7;
+        var imm8 = (uint)(opcode & 0xFF) << 2;
+        cpu.Registers[rt] = ReadWordWithCycles(cpu, cpu.Registers.SP + imm8);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Pop(ushort opcode, CortexM0Plus cpu)
     {
         var mask = (uint)(opcode & 0xFF);
@@ -206,5 +243,30 @@ public static unsafe class MemoryOps
 
         cpu.Registers[rn] += writeBackOffset;
         cpu.Cycles += (int)regCount;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint ReadWordWithCycles(CortexM0Plus cpu, uint address)
+    {
+        var region = address >> 28;
+
+        switch (region)
+        {
+            case <= BusInterconnect.REGION_SRAM:
+                cpu.Cycles += 1;
+                break;
+            case 0x4: // APB/AHB
+            case 0x5:
+                cpu.Cycles += 2;
+                break;
+            // SIO (Single-cycle IO)
+            case 0xD:
+                break;
+            default:
+                cpu.Cycles += 1; // Fallback
+                break;
+        }
+
+        return cpu.Bus.ReadWord(address);
     }
 }

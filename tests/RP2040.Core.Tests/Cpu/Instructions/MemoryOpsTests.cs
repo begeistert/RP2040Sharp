@@ -7,6 +7,207 @@ namespace RP2040.tests.Cpu.Instructions;
 
 public abstract class MemoryOpsTests
 {
+    public class Ldmia : CpuTestBase
+    {
+        [Fact]
+        public void Should_LoadMultiple_And_WriteBackBaseAddress()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Ldmia(R0, 1 << R1 | 1 << R2);
+            Bus.WriteHalfWord(0x20000000, opcode);
+            const uint baseAddr = 0x20000010;
+            Cpu.Registers[R0] = baseAddr;
+
+            Bus.WriteWord(baseAddr, 0xF00DF00D);
+            Bus.WriteWord(baseAddr + 4, 0x4242);
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.PC.Should().Be(0x20000002);
+            Cpu.Registers[R0].Should().Be(baseAddr + 8);
+            Cpu.Registers[R1].Should().Be(0xF00DF00D);
+            Cpu.Registers[R2].Should().Be(0x4242);
+        }
+
+        [Fact]
+        public void Should_LoadMultiple_WithoutWriteBack_When_BaseIsLoaded()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Ldmia(R5, 1 << R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+            const uint baseAddr = 0x20000010;
+            Cpu.Registers[R5] = baseAddr;
+            Bus.WriteWord(baseAddr, 0xF00DF00D);
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.PC.Should().Be(0x20000002);
+            Cpu.Registers[R5].Should().Be(0xF00DF00D);
+        }
+
+        [Fact]
+        public void Should_ConsumeCorrectCycles_ForMultipleLoad()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Ldmia(R0, 1 << R1 | 1 << R2);
+            Bus.WriteHalfWord(0x20000000, opcode);
+            Cpu.Registers[R0] = 0x20000010;
+
+            var initialCycles = Cpu.Cycles;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            (Cpu.Cycles - initialCycles)
+                .Should()
+                .Be(3);
+        }
+    }
+
+    public abstract class Ldr : CpuTestBase
+    {
+        public class Immediate : CpuTestBase
+        {
+            [Fact]
+            public void Should_LoadValue_From_RnPlusImmediate()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LdrImmediate(R3, R2, 24);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R2] = 0x20000100;
+                Bus.WriteWord(0x20000100 + 24, 0x55);
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R3].Should().Be(0x55);
+                Cpu.Cycles.Should().Be(2, "Ldr to RAM takes 2 cycles");
+            }
+
+            [Fact]
+            public void Should_ConsumeExtraCycles_When_ReadingFromPeripheral()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LdrImmediate(R0, R1, 0);
+                Bus.WriteHalfWord(0x20000000, opcode);
+                Cpu.Registers[R1] = 0x40000000;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Cycles.Should().Be(3, "Peripheral access should add wait states");
+            }
+        }
+
+        public class Literal : CpuTestBase
+        {
+            [Fact]
+            public void Should_LoadValue_RelativeToProgramCounter()
+            {
+                // Arrange
+                const uint offset = 148;
+                var opcode = InstructionEmiter.LdrLiteral(R0, offset);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                var targetAddr = (0x20000004u & 0xFFFFFFFC) + offset;
+                Bus.WriteWord(targetAddr, 0x42);
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(0x42);
+            }
+
+            [Fact]
+            public void Should_HandleMaxOffset()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LdrLiteral(R7, 1020);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                var targetAddr = (0x20000004u & 0xFFFFFFFC) + 1020;
+                Bus.WriteWord(targetAddr, 0xABCDEF);
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R7].Should().Be(0xABCDEF);
+            }
+        }
+
+        public class Register : CpuTestBase
+        {
+            [Fact]
+            public void Should_LoadValue_From_RnPlusRm()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LdrRegister(R3, R5, R6);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R5] = 0x20000000;
+                Cpu.Registers[R6] = 0x8;
+                Bus.WriteWord(0x20000008, 0xff554211);
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R3].Should().Be(0xff554211);
+            }
+        }
+
+        public class SpRelative : CpuTestBase
+        {
+            [Fact]
+            public void Should_LoadValue_RelativeToStackPointer()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LdrSpRelative(R3, 12);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers.SP = 0x20000500;
+                Bus.WriteWord(0x20000500 + 12, 0xAA);
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R3].Should().Be(0xAA);
+            }
+        }
+
+        public class Unaligned : CpuTestBase
+        {
+            [Fact]
+            public void Should_HandleUnalignedAccess_WhenUsingUnsafeRead()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LdrImmediate(R0, R1, 0);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                const uint unalignedAddr = 0x20000101;
+                Cpu.Registers[R1] = unalignedAddr;
+                Bus.WriteWord(unalignedAddr, 0xDEADBEEF);
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(0xDEADBEEF, "Our Bus uses Unsafe.ReadUnaligned");
+            }
+        }
+    }
+
     public class Pop : CpuTestBase
     {
         const uint STACK_BASE = 0x20004000;
@@ -209,68 +410,6 @@ public abstract class MemoryOpsTests
             (Cpu.Cycles - initialCycles)
                 .Should()
                 .Be(5);
-        }
-    }
-
-    public class Ldmia : CpuTestBase
-    {
-        [Fact]
-        public void Should_LoadMultiple_And_WriteBackBaseAddress()
-        {
-            // Arrange
-            var opcode = InstructionEmiter.Ldmia(R0, 1 << R1 | 1 << R2);
-            Bus.WriteHalfWord(0x20000000, opcode);
-            const uint baseAddr = 0x20000010;
-            Cpu.Registers[R0] = baseAddr;
-
-            Bus.WriteWord(baseAddr, 0xF00DF00D);
-            Bus.WriteWord(baseAddr + 4, 0x4242);
-
-            // Act
-            Cpu.Step();
-
-            // Assert
-            Cpu.Registers.PC.Should().Be(0x20000002);
-            Cpu.Registers[R0].Should().Be(baseAddr + 8);
-            Cpu.Registers[R1].Should().Be(0xF00DF00D);
-            Cpu.Registers[R2].Should().Be(0x4242);
-        }
-
-        [Fact]
-        public void Should_LoadMultiple_WithoutWriteBack_When_BaseIsLoaded()
-        {
-            // Arrange
-            var opcode = InstructionEmiter.Ldmia(R5, 1 << R5);
-            Bus.WriteHalfWord(0x20000000, opcode);
-            const uint baseAddr = 0x20000010;
-            Cpu.Registers[R5] = baseAddr;
-            Bus.WriteWord(baseAddr, 0xF00DF00D);
-
-            // Act
-            Cpu.Step();
-
-            // Assert
-            Cpu.Registers.PC.Should().Be(0x20000002);
-            Cpu.Registers[R5].Should().Be(0xF00DF00D);
-        }
-
-        [Fact]
-        public void Should_ConsumeCorrectCycles_ForMultipleLoad()
-        {
-            // Arrange
-            var opcode = InstructionEmiter.Ldmia(R0, 1 << R1 | 1 << R2);
-            Bus.WriteHalfWord(0x20000000, opcode);
-            Cpu.Registers[R0] = 0x20000010;
-
-            var initialCycles = Cpu.Cycles;
-
-            // Act
-            Cpu.Step();
-
-            // Assert
-            (Cpu.Cycles - initialCycles)
-                .Should()
-                .Be(3);
         }
     }
 }
