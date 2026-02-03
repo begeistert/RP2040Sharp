@@ -152,6 +152,12 @@ public unsafe class InstructionDecoderTests
         Add("Mrs", (ushort)(InstructionEmiter.Mrs(R0, 5) & 0xFFFF), &SystemOps.Mrs);
         Add("Msr", (ushort)(InstructionEmiter.Msr(8, R0) & 0xFFFF), &SystemOps.Msr);
 
+        // Load Operations
+        Add("LdrImmediate", InstructionEmiter.LdrImmediate(R0, R1, 4), &MemoryOps.LdrImmediate);
+        Add("LdrLiteral", InstructionEmiter.LdrLiteral(R2, 0x10), &MemoryOps.LdrLiteral);
+        Add("LdrRegister", InstructionEmiter.LdrRegister(R3, R4, R5), &MemoryOps.LdrRegister);
+        Add("LdrSpRelative", InstructionEmiter.LdrSpRelative(R6, 0x20), &MemoryOps.LdrSpRelative);
+
         Add("Ldmia", InstructionEmiter.Ldmia(R0, (1 << R1) | (1 << R2)), &MemoryOps.Ldmia);
 
         // Push / Pop
