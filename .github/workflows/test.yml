@@ -10,9 +10,7 @@ on:
 jobs:
   unit-tests:
     name: Unit Tests
-
-    runs-on: [ubuntu-latest, self-hosted]
-
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -32,9 +30,6 @@ jobs:
 
       - name: Install SonarCloud scanner
         run: dotnet tool install --global dotnet-sonarscanner
-
-      - name: Add .NET tools to PATH
-        run: echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
       - name: Restore dependencies
         run: dotnet restore
