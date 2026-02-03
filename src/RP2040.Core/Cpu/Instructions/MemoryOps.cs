@@ -44,6 +44,30 @@ public static unsafe class MemoryOps
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrbImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var imm5 = (uint)(opcode >> 6) & 0x1f;
+        var rn = (opcode >> 3) & 0x7;
+        var rt = opcode & 0x7;
+
+        var address = cpu.Registers[rn] + imm5;
+
+        cpu.Registers[rt] = ReadByteWithCycles(cpu, address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrbRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 6) & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rt = opcode & 0x7;
+
+        var address = cpu.Registers[rm] + cpu.Registers[rn];
+
+        cpu.Registers[rt] = ReadWordWithCycles(cpu, address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Pop(ushort opcode, CortexM0Plus cpu)
     {
         var mask = (uint)(opcode & 0xFF);
@@ -246,7 +270,7 @@ public static unsafe class MemoryOps
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static uint ReadWordWithCycles(CortexM0Plus cpu, uint address)
+    private static void UpdateCycles(CortexM0Plus cpu, uint address)
     {
         var region = address >> 28;
 
@@ -255,18 +279,29 @@ public static unsafe class MemoryOps
             case <= BusInterconnect.REGION_SRAM:
                 cpu.Cycles += 1;
                 break;
-            case 0x4: // APB/AHB
-            case 0x5:
+            case 0x4: // APB
+            case 0x5: // AHB
                 cpu.Cycles += 2;
                 break;
-            // SIO (Single-cycle IO)
-            case 0xD:
+            case 0xD: // SIO
                 break;
             default:
                 cpu.Cycles += 1; // Fallback
                 break;
         }
+    }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint ReadWordWithCycles(CortexM0Plus cpu, uint address)
+    {
+        UpdateCycles(cpu, address);
         return cpu.Bus.ReadWord(address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static byte ReadByteWithCycles(CortexM0Plus cpu, uint address)
+    {
+        UpdateCycles(cpu, address);
+        return cpu.Bus.ReadByte(address);
     }
 }
