@@ -185,10 +185,11 @@ public static class BitOps
     public static void Movs(ushort opcode, CortexM0Plus cpu)
     {
         var value = (uint)(opcode & 0xFF);
+        var rd = (opcode >> 8) & 7;
 
-        cpu.Registers[(opcode >> 8) & 7] = value;
+        cpu.Registers[rd] = value;
 
-        cpu.Registers.N = false;
+        cpu.Registers.N = (int)value < 0;
         cpu.Registers.Z = value == 0;
     }
 
