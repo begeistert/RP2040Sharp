@@ -101,6 +101,9 @@ public unsafe class InstructionDecoderTests
         Add("LslsImm", InstructionEmiter.LslsImm5(R5, R5, 18), &BitOps.LslsImm5);
         Add("LslsImmZero", InstructionEmiter.LslsImm5(R5, R5, 0), &BitOps.LslsZero);
         Add("LslsRegister", InstructionEmiter.LslsRegister(R5, R0), &BitOps.LslsRegister);
+        Add("LsrsImm", InstructionEmiter.LsrsImm5(R5, R5, 18), &BitOps.LsrsImm5);
+        Add("LsrsImm32", InstructionEmiter.LsrsImm5(R1, R1, 0), &BitOps.LsrsImm32);
+        Add("LsrsRegister", InstructionEmiter.LsrsRegister(R5, R0), &BitOps.LsrsRegister);
         Add("Mvns", InstructionEmiter.Mvns(R0, R2), &BitOps.Mvns);
         Add("Orrs", InstructionEmiter.Orrs(R5, R0), &BitOps.Orrs);
         Add("Rev", InstructionEmiter.Rev(R0, R1), &BitOps.Rev);

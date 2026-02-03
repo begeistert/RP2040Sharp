@@ -338,6 +338,22 @@ public static class InstructionEmiter
         return (ushort)(0x4080 | ((rm & 7) << 3) | rdn);
     }
 
+    public static ushort LsrsImm5(uint rd, uint rm, uint imm5)
+    {
+        if (rd > 7 || rm > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm5 > 31)
+            throw new ArgumentException("Immediate too large for LSLS");
+        return (ushort)(0x0800 | (imm5 & 0x1F) << 6 | ((rm & 7) << 3) | (rd & 7));
+    }
+
+    public static ushort LsrsRegister(uint rdn, uint rm)
+    {
+        if (rdn > 7 || rm > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x40C0 | ((rm & 7) << 3) | rdn);
+    }
+
     public static ushort Revsh(uint rd, uint rm)
     {
         if (rd > 7 || rm > 7)
