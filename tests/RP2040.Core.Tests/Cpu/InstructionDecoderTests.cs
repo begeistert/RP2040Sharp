@@ -87,6 +87,7 @@ public unsafe class InstructionDecoderTests
         );
         Add("Muls", InstructionEmiter.Muls(R0, R2), &ArithmeticOps.Muls);
         Add("Rsbs", InstructionEmiter.Rsbs(R0, R3), &ArithmeticOps.Rsbs);
+        Add("Sbcs", InstructionEmiter.Sbcs(R0, R3), &ArithmeticOps.Sbcs);
         Add("SubsRegister", InstructionEmiter.SubsReg(R1, R2, R4), &ArithmeticOps.SubsRegister);
         Add("SubsImm3", InstructionEmiter.SubsImm3(R1, R2, 3), &ArithmeticOps.SubsImmediate3);
         Add("SubsImm8", InstructionEmiter.SubsImm8(R1, 0x10), &ArithmeticOps.SubsImmediate8);

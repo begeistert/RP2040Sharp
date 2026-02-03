@@ -865,4 +865,49 @@ public abstract class ArithmeticOpsTests
             Cpu.Registers.V.Should().BeFalse();
         }
     }
+
+    public class Sbcs : CpuTestBase
+    {
+        [Fact]
+        public void Should_Execute_SbcsR0R3()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Sbcs(R0, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+            Cpu.Registers.R0 = 100;
+            Cpu.Registers.R3 = 55;
+            Cpu.Registers.C = false;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.R0.Should().Be(44);
+            Cpu.Registers.N.Should().BeFalse();
+            Cpu.Registers.Z.Should().BeFalse();
+            Cpu.Registers.C.Should().BeTrue();
+            Cpu.Registers.V.Should().BeFalse();
+        }
+
+        [Fact]
+        public void Should_Execute_SbcsR0R3_To_Be_0()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Sbcs(R0, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+            Cpu.Registers.R0 = 0;
+            Cpu.Registers.R3 = 0xffffffff;
+            Cpu.Registers.C = false;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.R0.Should().Be(0);
+            Cpu.Registers.N.Should().BeFalse();
+            Cpu.Registers.Z.Should().BeTrue();
+            Cpu.Registers.C.Should().BeFalse();
+            Cpu.Registers.V.Should().BeFalse();
+        }
+    }
 }
