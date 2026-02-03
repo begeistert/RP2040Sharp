@@ -105,11 +105,15 @@ public unsafe class InstructionDecoderTests
         Add("Orrs", InstructionEmiter.Orrs(R5, R0), &BitOps.Orrs);
         Add("Rev", InstructionEmiter.Rev(R0, R1), &BitOps.Rev);
         Add("Revsh", InstructionEmiter.Revsh(R0, R1), &BitOps.Revsh);
+        Add("Rev16", InstructionEmiter.Rev16(R0, R1), &BitOps.Rev16);
 
         // Mov Variations
         Add("Mov (Reg)", InstructionEmiter.Mov(R3, R8), &BitOps.MovRegister);
         Add("Mov (Pc)", InstructionEmiter.Mov(PC, R8), &BitOps.MovToPc);
         Add("Mov (Sp)", InstructionEmiter.Mov(SP, R8), &BitOps.MovToSp);
+
+        Add("Movs", InstructionEmiter.Movs(R0, R1), &BitOps.Movs);
+        Add("Tst", InstructionEmiter.Tst(R0, R1), &BitOps.Tst);
 
         // --- Flow Control ---
         for (uint cond = 0; cond <= 13; cond++)
