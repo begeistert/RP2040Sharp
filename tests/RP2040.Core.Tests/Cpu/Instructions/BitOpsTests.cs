@@ -351,6 +351,70 @@ public abstract class BitOpsTests
             Cpu.Registers[R5].Should().Be(128);
             Cpu.Registers.PC.Should().Be(0x20000002);
         }
+
+        [Fact]
+        public void Should_ClearLowerTwoBits_When_WritingToStackPointer()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(SP, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = 0x53;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.SP.Should().Be(0x50);
+        }
+
+        [Fact]
+        public void Should_ClearLeastSignificantBit_When_WritingToProgramCounter()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(PC, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = 0x53;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.PC.Should().Be(0x52);
+        }
+
+        [Fact]
+        public void Should_CopyValue_BetweenRegisters()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(R6, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = 50;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers[R6].Should().Be(50);
+        }
+
+        [Fact]
+        public void Should_CopyNegativeValue_BetweenRegisters()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(R6, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = unchecked((uint)-50);
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers[R6].Should().Be(unchecked((uint)-50));
+        }
     }
 
     public class Mvns : CpuTestBase
