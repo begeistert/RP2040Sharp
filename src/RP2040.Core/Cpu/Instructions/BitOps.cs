@@ -140,17 +140,23 @@ public static class BitOps
         var valRdn = ptrRdn;
         var shift = (int)(cpu.Registers[rm] & 0xFF);
 
+        if (shift == 0)
+        {
+            cpu.Registers.N = (int)valRdn < 0;
+            cpu.Registers.Z = (valRdn == 0);
+            return;
+        }
+
         var extended = (ulong)valRdn << shift;
         var result = shift >= 32 ? 0 : (uint)extended;
 
         var calcCarry = (extended & 0x1_0000_0000) != 0;
-        var finalCarry = (shift == 0) ? (cpu.Registers.GetC() != 0) : calcCarry;
 
         ptrRdn = result;
 
         cpu.Registers.N = (int)result < 0;
         cpu.Registers.Z = (result == 0);
-        cpu.Registers.C = finalCarry;
+        cpu.Registers.C = calcCarry;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -166,6 +172,75 @@ public static class BitOps
 
         cpu.Registers.N = (int)valRm < 0;
         cpu.Registers.Z = (valRm == 0);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LsrsImm5(ushort opcode, CortexM0Plus cpu)
+    {
+        // LSRS Rd, Rm, #imm5
+        var imm5 = (opcode >> 6) & 0x1F;
+        var rm = (opcode >> 3) & 0x7;
+        var rd = opcode & 0x7;
+
+        ref var ptrRd = ref cpu.Registers[rd];
+        var valRm = cpu.Registers[rm];
+
+        var result = valRm >> imm5;
+        var carry = ((valRm >> (imm5 - 1)) & 1) != 0;
+
+        ptrRd = result;
+
+        cpu.Registers.N = false; // (result >> 31) will be always 0 if shift >= 1
+        cpu.Registers.Z = (result == 0);
+        cpu.Registers.C = carry;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LsrsImm32(ushort opcode, CortexM0Plus cpu)
+    {
+        // LSRS Rd, Rm, #0
+        var rm = (opcode >> 3) & 0x7;
+        var rd = opcode & 0x7;
+
+        ref var ptrRd = ref cpu.Registers[rd];
+        var valRm = cpu.Registers[rm];
+
+        ptrRd = 0;
+
+        cpu.Registers.N = false;
+        cpu.Registers.Z = true;
+        cpu.Registers.C = (int)valRm < 0; // Bit 31
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LsrsRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rdn = opcode & 0x7;
+        var rm = (opcode >> 3) & 0x7;
+
+        ref var ptrRdn = ref cpu.Registers[rdn];
+        var valRdn = ptrRdn;
+        var shift = (int)(cpu.Registers[rm] & 0xFF);
+
+        // Fast Guard
+        if (shift == 0)
+        {
+            cpu.Registers.N = (int)valRdn < 0;
+            cpu.Registers.Z = (valRdn == 0);
+            return;
+        }
+
+        var result = shift >= 32 ? 0 : valRdn >> shift;
+
+        var rawCarryBit = (valRdn >> ((shift - 1) & 0x1F)) & 1;
+        var limitMask = (32 - shift) >> 31;
+        var carry = (rawCarryBit & ~limitMask) != 0;
+
+        ptrRdn = result;
+
+        cpu.Registers.N = (int)result < 0;
+        cpu.Registers.Z = (result == 0);
+        cpu.Registers.C = carry;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
