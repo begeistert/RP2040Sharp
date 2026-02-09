@@ -356,4 +356,16 @@ public static class BitOps
         var reversed = BinaryPrimitives.ReverseEndianness(val);
         cpu.Registers[rd] = (uint)(short)reversed;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Tst(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rn = opcode & 0x7;
+
+        var result = cpu.Registers[rn] & cpu.Registers[rm];
+
+        cpu.Registers.N = (int)result < 0;
+        cpu.Registers.Z = result == 0;
+    }
 }

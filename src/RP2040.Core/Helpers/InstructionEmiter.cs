@@ -372,10 +372,10 @@ public static class InstructionEmiter
 
     public static ushort Rsbs(uint rd, uint rn)
     {
-        if (rd > 15)
-            throw new ArgumentException(HighRegisterIndexOutOfRange);
-        if (rn > 15)
-            throw new ArgumentException(HighRegisterIndexOutOfRange);
+        if (rd > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (rn > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
         return (ushort)(0x4240 | (rn & 0x7) << 3 | (rd & 0x7));
     }
 
@@ -413,5 +413,12 @@ public static class InstructionEmiter
         if (rd > 7 || rn > 7 || rm > 7)
             throw new ArgumentException(LowRegisterIndexOutOfRange);
         return (ushort)(0x1A00 | ((rm & 0x7) << 6) | ((rn & 7) << 3) | (rd & 7));
+    }
+
+    public static ushort Tst(uint rn, uint rm)
+    {
+        if (rn > 7 || rm > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x4200 | ((rm & 7) << 3) | (rn & 7));
     }
 }
