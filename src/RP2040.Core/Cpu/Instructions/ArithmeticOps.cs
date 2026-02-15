@@ -213,8 +213,9 @@ public static class ArithmeticOps
 
         ref var ptrRdn = ref cpu.Registers[rdn];
         var valRm = cpu.Registers[rm];
+        var carry = cpu.Registers.C ? 1u : 0u;
 
-        ptrRdn = SubWithFlags(cpu, ptrRdn, valRm + (uint)(1 - (cpu.Registers.C ? 1 : 0)));
+        ptrRdn = AddWithFlags(cpu, ptrRdn, ~valRm, carry);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
