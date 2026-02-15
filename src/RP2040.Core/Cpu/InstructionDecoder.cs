@@ -90,6 +90,8 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0xBAC0, &BitOps.Revsh),
             // REV (Rd, Rn)
             new OpcodeRule(0xFFC0, 0xBA00, &BitOps.Rev),
+            // SBCS (Rn, Rm)
+            new OpcodeRule(0xFFC0, 0x4180, &ArithmeticOps.Sbcs),
             // ================================================================
             // GROUP 4: Mask 0xFF87 (High Register Special Cases)
             // CRITICAL: These are specific cases of the 0xFF00 generic group.

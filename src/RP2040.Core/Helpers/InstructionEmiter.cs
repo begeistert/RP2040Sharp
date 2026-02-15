@@ -379,6 +379,13 @@ public static class InstructionEmiter
         return (ushort)(0x4240 | (rn & 0x7) << 3 | (rd & 0x7));
     }
 
+    public static ushort Sbcs(uint rn, uint rm)
+    {
+        if (rm > 7 || rn > 7)
+            throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x4180 | ((rm & 0x7) << 3) | (rn & 0x7));
+    }
+
     public static ushort SubSp(uint imm)
     {
         if (imm > 508)

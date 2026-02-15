@@ -206,6 +206,19 @@ public static class ArithmeticOps
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Sbcs(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rdn = opcode & 0x7;
+
+        ref var ptrRdn = ref cpu.Registers[rdn];
+        var valRm = cpu.Registers[rm];
+        var carry = cpu.Registers.C ? 1u : 0u;
+
+        ptrRdn = AddWithFlags(cpu, ptrRdn, ~valRm, carry);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void SubsImmediate3(ushort opcode, CortexM0Plus cpu)
     {
         // SUBS Rd, Rn, #imm3 (Encoding T1)
