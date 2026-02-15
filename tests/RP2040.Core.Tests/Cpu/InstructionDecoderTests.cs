@@ -102,15 +102,22 @@ public unsafe class InstructionDecoderTests
         Add("LslsImm", InstructionEmiter.LslsImm5(R5, R5, 18), &BitOps.LslsImm5);
         Add("LslsImmZero", InstructionEmiter.LslsImm5(R5, R5, 0), &BitOps.LslsZero);
         Add("LslsRegister", InstructionEmiter.LslsRegister(R5, R0), &BitOps.LslsRegister);
+        Add("LsrsImm", InstructionEmiter.LsrsImm5(R5, R5, 18), &BitOps.LsrsImm5);
+        Add("LsrsImm32", InstructionEmiter.LsrsImm5(R1, R1, 0), &BitOps.LsrsImm32);
+        Add("LsrsRegister", InstructionEmiter.LsrsRegister(R5, R0), &BitOps.LsrsRegister);
         Add("Mvns", InstructionEmiter.Mvns(R0, R2), &BitOps.Mvns);
         Add("Orrs", InstructionEmiter.Orrs(R5, R0), &BitOps.Orrs);
         Add("Rev", InstructionEmiter.Rev(R0, R1), &BitOps.Rev);
         Add("Revsh", InstructionEmiter.Revsh(R0, R1), &BitOps.Revsh);
+        Add("Rev16", InstructionEmiter.Rev16(R0, R1), &BitOps.Rev16);
 
         // Mov Variations
         Add("Mov (Reg)", InstructionEmiter.Mov(R3, R8), &BitOps.MovRegister);
         Add("Mov (Pc)", InstructionEmiter.Mov(PC, R8), &BitOps.MovToPc);
         Add("Mov (Sp)", InstructionEmiter.Mov(SP, R8), &BitOps.MovToSp);
+
+        Add("Movs", InstructionEmiter.Movs(R0, R1), &BitOps.Movs);
+        Add("Tst", InstructionEmiter.Tst(R0, R1), &BitOps.Tst);
 
         // --- Flow Control ---
         for (uint cond = 0; cond <= 13; cond++)
@@ -152,6 +159,12 @@ public unsafe class InstructionDecoderTests
         Add("Nop", InstructionEmiter.Nop, &SystemOps.Nop);
         Add("Mrs", (ushort)(InstructionEmiter.Mrs(R0, 5) & 0xFFFF), &SystemOps.Mrs);
         Add("Msr", (ushort)(InstructionEmiter.Msr(8, R0) & 0xFFFF), &SystemOps.Msr);
+
+        // Load Operations
+        Add("LdrImmediate", InstructionEmiter.LdrImmediate(R0, R1, 4), &MemoryOps.LdrImmediate);
+        Add("LdrLiteral", InstructionEmiter.LdrLiteral(R2, 0x10), &MemoryOps.LdrLiteral);
+        Add("LdrRegister", InstructionEmiter.LdrRegister(R3, R4, R5), &MemoryOps.LdrRegister);
+        Add("LdrSpRelative", InstructionEmiter.LdrSpRelative(R6, 0x20), &MemoryOps.LdrSpRelative);
 
         Add("Ldmia", InstructionEmiter.Ldmia(R0, (1 << R1) | (1 << R2)), &MemoryOps.Ldmia);
 

@@ -351,6 +351,70 @@ public abstract class BitOpsTests
             Cpu.Registers[R5].Should().Be(128);
             Cpu.Registers.PC.Should().Be(0x20000002);
         }
+
+        [Fact]
+        public void Should_ClearLowerTwoBits_When_WritingToStackPointer()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(SP, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = 0x53;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.SP.Should().Be(0x50);
+        }
+
+        [Fact]
+        public void Should_ClearLeastSignificantBit_When_WritingToProgramCounter()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(PC, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = 0x53;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.PC.Should().Be(0x52);
+        }
+
+        [Fact]
+        public void Should_CopyValue_BetweenRegisters()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(R6, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = 50;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers[R6].Should().Be(50);
+        }
+
+        [Fact]
+        public void Should_CopyNegativeValue_BetweenRegisters()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Mov(R6, R5);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R5] = unchecked((uint)-50);
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers[R6].Should().Be(unchecked((uint)-50));
+        }
     }
 
     public class Mvns : CpuTestBase
@@ -374,7 +438,7 @@ public abstract class BitOpsTests
         }
     }
 
-    public class Lsls
+    public abstract class Lsls
     {
         public class Immediate : CpuTestBase
         {
@@ -479,6 +543,234 @@ public abstract class BitOpsTests
                 Cpu.Registers.Z.Should().BeTrue(); // Result is 0
                 Cpu.Registers.C.Should().BeTrue(); // Bit 0 shifted out
             }
+
+            [Fact]
+            public void Should_ResultInZero_And_ClearCarry_When_ShiftingLeftByMoreThan32()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LslsRegister(R0, R1);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R0] = 0xFFFFFFFF;
+                Cpu.Registers[R1] = 33; // Shift 33
+                Cpu.Registers.C = true;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(0);
+                Cpu.Registers.Z.Should().BeTrue();
+                Cpu.Registers.C.Should().BeFalse("LSL > 32 should set Carry to 0");
+            }
+
+            [Fact]
+            public void Should_InterpretShiftRegister_AsUnsignedByte()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LslsRegister(R0, R1);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R0] = 1;
+                Cpu.Registers[R1] = 0xFFFFFFFF; // Bottom byte is 0xFF (255)
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(0); // 1 << 255 is 0
+                Cpu.Registers.C.Should().BeFalse(); // Carry from huge shift is 0
+            }
+        }
+    }
+
+    public abstract class Lsrs
+    {
+        public class Immediate : CpuTestBase
+        {
+            [Fact]
+            public void Should_ShiftRight_ByImmediateValue()
+            {
+                // Port from JS: 'should execute a `lsrs r1, r1, #1` instruction'
+                // Arrange
+                var opcode = InstructionEmiter.LsrsImm5(R1, R1, 1);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R1] = 0b10; // 2
+                Cpu.Registers.C = true; // Dirty Carry
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R1].Should().Be(0b1);
+                Cpu.Registers.PC.Should().Be(0x20000002);
+                Cpu.Registers.C.Should().BeFalse(); // Bit 0 (0) shifted out
+                Cpu.Registers.N.Should().BeFalse();
+                Cpu.Registers.Z.Should().BeFalse();
+            }
+
+            [Fact]
+            public void Should_PerformLogicalShiftRightBy32_When_ImmediateIsZero()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LsrsImm5(R1, R1, 0);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R1] = 0xFFFFFFFF;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R1].Should().Be(0u);
+                Cpu.Registers.C.Should().BeTrue();
+            }
+
+            [Fact]
+            public void Should_SetCarryFlag_When_OneIsShiftedOut()
+            {
+                // New Test: Explicitly checking carry behavior on standard shift
+                // Arrange
+                var opcode = InstructionEmiter.LsrsImm5(R0, R0, 1);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R0] = 0b11; // 3 -> Shift right 1 -> 1, Carry = 1
+                Cpu.Registers.C = false;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(1);
+                Cpu.Registers.C.Should().BeTrue();
+            }
+
+            [Fact]
+            public void Should_ShiftRight_ByMaximumImmediate_31()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LsrsImm5(R0, R0, 31);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R0] = 0x80000000; // Bit 31 set
+                Cpu.Registers.C = true;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(1); // 0x80000000 >> 31 = 1
+                Cpu.Registers.C.Should().BeFalse("Bit shifted out (bit 30) was 0");
+            }
+        }
+
+        public class Register : CpuTestBase
+        {
+            [Fact]
+            public void Should_Execute_LsrsRegister_StandardCase()
+            {
+                // Arrange
+                var opcode = InstructionEmiter.LsrsRegister(R5, R0);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R5] = 0xff00000f;
+                Cpu.Registers[R0] = 0xff003302;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R5].Should().Be(0x3fc00003);
+                Cpu.Registers.PC.Should().Be(0x20000002);
+                Cpu.Registers.C.Should().BeTrue();
+            }
+
+            [Fact]
+            public void Should_ResultInZero_When_ShiftingBy32()
+            {
+                // Port from JS: 'should return zero for `lsrs r2, r3` with 32 bit shift'
+                // Arrange
+                var opcode = InstructionEmiter.LsrsRegister(R2, R3);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R2] = 10; // ...00001010
+                Cpu.Registers[R3] = 32;
+                Cpu.Registers.C = true;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R2].Should().Be(0);
+                Cpu.Registers.Z.Should().BeTrue();
+                // Bit 31 of '10' is 0, so Carry should be 0
+                Cpu.Registers.C.Should().BeFalse();
+            }
+
+            [Fact]
+            public void Should_ResultInZero_And_ClearCarry_When_ShiftingByMoreThan32()
+            {
+                // New Test: Edge case > 32
+                // Arrange
+                var opcode = InstructionEmiter.LsrsRegister(R2, R3);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R2] = 0xFFFFFFFF;
+                Cpu.Registers[R3] = 33; // Shift > 32
+                Cpu.Registers.C = true;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R2].Should().Be(0);
+                Cpu.Registers.Z.Should().BeTrue();
+                Cpu.Registers.C.Should().BeFalse(); // For shift > 32, C becomes 0
+            }
+
+            [Fact]
+            public void Should_PreserveValue_And_PreserveCarry_When_ShiftIsZero()
+            {
+                // New Test: Shift by 0 (Register variant)
+                // Note: Unlike Immediate #0 (which means 32), Register 0 means 0.
+                // Arrange
+                var opcode = InstructionEmiter.LsrsRegister(R0, R1);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R0] = 0x12345678;
+                Cpu.Registers[R1] = 0;
+                Cpu.Registers.C = true; // Should persist
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(0x12345678);
+                Cpu.Registers.C.Should()
+                    .BeTrue("Shift by 0 in register mode should not affect Carry");
+                Cpu.Registers.Z.Should().BeFalse();
+            }
+
+            [Fact]
+            public void Should_SetCarryToBit31_When_ShiftingBy32()
+            {
+                // Critical case: LSR by 32. Result is 0, Carry becomes original Bit 31.
+                // Arrange
+                var opcode = InstructionEmiter.LsrsRegister(R0, R1);
+                Bus.WriteHalfWord(0x20000000, opcode);
+
+                Cpu.Registers[R0] = 0x80001234; // Bit 31 is 1
+                Cpu.Registers[R1] = 32;
+                Cpu.Registers.C = false;
+
+                // Act
+                Cpu.Step();
+
+                // Assert
+                Cpu.Registers[R0].Should().Be(0);
+                Cpu.Registers.C.Should().BeTrue("LSR by 32 should set Carry to original Bit 31");
+            }
         }
     }
 
@@ -556,6 +848,43 @@ public abstract class BitOpsTests
 
             // Assert
             Cpu.Registers[R1].Should().Be(0xfffff055);
+        }
+    }
+
+    public class Tst : CpuTestBase
+    {
+        [Fact]
+        public void Should_SetNegativeFlag_When_ResultHasSignBitSet()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Tst(R1, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R1] = 0xf0000000;
+            Cpu.Registers[R3] = 0xf0004000;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.N.Should().BeTrue();
+        }
+
+        [Fact]
+        public void Should_SetZeroFlag_When_ResultIsZero()
+        {
+            // Arrange
+            var opcode = InstructionEmiter.Tst(R1, R3);
+            Bus.WriteHalfWord(0x20000000, opcode);
+
+            Cpu.Registers[R1] = 0xf0;
+            Cpu.Registers[R3] = 0x0f;
+
+            // Act
+            Cpu.Step();
+
+            // Assert
+            Cpu.Registers.Z.Should().BeTrue();
         }
     }
 }

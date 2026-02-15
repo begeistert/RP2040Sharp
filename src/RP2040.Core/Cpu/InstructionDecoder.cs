@@ -64,6 +64,8 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0x4380, &BitOps.Bics),
             // CMN (Rn, Rm)
             new OpcodeRule(0xFFC0, 0x42C0, &ArithmeticOps.Cmn),
+            // TST Rn, Rm (Test bits)
+            new OpcodeRule(0xFFC0, 0x4200, &BitOps.Tst),
             // RSBS Rd, Rn, #0 (Negate)
             new OpcodeRule(0xFFC0, 0x4240, &ArithmeticOps.Rsbs),
             // CMP Rn, Rm (Low Registers - Encoding T1)
@@ -74,10 +76,14 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0x4340, &ArithmeticOps.Muls),
             // MVNS Rd, Rm
             new OpcodeRule(0xFFC0, 0x43C0, &BitOps.Mvns),
-            // LSLS Rd, Rm, #0
-            new OpcodeRule(0xFFC0, 0x0000, &BitOps.LslsZero),
+            // LSRS (Register) - Encoding T2
+            new OpcodeRule(0xFFC0, 0x40C0, &BitOps.LsrsRegister),
             // LSLS (Register) - Encoding T2
             new OpcodeRule(0xFFC0, 0x4080, &BitOps.LslsRegister),
+            // LSLS Rd, Rm, #0
+            new OpcodeRule(0xFFC0, 0x0000, &BitOps.LslsZero),
+            // LSRS Rd, Rm, #0 (Shift 32)
+            new OpcodeRule(0xFFC0, 0x0800, &BitOps.LsrsImm32),
             // Rev16 Rd, Rn
             new OpcodeRule(0xFFC0, 0xBA40, &BitOps.Rev16),
             // REVSH Rd, Rm
@@ -155,6 +161,8 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFE00, 0x1E00, &ArithmeticOps.SubsImmediate3),
             // SUBS (Register)
             new OpcodeRule(0xFE00, 0x1A00, &ArithmeticOps.SubsRegister),
+            // LDR (register)
+            new OpcodeRule(0xFE00, 0x5800, &MemoryOps.LdrRegister),
             // ================================================================
             // GROUP 8: Mask 0xF800 (5 bits significant - Most Generic)
             // ================================================================
@@ -178,8 +186,16 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xF800, 0x2000, &BitOps.Movs),
             // LDMIA (Load Multiple Increment After)
             new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
+            // LDR (literal)
+            new OpcodeRule(0xF800, 0x4800, &MemoryOps.LdrLiteral),
+            // LDR (imm5)
+            new OpcodeRule(0xF800, 0x6800, &MemoryOps.LdrImmediate),
+            // LDR (SP, imm8)
+            new OpcodeRule(0xF800, 0x9800, &MemoryOps.LdrSpRelative),
             // LSLS (Rd, Rm, imm5)
             new OpcodeRule(0xF800, 0x0000, &BitOps.LslsImm5),
+            // LSRS (Rd, Rm, imm5)
+            new OpcodeRule(0xF800, 0x0800, &BitOps.LsrsImm5),
             // ================================================================
             // GROUP 9: Mask 0xBF00
             // ================================================================
