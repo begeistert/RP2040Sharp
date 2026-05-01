@@ -21,14 +21,20 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
     private const uint ADC_INTS   = 0x020;  // Masked interrupt status
 
     private const int CHANNEL_COUNT = 5;
+    private const int FIFO_DEPTH = 4;
 
     private readonly CortexM0Plus _cpu;
 
     private uint _cs;     // Includes selected channel (bits 14:12), EN (bit 0), START_ONCE (bit 2)
     private uint _result; // Latest 12-bit conversion result
+    private uint _fcs;    // FIFO control/status
     private uint _div;
     private uint _inte;
     private uint _intf;
+
+    private readonly Queue<ushort> _adcFifo = new(FIFO_DEPTH);
+    private bool _fifoUnder;  // underflow (read when empty)
+    private bool _fifoOver;   // overflow (write when full)
 
     /// <summary>
     /// Optional per-channel value provider. Return a 12-bit value (0-4095).
@@ -49,13 +55,13 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
         {
             ADC_CS     => _cs,
             ADC_RESULT => _result & 0xFFF,
-            ADC_FCS    => 0,  // FIFO not simulated
-            ADC_FIFO   => _result & 0xFFF,
+            ADC_FCS    => BuildFcs(),
+            ADC_FIFO   => ReadFifo(),
             ADC_DIV    => _div,
-            ADC_INTR   => 0,
+            ADC_INTR   => BuildIntr(),
             ADC_INTE   => _inte,
             ADC_INTF   => _intf,
-            ADC_INTS   => _intf & _inte,
+            ADC_INTS   => (BuildIntr() | _intf) & _inte,
             _ => 0,
         };
     }
@@ -74,6 +80,13 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
                 _cs = value;
                 if ((value & (1u << 2)) != 0)  // START_ONCE
                     PerformConversion();
+                break;
+            case ADC_FCS:
+                // Writable bits: [3:0] and [27:24]; bits [10:9] are write-1-clear
+                _fcs = value & 0x0F00000Fu;
+                if ((value & (1u << 10)) != 0) _fifoUnder = false;
+                if ((value & (1u << 11)) != 0) _fifoOver  = false;
+                if ((_fcs & 1) == 0) _adcFifo.Clear();  // clear FIFO when EN=0
                 break;
             case ADC_DIV:
                 _div = value;
@@ -111,5 +124,46 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
 
         // Clear START_ONCE, set READY
         _cs = (_cs & ~(1u << 2)) | (1u << 8);
+
+        // Push to FIFO if enabled
+        if ((_fcs & 1) != 0)
+        {
+            if (_adcFifo.Count >= FIFO_DEPTH)
+            {
+                _fifoOver = true;
+            }
+            else
+            {
+                var sample = (ushort)(_result & 0xFFF);
+                if ((_fcs & (1u << 1)) != 0) sample >>= 4;  // SHIFT
+                _adcFifo.Enqueue(sample);
+            }
+        }
+    }
+
+    private uint BuildFcs()
+    {
+        var level = (uint)_adcFifo.Count;
+        var thresh = (_fcs >> 24) & 0xF;
+        return (_fcs & 0x0F00000Fu)
+             | (level << 16)
+             | (_adcFifo.Count == 0 ? (1u << 8) : 0u)    // EMPTY
+             | (_adcFifo.Count >= FIFO_DEPTH ? (1u << 9) : 0u)  // FULL
+             | (_fifoUnder ? (1u << 10) : 0u)
+             | (_fifoOver  ? (1u << 11) : 0u)
+             | (thresh << 24);
+    }
+
+    private uint ReadFifo()
+    {
+        if (_adcFifo.TryDequeue(out var v)) return v;
+        _fifoUnder = true;
+        return 0;
+    }
+
+    private uint BuildIntr()
+    {
+        var thresh = (int)((_fcs >> 24) & 0xF);
+        return ((_fcs & 1) != 0 && _adcFifo.Count >= thresh) ? 1u : 0u;
     }
 }

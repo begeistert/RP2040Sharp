@@ -33,6 +33,13 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private const uint REG_TIMER3      = 0x42C;
     private const uint REG_MULTI_CHAN  = 0x430;
 
+    // AL1 alias offsets within channel block (+0x10): CTRL, READ, WRITE, TRANS_TRIG
+    private const uint AL1_OFF = 0x10;
+    // AL2 alias offsets within channel block (+0x20): CTRL, TRANS, READ, WRITE_TRIG
+    private const uint AL2_OFF = 0x20;
+    // AL3 alias offsets within channel block (+0x30): CTRL, WRITE, TRANS, READ_TRIG
+    private const uint AL3_OFF = 0x30;
+
     // CTRL bit masks
     private const uint CTRL_EN         = 1u << 0;
     private const uint CTRL_BUSY       = 1u << 24;
@@ -58,6 +65,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private uint _intf0;  // IRQ0 force mask
     private uint _inte1;  // IRQ1 enable mask
     private uint _intf1;  // IRQ1 force mask
+    private uint _timer0, _timer1, _timer2, _timer3;
 
     public uint Size => 0x1000;
 
@@ -84,6 +92,21 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
                 OFF_WRITE_ADDR  => _writeAddr[ch],
                 OFF_TRANS_COUNT => _transCount[ch],
                 OFF_CTRL_TRIG   => _ctrl[ch],
+                // AL1: CTRL, READ, WRITE, TRANS (trigger)
+                0x10 => _ctrl[ch],
+                0x14 => _readAddr[ch],
+                0x18 => _writeAddr[ch],
+                0x1C => _transCount[ch],
+                // AL2: CTRL, TRANS, READ, WRITE (trigger)
+                0x20 => _ctrl[ch],
+                0x24 => _transCount[ch],
+                0x28 => _readAddr[ch],
+                0x2C => _writeAddr[ch],
+                // AL3: CTRL, WRITE, TRANS, READ (trigger)
+                0x30 => _ctrl[ch],
+                0x34 => _writeAddr[ch],
+                0x38 => _transCount[ch],
+                0x3C => _readAddr[ch],
                 _ => 0,
             };
         }
@@ -97,6 +120,10 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             REG_INTE1  => _inte1,
             REG_INTF1  => _intf1,
             REG_INTS1  => (_intr | _intf1) & _inte1,
+            REG_TIMER0 => _timer0,
+            REG_TIMER1 => _timer1,
+            REG_TIMER2 => _timer2,
+            REG_TIMER3 => _timer3,
             _ => 0,
         };
     }
@@ -122,6 +149,10 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case REG_INTF0: _intf0 = value & 0xFFF; break;
             case REG_INTE1: _inte1 = value & 0xFFF; break;
             case REG_INTF1: _intf1 = value & 0xFFF; break;
+            case REG_TIMER0: _timer0 = value; break;
+            case REG_TIMER1: _timer1 = value; break;
+            case REG_TIMER2: _timer2 = value; break;
+            case REG_TIMER3: _timer3 = value; break;
             case REG_MULTI_CHAN:
                 // Trigger multiple channels simultaneously
                 for (var i = 0; i < CHANNEL_COUNT; i++)
@@ -157,18 +188,39 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         switch (off)
         {
             case OFF_READ_ADDR:
-                _readAddr[ch] = value;
-                break;
+                _readAddr[ch] = value; break;
             case OFF_WRITE_ADDR:
-                _writeAddr[ch] = value;
-                break;
+                _writeAddr[ch] = value; break;
             case OFF_TRANS_COUNT:
-                _transCount[ch] = value;
-                break;
+                _transCount[ch] = value; break;
             case OFF_CTRL_TRIG:
                 _ctrl[ch] = value & ~CTRL_BUSY;  // BUSY is HW-driven
                 if ((value & CTRL_EN) != 0 && _transCount[ch] > 0)
                     ExecuteChannel(ch);
+                break;
+            // AL1: CTRL, READ, WRITE, TRANS_TRIG (last triggers)
+            case 0x10: _ctrl[ch] = value & ~CTRL_BUSY; break;
+            case 0x14: _readAddr[ch] = value; break;
+            case 0x18: _writeAddr[ch] = value; break;
+            case 0x1C:
+                _transCount[ch] = value;
+                if ((_ctrl[ch] & CTRL_EN) != 0 && _transCount[ch] > 0) ExecuteChannel(ch);
+                break;
+            // AL2: CTRL, TRANS, READ, WRITE_TRIG (last triggers)
+            case 0x20: _ctrl[ch] = value & ~CTRL_BUSY; break;
+            case 0x24: _transCount[ch] = value; break;
+            case 0x28: _readAddr[ch] = value; break;
+            case 0x2C:
+                _writeAddr[ch] = value;
+                if ((_ctrl[ch] & CTRL_EN) != 0 && _transCount[ch] > 0) ExecuteChannel(ch);
+                break;
+            // AL3: CTRL, WRITE, TRANS, READ_TRIG (last triggers)
+            case 0x30: _ctrl[ch] = value & ~CTRL_BUSY; break;
+            case 0x34: _writeAddr[ch] = value; break;
+            case 0x38: _transCount[ch] = value; break;
+            case 0x3C:
+                _readAddr[ch] = value;
+                if ((_ctrl[ch] & CTRL_EN) != 0 && _transCount[ch] > 0) ExecuteChannel(ch);
                 break;
         }
     }
@@ -177,13 +229,18 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     {
         _ctrl[ch] |= CTRL_BUSY;
 
-        var dataSize = (int)((_ctrl[ch] & CTRL_DATA_SIZE) >> 2);  // 0=byte, 1=half, 2=word
+        var dataSize  = (int)((_ctrl[ch] & CTRL_DATA_SIZE) >> 2);  // 0=byte, 1=half, 2=word
         var incrRead  = (_ctrl[ch] & CTRL_INCR_READ)  != 0;
         var incrWrite = (_ctrl[ch] & CTRL_INCR_WRITE) != 0;
-        var count = _transCount[ch];
-        var rAddr = _readAddr[ch];
-        var wAddr = _writeAddr[ch];
+        var count  = _transCount[ch];
+        var rAddr  = _readAddr[ch];
+        var wAddr  = _writeAddr[ch];
         var stride = 1u << dataSize;
+
+        // Ring buffer: RING_SIZE bits [9:6], RING_SEL bit 10
+        var ringSize = (int)((_ctrl[ch] >> 6) & 0xF);
+        var ringSel  = ((_ctrl[ch] >> 10) & 1) != 0;  // false=read ring, true=write ring
+        var ringMask = ringSize > 0 ? (1u << ringSize) - 1 : 0u;
 
         for (var i = 0u; i < count; i++)
         {
@@ -201,8 +258,20 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
                 default: _bus.WriteWord(wAddr, data); break;
             }
 
-            if (incrRead)  rAddr += stride;
-            if (incrWrite) wAddr += stride;
+            if (incrRead)
+            {
+                if (ringSize > 0 && !ringSel)
+                    rAddr = (rAddr & ~ringMask) | ((rAddr + stride) & ringMask);
+                else
+                    rAddr += stride;
+            }
+            if (incrWrite)
+            {
+                if (ringSize > 0 && ringSel)
+                    wAddr = (wAddr & ~ringMask) | ((wAddr + stride) & ringMask);
+                else
+                    wAddr += stride;
+            }
         }
 
         _readAddr[ch]   = rAddr;
@@ -213,9 +282,11 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         // Signal completion
         _intr |= 1u << ch;
 
-        // Fire CPU interrupt if unmasked
+        // Fire CPU interrupt if unmasked — DMA_IRQ0=11, DMA_IRQ1=12
         if ((_inte0 & (1u << ch)) != 0)
-            _cpu.SetInterrupt(11 + ch, true);  // DMA IRQ0/1 → hardware IRQs 11-12
+            _cpu.SetInterrupt(11, true);
+        if ((_inte1 & (1u << ch)) != 0)
+            _cpu.SetInterrupt(12, true);
 
         // Chain to another channel if configured
         var chainTo = (int)((_ctrl[ch] & CTRL_CHAIN_TO) >> 11);

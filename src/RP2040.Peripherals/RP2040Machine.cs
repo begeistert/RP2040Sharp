@@ -8,20 +8,25 @@ using RP2040.Peripherals.Clocks;
 using RP2040.Peripherals.Dma;
 using RP2040.Peripherals.Gpio;
 using RP2040.Peripherals.I2c;
+using RP2040.Peripherals.IoQspi;
 using RP2040.Peripherals.Pads;
 using RP2040.Peripherals.Pio;
+using RP2040.Peripherals.Pll;
 using RP2040.Peripherals.Ppb;
 using RP2040.Peripherals.Psm;
 using RP2040.Peripherals.Pwm;
 using RP2040.Peripherals.Resets;
+using RP2040.Peripherals.Rosc;
 using RP2040.Peripherals.Rtc;
 using RP2040.Peripherals.Sio;
 using RP2040.Peripherals.Spi;
+using RP2040.Peripherals.Ssi;
 using RP2040.Peripherals.SysCfg;
 using RP2040.Peripherals.SysInfo;
 using RP2040.Peripherals.Tbman;
 using RP2040.Peripherals.Timer;
 using RP2040.Peripherals.Uart;
+using RP2040.Peripherals.Vreg;
 using RP2040.Peripherals.Watchdog;
 using RP2040.Peripherals.Xosc;
 
@@ -56,6 +61,12 @@ public sealed class RP2040Machine : IDisposable
     public WatchdogPeripheral Watchdog { get; }
     public BusctrlPeripheral  Busctrl  { get; }
     public TbmanPeripheral    Tbman    { get; }
+    public PllPeripheral      PllSys   { get; }
+    public PllPeripheral      PllUsb   { get; }
+    public RoscPeripheral     Rosc     { get; }
+    public VregPeripheral     Vreg     { get; }
+    public SsiPeripheral      Ssi      { get; }
+    public IoQspiPeripheral   IoQspi   { get; }
 
     // ── I/O peripherals ─────────────────────────────────────────────────
     public IoBank0Peripheral IoBank0   { get; }
@@ -129,6 +140,17 @@ public sealed class RP2040Machine : IDisposable
         Xosc = new XoscPeripheral();
         apb.Register(0x40024000, Xosc);
 
+        // PLL_SYS @ 0x40028000 (slot 10), PLL_USB @ 0x4002C000 (slot 11)
+        PllSys = new PllPeripheral();
+        apb.Register(0x40028000, PllSys);
+
+        PllUsb = new PllPeripheral();
+        apb.Register(0x4002C000, PllUsb);
+
+        // IO_QSPI @ 0x40018000 (slot 6)
+        IoQspi = new IoQspiPeripheral();
+        apb.Register(0x40018000, IoQspi);
+
         // BUSCTRL @ 0x40030000 (slot 12)
         Busctrl = new BusctrlPeripheral();
         apb.Register(0x40030000, Busctrl);
@@ -174,6 +196,16 @@ public sealed class RP2040Machine : IDisposable
         // TBMAN @ 0x4006C000 (slot 27)
         Tbman = new TbmanPeripheral();
         apb.Register(0x4006C000, Tbman);
+
+        // ROSC @ 0x40060000 (slot 24), VREG @ 0x40064000 (slot 25)
+        Rosc = new RoscPeripheral();
+        apb.Register(0x40060000, Rosc);
+
+        Vreg = new VregPeripheral();
+        apb.Register(0x40064000, Vreg);
+
+        // SSI at 0x18000000 is in XIP Flash region 1 — not bus-mapped; accessible via Ssi property
+        Ssi = new SsiPeripheral();
 
         // ── AHB bridge (0x5): DMA + PIO ──────────────────────────────────
         var ahb = new AhbBridge();

@@ -62,11 +62,11 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
     private readonly PioStateMachine[] _sm;
 
     private uint _irq;       // 8-bit IRQ flags
+    private uint _fdebug;    // TXOVER/RXUNDER/TXSTALL/RXSTALL per SM
     private uint _irq0Inte;
     private uint _irq0Intf;
     private uint _irq1Inte;
     private uint _irq1Intf;
-    private uint _intr;
 
     public uint Size => 0x100000;  // up to 1 MB address space per block
 
@@ -103,8 +103,9 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             sm.FracAccum %= divisor;
 
             for (var i = 0L; i < steps; i++)
-                ExecuteStep(sm);
+                ExecuteStep(sm, s);
         }
+        CheckInterrupts();
     }
 
     // ── IMemoryMappedDevice ──────────────────────────────────────────
@@ -133,16 +134,18 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         {
             REG_CTRL        => BuildCtrl(),
             REG_FSTAT       => BuildFstat(),
+            REG_FDEBUG      => _fdebug,
+            REG_FLEVEL      => BuildFlevel(),
             REG_IRQ         => _irq,
             REG_IRQ_FORCE   => 0,
             REG_DBG_CFGINFO => (SM_COUNT << 16) | (INSTR_COUNT << 8) | 2u,
-            REG_INTR        => _intr,
+            REG_INTR        => BuildIntr(),
             REG_IRQ0_INTE   => _irq0Inte,
             REG_IRQ0_INTF   => _irq0Intf,
-            REG_IRQ0_INTS   => (_intr | _irq0Intf) & _irq0Inte,
+            REG_IRQ0_INTS   => (BuildIntr() | _irq0Intf) & _irq0Inte,
             REG_IRQ1_INTE   => _irq1Inte,
             REG_IRQ1_INTF   => _irq1Intf,
-            REG_IRQ1_INTS   => (_intr | _irq1Intf) & _irq1Inte,
+            REG_IRQ1_INTS   => (BuildIntr() | _irq1Intf) & _irq1Inte,
             _ => 0,
         };
     }
@@ -175,12 +178,15 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             var sm = _sm[smIdx];
             if (sm.TxFifo.Count < 4)
                 sm.TxFifo.Enqueue(value);
+            else
+                _fdebug |= 1u << (16 + smIdx);  // TXOVER
             return;
         }
 
         switch (off)
         {
             case REG_CTRL:      WriteCtrl(value); break;
+            case REG_FDEBUG:    _fdebug &= ~value; break;  // write 1 to clear
             case REG_IRQ:       _irq &= ~value; break;       // write 1 to clear
             case REG_IRQ_FORCE: _irq |= value & 0xFF; break;
             case REG_IRQ0_INTE: _irq0Inte = value & 0xFFF; break;
@@ -256,16 +262,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     private uint BuildFstat()
     {
-        uint fstat = 0;
-        for (var i = 0; i < SM_COUNT; i++)
-        {
-            if (_sm[i].TxFifo.Count == 0)  fstat |= 1u << (0  + i); // TXEMPTY
-            if (_sm[i].TxFifo.Count < 4)   fstat |= 1u << (4  + i); // TXNFULL (actually TXFULL when count==4)
-            if (_sm[i].RxFifo.Count == 0)  fstat |= 1u << (8  + i); // RXEMPTY
-            if (_sm[i].RxFifo.Count == 4)  fstat |= 1u << (12 + i); // RXFULL
-        }
-        // Bit layout from datasheet: [3:0]=RXFULL, [7:4]=RXEMPTY, [11:8]=TXFULL, [15:12]=TXEMPTY
-        // Re-map: [3:0]=TXFULL, [11:8]=TXEMPTY, [19:16]=RXFULL, [27:24]=RXEMPTY  (datasheet format)
+        // Bit layout from datasheet: [3:0]=TXFULL, [11:8]=TXEMPTY, [19:16]=RXFULL, [27:24]=RXEMPTY
         uint result = 0;
         for (var i = 0; i < SM_COUNT; i++)
         {
@@ -275,6 +272,47 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             if (_sm[i].RxFifo.Count == 0)  result |= 1u << (24 + i);  // RX empty [27:24]
         }
         return result;
+    }
+
+    // ── Private: FLEVEL ──────────────────────────────────────────────
+
+    private uint BuildFlevel()
+    {
+        uint result = 0;
+        for (var i = 0; i < SM_COUNT; i++)
+        {
+            var txLevel = (uint)(_sm[i].TxFifo.Count & 0xF);
+            var rxLevel = (uint)(_sm[i].RxFifo.Count & 0xF);
+            result |= (txLevel | (rxLevel << 4)) << (i * 8);
+        }
+        return result;
+    }
+
+    // ── Private: INTR (dynamic) ──────────────────────────────────────
+    // Bits [3:0]=RX not empty per SM, [7:4]=TX not full per SM, [11:8]=IRQ flags 0-3
+
+    private uint BuildIntr()
+    {
+        uint intr = _irq & 0xF;  // IRQ flags 0-3 in bits [11:8] form, shifted to [11:8]
+        intr <<= 8;
+        for (var i = 0; i < SM_COUNT; i++)
+        {
+            if (_sm[i].RxFifo.Count > 0)  intr |= 1u << i;        // RX not empty [3:0]
+            if (_sm[i].TxFifo.Count < 4)  intr |= 1u << (4 + i);  // TX not full [7:4]
+        }
+        return intr;
+    }
+
+    // ── Private: interrupt routing to NVIC ──────────────────────────
+    // PIO0_IRQ0=7, PIO0_IRQ1=8, PIO1_IRQ0=9, PIO1_IRQ1=10
+
+    private void CheckInterrupts()
+    {
+        var intr = BuildIntr();
+        var irq0Active = ((intr | _irq0Intf) & _irq0Inte) != 0;
+        var irq1Active = ((intr | _irq1Intf) & _irq1Inte) != 0;
+        _cpu.SetInterrupt((int)(7 + _blockIndex * 2),     irq0Active);
+        _cpu.SetInterrupt((int)(7 + _blockIndex * 2 + 1), irq1Active);
     }
 
     // ── Private: SM register read/write ─────────────────────────────
@@ -314,7 +352,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     // ── Private: instruction execution ──────────────────────────────
 
-    private void ExecuteStep(PioStateMachine sm)
+    private void ExecuteStep(PioStateMachine sm, int smIdx)
     {
         ushort instr;
         if (sm.ForcedInstr.HasValue)
@@ -329,7 +367,9 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         }
 
         var opcode = (instr >> 13) & 0x7;
-        var delay  = (instr >> 8)  & 0x1F;  // delay/side-set (simplified: treat as pure delay)
+
+        // Extract sideset + delay from bits [12:8]
+        ApplySideset(sm, instr);
 
         ExecuteInstr(sm, instr, opcode);
 
@@ -339,6 +379,41 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             sm.PC++;
             if (sm.PC > sm.WrapTop)
                 sm.PC = sm.WrapBottom;
+        }
+    }
+
+    // Apply sideset bits from instruction field [12:8]
+    private static void ApplySideset(PioStateMachine sm, ushort instr)
+    {
+        var sidesetCount = (int)sm.SidesetCount;
+        if (sidesetCount == 0) return;
+
+        var field = (instr >> 8) & 0x1F;  // 5 bits: delay+sideset
+
+        // If sideEn bit is set in EXECCTRL, MSB of the field is the enable
+        var sideEn = sm.SideEn != 0;
+        int sideValue;
+        if (sideEn)
+        {
+            if ((field & (1 << (sidesetCount - 1 + 1))) == 0) return;  // enable bit=0 → no sideset
+            sideValue = (field >> (5 - sidesetCount)) & ((1 << (sidesetCount - 1)) - 1);
+        }
+        else
+        {
+            sideValue = (field >> (5 - sidesetCount)) & ((1 << sidesetCount) - 1);
+        }
+
+        var sideBase  = (int)sm.SidesetBase;
+        var sidePinDir = sm.SidePinDir != 0;
+
+        for (var bit = 0; bit < sidesetCount; bit++)
+        {
+            var pin = (sideBase + bit) & 0x1F;
+            var v = (sideValue >> bit) & 1;
+            if (sidePinDir)
+                sm.GpioPinDirs = (sm.GpioPinDirs & ~(1u << pin)) | ((uint)v << pin);
+            else
+                sm.GpioPins = (sm.GpioPins & ~(1u << pin)) | ((uint)v << pin);
         }
     }
 
@@ -395,8 +470,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         bool condition = source switch
         {
-            0 => ((sm.GpioPins >> (int)index) & 1) == polarity,  // GPIO
-            1 => ((sm.GpioPins >> (int)index) & 1) == polarity,  // PIN (simplified: same as GPIO)
+            0 => ((sm.GpioPins >> (int)index) & 1) == polarity,  // GPIO (absolute)
+            1 => ((sm.GpioPins >> (int)((index + sm.InBase) & 0x1F)) & 1) == polarity,  // PIN relative to IN_BASE
             2 => ((_irq >> (int)(index & 7)) & 1) == polarity,   // IRQ flag
             _ => true,
         };
@@ -545,7 +620,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             1 => sm.X,
             2 => sm.Y,
             3 => 0,
-            5 => 0,  // STATUS (simplified)
+            5 => ComputeStatus(sm),
             6 => sm.ISR,
             7 => sm.OSR,
             _ => 0,
@@ -586,7 +661,6 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         else
         {
             _irq |= 1u << flagIdx;
-            _intr |= 1u << flagIdx;  // also set in INTR for CPU interrupt
         }
 
         if (doWait && !doClear)
@@ -618,5 +692,15 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         v = ((v >> 4) & 0x0F0F0F0Fu) | ((v & 0x0F0F0F0Fu) << 4);
         v = ((v >> 8) & 0x00FF00FFu) | ((v & 0x00FF00FFu) << 8);
         return (v >> 16) | (v << 16);
+    }
+
+    // STATUS source for MOV: 0xFFFFFFFF if FIFO count < STATUS_N, else 0
+    private static uint ComputeStatus(PioStateMachine sm)
+    {
+        var n = (int)sm.StatusN;
+        var count = sm.StatusSel == 0
+            ? sm.TxFifo.Count   // TX FIFO level
+            : sm.RxFifo.Count;  // RX FIFO level
+        return (uint)(count < n ? 0xFFFFFFFF : 0);
     }
 }

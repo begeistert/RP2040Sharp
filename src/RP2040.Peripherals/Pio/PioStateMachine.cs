@@ -62,4 +62,24 @@ internal sealed class PioStateMachine
     /// <summary>Wrap bottom: EXECCTRL bits [11:7].</summary>
     public uint WrapBottom => (ExecCtrl >> 7)  & 0x1F;
     public uint JmpPin     => (ExecCtrl >> 24) & 0x1F;
+    /// <summary>STATUS_SEL: 0=TX FIFO, 1=RX FIFO — EXECCTRL bit 4.</summary>
+    public uint StatusSel  => (ExecCtrl >> 4) & 1;
+    /// <summary>STATUS_N: FIFO level threshold — EXECCTRL bits [3:0].</summary>
+    public uint StatusN    => ExecCtrl & 0xF;
+    /// <summary>Side-set enable (from program): EXECCTRL bit 30.</summary>
+    public uint SideEn     => (ExecCtrl >> 30) & 1;
+    /// <summary>Side-set pin dir (1=sets PINDIRS): EXECCTRL bit 29.</summary>
+    public uint SidePinDir => (ExecCtrl >> 29) & 1;
+
+    // ── PINCTRL helpers ───────────────────────────────────────────────
+    /// <summary>Number of side-set bits: PINCTRL bits [31:29].</summary>
+    public uint SidesetCount => (PinCtrl >> 29) & 7;
+    /// <summary>Side-set base pin: PINCTRL bits [14:10].</summary>
+    public uint SidesetBase  => (PinCtrl >> 10) & 0x1F;
+    /// <summary>IN base pin: PINCTRL bits [19:15].</summary>
+    public uint InBase       => (PinCtrl >> 15) & 0x1F;
+    /// <summary>OUT base pin: PINCTRL bits [4:0].</summary>
+    public uint OutBase      => PinCtrl & 0x1F;
+    /// <summary>SET base pin: PINCTRL bits [9:5].</summary>
+    public uint SetBase      => (PinCtrl >> 5) & 0x1F;
 }
