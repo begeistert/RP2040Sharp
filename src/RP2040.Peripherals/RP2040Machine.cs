@@ -126,7 +126,7 @@ public sealed class RP2040Machine : IDisposable
         apb.Register(0x40010000, Psm);
 
         // IO_BANK0 @ 0x40014000 (slot 5)
-        IoBank0 = new IoBank0Peripheral(Sio);
+        IoBank0 = new IoBank0Peripheral(Sio, Cpu);
         apb.Register(0x40014000, IoBank0);
 
         // PADS_BANK0 @ 0x4001C000 (slot 7), PADS_QSPI @ 0x40020000 (slot 8)

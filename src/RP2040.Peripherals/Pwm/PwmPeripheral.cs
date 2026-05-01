@@ -39,11 +39,22 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
     private readonly uint[] _top = new uint[SLICE_COUNT];
 
     private long[] _fracAccum = new long[SLICE_COUNT];
+    private bool[] _phaseDir  = new bool[SLICE_COUNT];  // true=counting up (phase-correct)
 
     private uint _enable;   // slice enable bitfield (mirrors CSR.EN per slice)
     private uint _intr;
     private uint _inte;
     private uint _intf;
+
+    // CSR bit definitions
+    private const uint CSR_EN        = 1u << 0;
+    private const uint CSR_PH_CORRECT = 1u << 1;
+    private const uint CSR_A_INV     = 1u << 2;
+    private const uint CSR_B_INV     = 1u << 3;
+    private const uint CSR_DIVMODE   = 3u << 4;   // bits [5:4]
+    private const uint CSR_PH_RET    = 1u << 6;   // strobe
+    private const uint CSR_PH_ADV    = 1u << 7;   // strobe
+    private const uint CSR_PH_STALLED = 1u << 8;  // read-only
 
     public uint Size => 0x1000;
 
@@ -60,7 +71,7 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
     {
         for (var s = 0; s < SLICE_COUNT; s++)
         {
-            if ((_csr[s] & 1) == 0) continue;  // slice not enabled
+            if ((_csr[s] & CSR_EN) == 0) continue;  // slice not enabled
 
             // DIV = integer (bits 11:4) + fraction (bits 3:0) in 8.4 format
             var divInt  = (int)((_div[s] >> 4) & 0xFF);
@@ -74,15 +85,44 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
             var steps = _fracAccum[s] / divisor;
             _fracAccum[s] %= divisor;
 
+            var phCorrect = (_csr[s] & CSR_PH_CORRECT) != 0;
+
             for (var i = 0L; i < steps; i++)
             {
-                _ctr[s]++;
-                if (_ctr[s] > _top[s])
+                if (phCorrect)
                 {
-                    _ctr[s] = 0;
-                    _intr |= 1u << s;   // wrap interrupt
-                    if ((_inte & (1u << s)) != 0)
-                        _cpu.SetInterrupt(4 + s, true);  // PWM wrap → hardware IRQ 4
+                    // Phase-correct: count up to TOP then back down to 0
+                    if (_phaseDir[s])
+                    {
+                        _ctr[s]++;
+                        if (_ctr[s] >= _top[s])
+                        {
+                            _ctr[s] = _top[s];
+                            _phaseDir[s] = false;
+                        }
+                    }
+                    else
+                    {
+                        if (_ctr[s] == 0)
+                        {
+                            _phaseDir[s] = true;
+                            _intr |= 1u << s;
+                            if ((_inte & (1u << s)) != 0)
+                                _cpu.SetInterrupt(4 + s, true);
+                        }
+                        else _ctr[s]--;
+                    }
+                }
+                else
+                {
+                    _ctr[s]++;
+                    if (_ctr[s] > _top[s])
+                    {
+                        _ctr[s] = 0;
+                        _intr |= 1u << s;
+                        if ((_inte & (1u << s)) != 0)
+                            _cpu.SetInterrupt(4 + s, true);
+                    }
                 }
             }
         }
@@ -131,9 +171,12 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
             switch (address % SLICE_BYTES)
             {
                 case OFF_CSR:
-                    _csr[s] = value & 0xFFFF;
-                    if ((value & 1) != 0) _enable |= 1u << s;
-                    else                  _enable &= ~(1u << s);
+                    // PH_ADV / PH_RET are strobe bits — apply immediately, don't store
+                    if ((value & CSR_PH_ADV) != 0 && _ctr[s] < _top[s]) _ctr[s]++;
+                    if ((value & CSR_PH_RET) != 0 && _ctr[s] > 0)       _ctr[s]--;
+                    _csr[s] = value & ~(CSR_PH_ADV | CSR_PH_RET | CSR_PH_STALLED);
+                    if ((value & CSR_EN) != 0) _enable |= 1u << s;
+                    else                       _enable &= ~(1u << s);
                     break;
                 case OFF_DIV: _div[s] = value & 0xFFF; break;
                 case OFF_CTR: _ctr[s] = value & 0xFFFF; break;
@@ -166,9 +209,20 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
         WriteWord(aligned, (ReadWord(aligned) & ~(0xFFu << shift)) | ((uint)value << shift));
     }
 
-    /// <summary>Read Channel A duty cycle (0-65535).</summary>
-    public ushort GetDutyA(int slice) => (ushort)(_cc[slice] & 0xFFFF);
+    /// <summary>Read Channel A duty cycle (0-65535). Applies A_INV if set.</summary>
+    public ushort GetDutyA(int slice)
+    {
+        var raw = (ushort)(_cc[slice] & 0xFFFF);
+        return (_csr[slice] & CSR_A_INV) != 0 ? (ushort)(~raw) : raw;
+    }
 
-    /// <summary>Read Channel B duty cycle (0-65535).</summary>
-    public ushort GetDutyB(int slice) => (ushort)(_cc[slice] >> 16);
+    /// <summary>Read Channel B duty cycle (0-65535). Applies B_INV if set.</summary>
+    public ushort GetDutyB(int slice)
+    {
+        var raw = (ushort)(_cc[slice] >> 16);
+        return (_csr[slice] & CSR_B_INV) != 0 ? (ushort)(~raw) : raw;
+    }
+
+    /// <summary>True if slice counter is currently counting up (phase-correct mode).</summary>
+    public bool IsCountingUp(int slice) => _phaseDir[slice];
 }
