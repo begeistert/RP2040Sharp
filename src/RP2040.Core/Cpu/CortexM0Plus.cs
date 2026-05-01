@@ -5,7 +5,7 @@ using RP2040.Core.Memory;
 
 namespace RP2040.Core.Cpu;
 
-public unsafe class CortexM0Plus
+public sealed unsafe class CortexM0Plus
 {
     public readonly BusInterconnect Bus;
     public Registers Registers;

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace RP2040.Core.Memory;
 
-public unsafe class RandomAccessMemory : IMemoryMappedDevice, IDisposable
+public sealed unsafe class RandomAccessMemory : IMemoryMappedDevice, IDisposable
 {
     readonly byte[] _memory;
     GCHandle _pinnedHandle;
