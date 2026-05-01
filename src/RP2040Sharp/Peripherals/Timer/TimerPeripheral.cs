@@ -65,12 +65,15 @@ public sealed class TimerPeripheral : IMemoryMappedDevice, ITickable
         _cycleAccum -= us * _clkHz / 1_000_000;
         _timeMicros += (ulong)us;
 
-        // Check alarms (compare lower 32 bits)
+        // Check alarms (compare lower 32 bits with wrap-around).
+        // Use unsigned elapsed distance: elapsed = (low - alarm) as uint.
+        // If elapsed < 2^31 the alarm is in the past or at the current moment (fire it).
+        // This correctly handles 32-bit counter wrap-around without false-fires or missed alarms.
         var low = (uint)_timeMicros;
         for (var i = 0; i < 4; i++)
         {
             if ((_armed & (1u << i)) == 0) continue;
-            if (low >= _alarm[i])
+            if (unchecked(low - _alarm[i]) < 0x80000000u)
             {
                 _armed &= ~(1u << i);
                 _intr  |=  (1u << i);
