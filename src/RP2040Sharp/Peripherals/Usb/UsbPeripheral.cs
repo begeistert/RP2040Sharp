@@ -9,6 +9,18 @@ namespace RP2040.Peripherals.Usb;
 ///   0x50100000 - 0x50100FFF : DPRAM (4 KB)
 ///   0x50110000 - 0x50110FFF : Controller registers (USBCTRL_REGS)
 /// Both regions arrive here because AhbBridge dispatches by 1 MB block.
+///
+/// KNOWN GAP: This implementation is a register-level stub.
+/// DPRAM reads/writes are functional (firmware can initialise descriptor tables),
+/// and all USBCTRL_REGS are readable/writable, but no USB protocol logic is executed:
+///   - No setup packet handling (SETUP_REC, SIE_STATUS)
+///   - No endpoint IN/OUT data transfers
+///   - No CDC-ACM or other device-class emulation
+///   - No SOF generation or bus-reset signalling
+///
+/// Equivalent to rp2040js: src/usb/usb-device.ts + src/peripherals/usb.ts (full implementation).
+/// Implementing full USB requires endpoint FSM, descriptor enumeration, and
+/// bus-state management — tracked as a known gap for future work.
 /// </summary>
 public sealed class UsbPeripheral : IMemoryMappedDevice
 {
