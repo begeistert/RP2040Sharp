@@ -179,7 +179,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             if (sm.TxFifo.Count < 4)
                 sm.TxFifo.Enqueue(value);
             else
-                _fdebug |= 1u << (16 + smIdx);  // TXOVER
+                _fdebug |= 1u << (8 + smIdx);  // TXOVER bits [11:8]
             return;
         }
 
@@ -375,10 +375,21 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         var opcode = (instr >> 13) & 0x7;
 
+        sm.PcJumped = false;
+
         // Apply sideset from bits[12:8] BEFORE execution (as hardware does)
         ApplySideset(sm, instr);
 
         ExecuteInstr(sm, instr, opcode);
+
+        // Update FDEBUG stall bits (sticky — cleared by writing 1 to FDEBUG)
+        if (sm.Stalled && opcode == OP_PUSH_PULL)
+        {
+            if ((instr & 0x80) != 0)
+                _fdebug |= 1u << smIdx;          // TXSTALL bits [3:0]
+            else
+                _fdebug |= 1u << (24 + smIdx);   // RXSTALL bits [27:24]
+        }
 
         // Compute delay after execution (delay only counted on non-stall)
         if (!sm.Stalled)
@@ -391,9 +402,12 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
                 sm.DelayCounter = delay;
             }
 
-            sm.PC++;
-            if (sm.PC > sm.WrapTop)
-                sm.PC = sm.WrapBottom;
+            if (!sm.PcJumped)
+            {
+                sm.PC++;
+                if (sm.PC > sm.WrapTop)
+                    sm.PC = sm.WrapBottom;
+            }
         }
     }
 
@@ -470,6 +484,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         if (taken)
         {
             sm.PC = target;
+            sm.PcJumped = true;
             sm.Stalled = false;
             return;
         }
@@ -555,7 +570,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             case 2: sm.Y = data; break;
             case 3: break;  // NULL
             case 4: sm.GpioPinDirs = data; break;  // PINDIRS
-            case 5: sm.PC = data & 0x1F; sm.Stalled = false; return;  // PC
+            case 5: sm.PC = data & 0x1F; sm.PcJumped = true; sm.Stalled = false; return;  // PC
             case 6: sm.ISR = data; sm.IsrCount = (uint)bitCount; break;
             case 7: ExecuteInstr(sm, (ushort)data, (int)((data >> 13) & 7)); return;  // EXEC
         }
@@ -654,7 +669,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             case 1: sm.X = data; break;
             case 2: sm.Y = data; break;
             case 4: ExecuteInstr(sm, (ushort)data, (int)((data >> 13) & 7)); return;  // EXEC
-            case 5: sm.PC = data & 0x1F; sm.Stalled = false; return;  // PC
+            case 5: sm.PC = data & 0x1F; sm.PcJumped = true; sm.Stalled = false; return;  // PC
             case 6: sm.ISR = data; sm.IsrCount = 32; break;
             case 7: sm.OSR = data; sm.OsrCount = 32; break;
         }
