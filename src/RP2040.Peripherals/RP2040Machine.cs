@@ -5,9 +5,11 @@ using RP2040.Peripherals.Adc;
 using RP2040.Peripherals.Apb;
 using RP2040.Peripherals.Dma;
 using RP2040.Peripherals.Gpio;
+using RP2040.Peripherals.I2c;
 using RP2040.Peripherals.Ppb;
 using RP2040.Peripherals.Pwm;
 using RP2040.Peripherals.Sio;
+using RP2040.Peripherals.Spi;
 using RP2040.Peripherals.Timer;
 using RP2040.Peripherals.Uart;
 
@@ -40,6 +42,10 @@ public sealed class RP2040Machine : IDisposable
     public DmaPeripheral     Dma    { get; }
     public PwmPeripheral     Pwm    { get; }
     public AdcPeripheral     Adc    { get; }
+    public SpiPeripheral     Spi0   { get; }
+    public SpiPeripheral     Spi1   { get; }
+    public I2cPeripheral     I2c0   { get; }
+    public I2cPeripheral     I2c1   { get; }
     public IReadOnlyList<GpioPin> Gpio { get; }
 
     private readonly ITickable[] _tickables;
@@ -82,6 +88,18 @@ public sealed class RP2040Machine : IDisposable
         // ADC @ 0x4004C000
         Adc = new AdcPeripheral(Cpu);
         apb.Register(0x4004C000, Adc);
+
+        // SPI0 @ 0x4003C000, SPI1 @ 0x40040000
+        Spi0 = new SpiPeripheral();
+        Spi1 = new SpiPeripheral();
+        apb.Register(0x4003C000, Spi0);
+        apb.Register(0x40040000, Spi1);
+
+        // I2C0 @ 0x40044000, I2C1 @ 0x40048000
+        I2c0 = new I2cPeripheral();
+        I2c1 = new I2cPeripheral();
+        apb.Register(0x40044000, I2c0);
+        apb.Register(0x40048000, I2c1);
 
         // ── DMA (0x5) ────────────────────────────────────────────────
         Dma = new DmaPeripheral(Bus, Cpu);
