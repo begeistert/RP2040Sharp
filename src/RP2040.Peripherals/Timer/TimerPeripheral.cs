@@ -14,19 +14,15 @@ public sealed class TimerPeripheral : IMemoryMappedDevice, ITickable
     private const uint TIMELW    = 0x004;
     private const uint TIMEHR    = 0x008;
     private const uint TIMELR    = 0x00C;
-    private const uint TIMERAWH  = 0x024;
-    private const uint TIMERAWL  = 0x028;
-    private const uint DBGPAUSE  = 0x02C;
-    private const uint PAUSE     = 0x030;
-    private const uint LOCKED    = 0x034;
-    private const uint SOURCE    = 0x038;
-
-    // Alarm registers at base+0x010..0x01C and ARMED, INTR, INTE, INTF, INTS
     private const uint ALARM0    = 0x010;
     private const uint ALARM1    = 0x014;
     private const uint ALARM2    = 0x018;
     private const uint ALARM3    = 0x01C;
     private const uint ARMED     = 0x020;
+    private const uint TIMERAWH  = 0x024;
+    private const uint TIMERAWL  = 0x028;
+    private const uint DBGPAUSE  = 0x02C;
+    private const uint PAUSE     = 0x030;
     private const uint INTR      = 0x034;
     private const uint INTE      = 0x038;
     private const uint INTF      = 0x03C;
@@ -46,6 +42,7 @@ public sealed class TimerPeripheral : IMemoryMappedDevice, ITickable
     private uint _armed;   // bit N = 1 means alarm N is enabled
     private uint _intr;    // raw interrupt status (written 1 to clear)
     private uint _inte;    // interrupt enable
+    private uint _intf;    // forced interrupt
 
     public uint Size => 0x1000;
 
@@ -105,8 +102,8 @@ public sealed class TimerPeripheral : IMemoryMappedDevice, ITickable
             ARMED    => _armed,
             INTR     => _intr,
             INTE     => _inte,
-            INTF     => 0,
-            INTS     => (_intr | 0) & _inte,
+            INTF     => _intf,
+            INTS     => (_intr | _intf) & _inte,
             _ => 0,
         };
     }
@@ -140,6 +137,13 @@ public sealed class TimerPeripheral : IMemoryMappedDevice, ITickable
                 break;
             case INTE:
                 _inte = value & 0xF;
+                break;
+            case INTF:
+                _intf = value & 0xF;
+                // Force-trigger interrupts for set bits
+                for (var i = 0; i < 4; i++)
+                    if ((_intf & (1u << i)) != 0 && (_inte & (1u << i)) != 0)
+                        _cpu.SetInterrupt(i, true);
                 break;
         }
     }

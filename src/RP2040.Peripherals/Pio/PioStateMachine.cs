@@ -31,6 +31,7 @@ internal sealed class PioStateMachine
     public bool Stalled;         // waiting for FIFO or condition
     internal long FracAccum;     // for sub-cycle fractional clock divisor
     internal uint? ForcedInstr;  // immediate instruction via INSTR write
+    internal int DelayCounter;   // instruction delay cycles remaining
 
     // ── GPIO state (driven by this SM) ───────────────────────────────
     public uint GpioPins;    // current SET/OUT output value
@@ -40,7 +41,7 @@ internal sealed class PioStateMachine
     {
         PC = 0; X = 0; Y = 0; ISR = 0; OSR = 0;
         IsrCount = 0; OsrCount = 0;
-        Stalled = false; FracAccum = 0; ForcedInstr = null;
+        Stalled = false; FracAccum = 0; ForcedInstr = null; DelayCounter = 0;
         TxFifo.Clear(); RxFifo.Clear();
     }
 

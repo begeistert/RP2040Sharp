@@ -97,9 +97,17 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     // Spinlocks
     private uint _spinLocks;
 
-    // Multicore FIFO (single-core sim: TX drains silently, RX always empty)
-    // FIFO_ST bits: VLD[0]=RX not empty, RDY[1]=TX not full, WOF[2], ROE[3]
-    private const uint FIFO_ST_RDY = 1u << 1;   // TX always has space
+    // Multicore FIFO — FIFO_ST bits: VLD[0]=RX not empty, RDY[1]=TX not full, WOF[2], ROE[3]
+    private const int FIFO_DEPTH = 8;
+    private const uint FIFO_ST_VLD = 1u;        // RX has data
+    private const uint FIFO_ST_RDY = 1u << 1;   // TX has space
+    private const uint FIFO_ST_WOF = 1u << 2;   // write-overflow (TX write when full)
+    private const uint FIFO_ST_ROE = 1u << 3;   // read-underflow (RX read when empty)
+
+    private readonly Queue<uint> _fifoTx = new(FIFO_DEPTH);  // Core0→Core1
+    private readonly Queue<uint> _fifoRx = new(FIFO_DEPTH);  // Core1→Core0 (injectable)
+    private bool _fifoWof;
+    private bool _fifoRoe;
 
     // Interpolators
     private InterpState _interp0;
@@ -154,8 +162,12 @@ public sealed class SioPeripheral : IMemoryMappedDevice
             DIV_QUOTIENT  => _divQuotient,
             DIV_REMAINDER => _divRemainder,
             DIV_CSR       => _divCsr,
-            FIFO_ST       => FIFO_ST_RDY,  // TX always ready; RX always empty
-            FIFO_RD       => 0,            // RX empty (Core1 doesn't exist)
+            FIFO_ST  =>
+                (_fifoRx.Count > 0 ? FIFO_ST_VLD : 0u)
+              | (_fifoTx.Count < FIFO_DEPTH ? FIFO_ST_RDY : 0u)
+              | (_fifoWof ? FIFO_ST_WOF : 0u)
+              | (_fifoRoe ? FIFO_ST_ROE : 0u),
+            FIFO_RD  => ReadFifoRx(),
             SPINLOCK_ST   => _spinLocks,
             _ => 0,
         };
@@ -212,7 +224,15 @@ public sealed class SioPeripheral : IMemoryMappedDevice
             case GPIO_HI_OE_XOR:   _gpioHiOe ^=  value; break;
 
             case FIFO_WR:
-                // TX to Core1: silently drop (Core1 doesn't exist in simulation)
+                if (_fifoTx.Count < FIFO_DEPTH)
+                    _fifoTx.Enqueue(value);
+                else
+                    _fifoWof = true;
+                break;
+            case FIFO_ST:
+                // Write clears WOF and ROE (write 1 to clear)
+                if ((value & FIFO_ST_WOF) != 0) _fifoWof = false;
+                if ((value & FIFO_ST_ROE) != 0) _fifoRoe = false;
                 break;
 
             case DIV_UDIVIDEND:
@@ -417,6 +437,30 @@ public sealed class SioPeripheral : IMemoryMappedDevice
             }
         }
     }
+
+    // ── FIFO helpers ──────────────────────────────────────────────────
+
+    private uint ReadFifoRx()
+    {
+        if (_fifoRx.TryDequeue(out var v)) return v;
+        _fifoRoe = true;
+        return 0;
+    }
+
+    /// <summary>
+    /// Push a value into the RX FIFO as if Core1 sent it.
+    /// Used by tests and simulated multicore scenarios.
+    /// </summary>
+    public void InjectFifoRx(uint value)
+    {
+        if (_fifoRx.Count < FIFO_DEPTH)
+            _fifoRx.Enqueue(value);
+    }
+
+    /// <summary>
+    /// Drain the TX FIFO (values written by Core0 and "sent" to Core1).
+    /// </summary>
+    public bool TryDequeueTx(out uint value) => _fifoTx.TryDequeue(out value);
 
     // ── Spinlocks ─────────────────────────────────────────────────────
 

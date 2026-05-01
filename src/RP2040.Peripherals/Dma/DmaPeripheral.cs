@@ -32,6 +32,11 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private const uint REG_TIMER2      = 0x428;
     private const uint REG_TIMER3      = 0x42C;
     private const uint REG_MULTI_CHAN  = 0x430;
+    private const uint REG_SNIFF_CTRL = 0x434;
+    private const uint REG_SNIFF_DATA = 0x438;
+    private const uint REG_FIFO_LEVELS = 0x440;
+    private const uint REG_CHAN_ABORT  = 0x444;
+    private const uint REG_N_CHANNELS  = 0x448;
 
     // AL1 alias offsets within channel block (+0x10): CTRL, READ, WRITE, TRANS_TRIG
     private const uint AL1_OFF = 0x10;
@@ -47,6 +52,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private const uint CTRL_DATA_SIZE  = 3u << 2;   // bits 3:2
     private const uint CTRL_INCR_READ  = 1u << 4;
     private const uint CTRL_INCR_WRITE = 1u << 5;
+    private const uint CTRL_BSWAP      = 1u << 22;
     private const uint CTRL_IRQ_QUIET  = 1u << 21;
     private const uint CTRL_CHAIN_TO   = 0xFu << 11;  // bits 14:11
 
@@ -66,6 +72,8 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private uint _inte1;  // IRQ1 enable mask
     private uint _intf1;  // IRQ1 force mask
     private uint _timer0, _timer1, _timer2, _timer3;
+    private uint _sniffCtrl;
+    private uint _sniffData;
 
     public uint Size => 0x1000;
 
@@ -124,6 +132,10 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             REG_TIMER1 => _timer1,
             REG_TIMER2 => _timer2,
             REG_TIMER3 => _timer3,
+            REG_SNIFF_CTRL  => _sniffCtrl,
+            REG_SNIFF_DATA  => _sniffData,
+            REG_FIFO_LEVELS => 0,
+            REG_N_CHANNELS  => CHANNEL_COUNT,
             _ => 0,
         };
     }
@@ -153,6 +165,15 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case REG_TIMER1: _timer1 = value; break;
             case REG_TIMER2: _timer2 = value; break;
             case REG_TIMER3: _timer3 = value; break;
+            case REG_SNIFF_CTRL: _sniffCtrl = value; break;
+            case REG_SNIFF_DATA: _sniffData = value; break;
+            case REG_CHAN_ABORT:
+                // Abort in-flight channels — since transfers are synchronous they're
+                // already done, so just clear BUSY on matching channels
+                for (var i = 0; i < CHANNEL_COUNT; i++)
+                    if ((value & (1u << i)) != 0)
+                        _ctrl[i] &= ~CTRL_BUSY;
+                break;
             case REG_MULTI_CHAN:
                 // Trigger multiple channels simultaneously
                 for (var i = 0; i < CHANNEL_COUNT; i++)
@@ -232,6 +253,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         var dataSize  = (int)((_ctrl[ch] & CTRL_DATA_SIZE) >> 2);  // 0=byte, 1=half, 2=word
         var incrRead  = (_ctrl[ch] & CTRL_INCR_READ)  != 0;
         var incrWrite = (_ctrl[ch] & CTRL_INCR_WRITE) != 0;
+        var bswap     = (_ctrl[ch] & CTRL_BSWAP) != 0;
         var count  = _transCount[ch];
         var rAddr  = _readAddr[ch];
         var wAddr  = _writeAddr[ch];
@@ -250,6 +272,15 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
                 1 => _bus.ReadHalfWord(rAddr),
                 _ => _bus.ReadWord(rAddr),
             };
+
+            if (bswap)
+                data = dataSize switch
+                {
+                    0 => data,
+                    1 => ((data & 0xFF) << 8) | (data >> 8),
+                    _ => ((data & 0xFF) << 24) | ((data & 0xFF00) << 8)
+                       | ((data >> 8) & 0xFF00) | (data >> 24),
+                };
 
             switch (dataSize)
             {
@@ -277,7 +308,8 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         _readAddr[ch]   = rAddr;
         _writeAddr[ch]  = wAddr;
         _transCount[ch] = 0;
-        _ctrl[ch] &= ~(CTRL_BUSY | CTRL_EN);   // clear EN and BUSY when done
+        // Hardware keeps EN=1 after transfer completes; only BUSY is cleared
+        _ctrl[ch] &= ~CTRL_BUSY;
 
         // Signal completion
         _intr |= 1u << ch;

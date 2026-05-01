@@ -354,6 +354,13 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     private void ExecuteStep(PioStateMachine sm, int smIdx)
     {
+        // Burn delay cycles
+        if (sm.DelayCounter > 0)
+        {
+            sm.DelayCounter--;
+            return;
+        }
+
         ushort instr;
         if (sm.ForcedInstr.HasValue)
         {
@@ -368,14 +375,22 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         var opcode = (instr >> 13) & 0x7;
 
-        // Extract sideset + delay from bits [12:8]
+        // Apply sideset from bits[12:8] BEFORE execution (as hardware does)
         ApplySideset(sm, instr);
 
         ExecuteInstr(sm, instr, opcode);
 
-        // Advance PC with wrap
+        // Compute delay after execution (delay only counted on non-stall)
         if (!sm.Stalled)
         {
+            var sidesetCount = (int)sm.SidesetCount + (sm.SideEn != 0 ? 1 : 0);
+            var delayBits = 5 - sidesetCount;
+            if (delayBits > 0)
+            {
+                var delay = (int)((instr >> 8) & ((1 << delayBits) - 1));
+                sm.DelayCounter = delay;
+            }
+
             sm.PC++;
             if (sm.PC > sm.WrapTop)
                 sm.PC = sm.WrapBottom;
