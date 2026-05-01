@@ -146,7 +146,7 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
             IC_ENABLE_STATUS      => _enable & 1,
             IC_FS_SPKLEN          => _fsSpklen,
             IC_CLR_RESTART_DET    => ClearBit(12),
-            IC_COMP_PARAM_1       => 0x00FFFF6E,
+            IC_COMP_PARAM_1       => 0,
             IC_COMP_VERSION       => 0x3230312A,
             IC_COMP_TYPE          => 0x44570140,
             _ => 0,
