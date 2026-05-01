@@ -33,6 +33,11 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 
     private readonly IMemoryMappedDevice[] _memoryMap = new IMemoryMappedDevice[16];
 
+    // SSI peripheral lives inside the Flash region (0x18000000) — handled as a sub-device
+    // so the flash fast path continues to serve 0x10000000–0x17FFFFFF unchanged.
+    private IMemoryMappedDevice? _ssiDevice;
+    private const uint SSI_BASE_ADDRESS = 0x18000000;
+
     private readonly RandomAccessMemory _sram;
     private readonly RandomAccessMemory _bootRom;
     private readonly RandomAccessMemory _flash;
@@ -78,12 +83,21 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         _memoryMap[regionIndex] = device;
     }
 
+    /// <summary>
+    /// Register the SSI peripheral at 0x18000000 (within the XIP flash region).
+    /// Accesses to [0x18000000, 0x18FFFFFF] are forwarded to <paramref name="ssi"/>;
+    /// the rest of the flash region continues to use the fast pointer path.
+    /// </summary>
+    public void RegisterSsi(IMemoryMappedDevice ssi) => _ssiDevice = ssi;
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte ReadByte(uint address)
     {
         var region = address >> 28;
-        var basePtr = _pageTable[region];
+        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
+            return _ssiDevice.ReadByte(address - SSI_BASE_ADDRESS);
 
+        var basePtr = _pageTable[region];
         return basePtr != null ? basePtr[address & _maskTable[region]] : ReadByteDispatch(address);
     }
 
@@ -91,8 +105,10 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public ushort ReadHalfWord(uint address)
     {
         var region = address >> 28;
-        var basePtr = _pageTable[region];
+        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
+            return _ssiDevice.ReadHalfWord(address - SSI_BASE_ADDRESS);
 
+        var basePtr = _pageTable[region];
         return basePtr != null
             ? Unsafe.ReadUnaligned<ushort>(basePtr + (address & _maskTable[region]))
             : ReadHalfWordDispatch(address);
@@ -102,8 +118,10 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public uint ReadWord(uint address)
     {
         var region = address >> 28;
-        var basePtr = _pageTable[region];
+        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
+            return _ssiDevice.ReadWord(address - SSI_BASE_ADDRESS);
 
+        var basePtr = _pageTable[region];
         return basePtr != null
             ? Unsafe.ReadUnaligned<uint>(basePtr + (address & _maskTable[region]))
             : ReadWordDispatch(address);
@@ -126,12 +144,17 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteWord(uint address, uint value)
     {
-        if ((address >> 28) == REGION_SRAM)
+        var region = address >> 28;
+        if (region == REGION_SRAM)
         {
             Unsafe.WriteUnaligned(PtrSram + (address & MASK_SRAM), value);
             return;
         }
-        var region = address >> 28;
+        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
+        {
+            _ssiDevice.WriteWord(address - SSI_BASE_ADDRESS, value);
+            return;
+        }
         if (region == REGION_FLASH || region == REGION_BOOTROM)
             return;
 
@@ -141,27 +164,39 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteByte(uint address, byte value)
     {
-        if ((address >> 28) == REGION_SRAM)
+        var region = address >> 28;
+        if (region == REGION_SRAM)
         {
             PtrSram[address & MASK_SRAM] = value;
             return;
         }
-        if ((address >> 28) <= REGION_FLASH)
+        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
+        {
+            _ssiDevice.WriteByte(address - SSI_BASE_ADDRESS, value);
+            return;
+        }
+        if (region <= REGION_FLASH)
             return; // ROM(0) o FLASH(1)
-        _memoryMap[address >> 28]?.WriteByte(address & 0x0FFFFFFF, value);
+        _memoryMap[region]?.WriteByte(address & 0x0FFFFFFF, value);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void WriteHalfWord(uint address, ushort value)
     {
-        if ((address >> 28) == REGION_SRAM)
+        var region = address >> 28;
+        if (region == REGION_SRAM)
         {
             Unsafe.WriteUnaligned(PtrSram + (address & MASK_SRAM), value);
             return;
         }
-        if ((address >> 28) <= REGION_FLASH)
+        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
+        {
+            _ssiDevice.WriteHalfWord(address - SSI_BASE_ADDRESS, value);
             return;
-        _memoryMap[address >> 28]?.WriteHalfWord(address & 0x0FFFFFFF, value);
+        }
+        if (region <= REGION_FLASH)
+            return;
+        _memoryMap[region]?.WriteHalfWord(address & 0x0FFFFFFF, value);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

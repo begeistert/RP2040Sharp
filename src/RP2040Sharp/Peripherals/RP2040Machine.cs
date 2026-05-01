@@ -206,8 +206,11 @@ public sealed class RP2040Machine : IDisposable
         Vreg = new VregPeripheral();
         apb.Register(0x40064000, Vreg);
 
-        // SSI at 0x18000000 is in XIP Flash region 1 — not bus-mapped; accessible via Ssi property
+        // SSI at 0x18000000 is within XIP Flash region — registered as sub-device so
+        // all accesses to [0x18000000, 0x18FFFFFF] route to SSI registers while
+        // [0x10000000, 0x17FFFFFF] continues to use the flash pointer fast path.
         Ssi = new SsiPeripheral();
+        Bus.RegisterSsi(Ssi);
 
         // ── AHB bridge (0x5): DMA + PIO ──────────────────────────────────
         var ahb = new AhbBridge();
