@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <Authors>Iván Montiel Cardona</Authors>
+    <Company>begeistert</Company>
+    <RepositoryUrl>https://github.com/begeistert/RP2040Sharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/begeistert/RP2040Sharp</PackageProjectUrl>
+    <PackageTags>rp2040;raspberry-pi;emulator;cortex-m0plus;microcontroller;simulation</PackageTags>
+    <Copyright>Copyright © 2024-2026 Iván Montiel Cardona</Copyright>
+    <Deterministic>true</Deterministic>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <!-- MinVer: versioning automático desde git tags (v1.0.0) -->
+    <MinVerVerbosity>minimal</MinVerVerbosity>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="all" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="README.md" Visible="false" />
+  </ItemGroup>
+</Project>
