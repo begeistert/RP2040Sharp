@@ -20,8 +20,14 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public readonly byte* PtrFlash;
     public readonly byte* PtrBootRom;
 
+#if BROWSER
+    // WASM: NativeMemory not available; use pinned managed arrays instead
+    private readonly byte*[] _pageTable = new byte*[16];
+    private readonly uint[]  _maskTable = new uint[16];
+#else
     private readonly byte** _pageTable;
-    private readonly uint* _maskTable;
+    private readonly uint*  _maskTable;
+#endif
 
     private readonly IMemoryMappedDevice[] _memoryMap = new IMemoryMappedDevice[16];
 
@@ -33,8 +39,10 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 
     public BusInterconnect()
     {
+#if !BROWSER
         _pageTable = (byte**)NativeMemory.AllocZeroed(16, (nuint)sizeof(byte*));
         _maskTable = (uint*)NativeMemory.AllocZeroed(16, sizeof(uint));
+#endif
 
         _sram = new RandomAccessMemory(512 * 1024);
         _flash = new RandomAccessMemory(2 * 1024 * 1024);
@@ -175,10 +183,12 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
             _bootRom?.Dispose();
         }
 
+#if !BROWSER
         if (_pageTable != null)
             NativeMemory.Free(_pageTable);
         if (_maskTable != null)
             NativeMemory.Free(_maskTable);
+#endif
 
         _disposed = true;
     }
