@@ -428,4 +428,178 @@ public static class InstructionEmiter
             throw new ArgumentException(LowRegisterIndexOutOfRange);
         return (ushort)(0x4200 | ((rm & 7) << 3) | (rn & 7));
     }
+
+    // ================================================================
+    // Store instructions
+    // ================================================================
+
+    public static ushort Str(uint rt, uint rn, uint imm5)
+    {
+        if (rt > 7 || rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm5 > 124 || (imm5 & 3) != 0) throw new ArgumentException("Immediate must be 0-124 and word-aligned");
+        return (ushort)(0x6000 | ((imm5 >> 2) << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort StrSpRelative(uint rt, uint imm8)
+    {
+        if (rt > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm8 > 1020 || (imm8 & 3) != 0) throw new ArgumentException("Immediate must be 0-1020 and word-aligned");
+        return (ushort)(0x9000 | (rt << 8) | (imm8 >> 2));
+    }
+
+    public static ushort StrRegister(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5000 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort Strb(uint rt, uint rn, uint imm5)
+    {
+        if (rt > 7 || rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm5 > 31) throw new ArgumentException("Immediate must be 0-31");
+        return (ushort)(0x7000 | (imm5 << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort StrbRegister(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5400 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort Strh(uint rt, uint rn, uint imm5)
+    {
+        if (rt > 7 || rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm5 > 62 || (imm5 & 1) != 0) throw new ArgumentException("Immediate must be 0-62 and halfword-aligned");
+        return (ushort)(0x8000 | ((imm5 >> 1) << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort StrhRegister(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5200 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort Stmia(uint rn, uint regList)
+    {
+        if (rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (regList > 0xFF || regList == 0) throw new ArgumentException("Register list must be 1-8 low registers");
+        return (ushort)(0xC000 | (rn << 8) | regList);
+    }
+
+    // ================================================================
+    // Load byte/halfword instructions
+    // ================================================================
+
+    public static ushort Ldrb(uint rt, uint rn, uint imm5)
+    {
+        if (rt > 7 || rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm5 > 31) throw new ArgumentException("Immediate must be 0-31");
+        return (ushort)(0x7800 | (imm5 << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort LdrbRegister(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5C00 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort Ldrh(uint rt, uint rn, uint imm5)
+    {
+        if (rt > 7 || rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (imm5 > 62 || (imm5 & 1) != 0) throw new ArgumentException("Immediate must be 0-62 and halfword-aligned");
+        return (ushort)(0x8800 | ((imm5 >> 1) << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort LdrhRegister(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5A00 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort Ldrsb(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5600 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    public static ushort Ldrsh(uint rt, uint rn, uint rm)
+    {
+        if (rt > 7 || rn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x5E00 | (rm << 6) | (rn << 3) | rt);
+    }
+
+    // ================================================================
+    // Bit operations
+    // ================================================================
+
+    public static ushort Ror(uint rdn, uint rm)
+    {
+        if (rdn > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0x41C0 | (rm << 3) | rdn);
+    }
+
+    public static ushort Sxth(uint rd, uint rm)
+    {
+        if (rd > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0xB200 | (rm << 3) | rd);
+    }
+
+    public static ushort Sxtb(uint rd, uint rm)
+    {
+        if (rd > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0xB240 | (rm << 3) | rd);
+    }
+
+    public static ushort Uxth(uint rd, uint rm)
+    {
+        if (rd > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0xB280 | (rm << 3) | rd);
+    }
+
+    public static ushort Uxtb(uint rd, uint rm)
+    {
+        if (rd > 7 || rm > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        return (ushort)(0xB2C0 | (rm << 3) | rd);
+    }
+
+    /// <summary>Returns the two halfwords for CLZ Rd, Rm (Thumb-2 32-bit).</summary>
+    public static (ushort h1, ushort h2) Clz(uint rd, uint rm)
+    {
+        if (rd > 15 || rm > 15) throw new ArgumentException(HighRegisterIndexOutOfRange);
+        return ((ushort)(0xFAB0 | rm), (ushort)(0xF080 | (rd << 8) | rm));
+    }
+
+    // ================================================================
+    // Control flow
+    // ================================================================
+
+    public static ushort Cbz(uint rn, uint offset)
+    {
+        if (rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (offset > 126 || (offset & 1) != 0) throw new ArgumentException("Offset must be 0-126 and even");
+        var i = (offset >> 6) & 1;
+        var imm5 = (offset >> 1) & 0x1F;
+        return (ushort)(0xB300 | (i << 10) | (imm5 << 3) | rn);
+    }
+
+    public static ushort Cbnz(uint rn, uint offset)
+    {
+        if (rn > 7) throw new ArgumentException(LowRegisterIndexOutOfRange);
+        if (offset > 126 || (offset & 1) != 0) throw new ArgumentException("Offset must be 0-126 and even");
+        var i = (offset >> 6) & 1;
+        var imm5 = (offset >> 1) & 0x1F;
+        return (ushort)(0xBB00 | (i << 10) | (imm5 << 3) | rn);
+    }
+
+    // ================================================================
+    // System
+    // ================================================================
+
+    public static ushort Bkpt(byte imm8) => (ushort)(0xBE00 | imm8);
+    public static ushort Svc(byte imm8) => (ushort)(0xDF00 | imm8);
+    public static ushort Cpsie => 0xB662;
+    public static ushort Cpsid => 0xB672;
+    public static ushort Wfi => 0xBF30;
+    public static ushort Wfe => 0xBF20;
+    public static ushort Sev => 0xBF40;
 }
