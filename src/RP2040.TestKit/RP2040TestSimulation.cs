@@ -26,6 +26,12 @@ public class RP2040TestSimulation : IDisposable
     /// <summary>Direct CPU access for low-level assertions.</summary>
     public RP2040.Core.Cpu.CortexM0Plus Cpu => Machine.Cpu;
 
+    /// <summary>
+    /// Direct access to the RP2040 machine for advanced probe scenarios
+    /// (e.g. attaching SPI callbacks, injecting GPIO signals).
+    /// </summary>
+    public RP2040Machine Rp2040 => Machine;
+
     private uint _clkHz = RP2040Machine.CLK_HZ;
 
     protected RP2040TestSimulation()
@@ -144,6 +150,45 @@ public class RP2040TestSimulation : IDisposable
     {
         Machine.Reset();
         return this;
+    }
+
+    // ── Output capture helpers ────────────────────────────────────────
+
+    /// <summary>
+    /// Run the simulation in batches until <paramref name="expectedText"/> appears in
+    /// <paramref name="uart"/>'s captured output, or <paramref name="timeoutMs"/> elapses.
+    /// Returns <c>true</c> when the expected text was found.
+    /// </summary>
+    public bool RunUntilOutput(UartProbe uart, string expectedText, double timeoutMs = 10_000)
+    {
+        const double batchMs = 100.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs)
+        {
+            RunMilliseconds(batchMs);
+            if (uart.Text.Contains(expectedText, StringComparison.Ordinal))
+                return true;
+            elapsed += batchMs;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Run the simulation in batches until <paramref name="predicate"/> over the captured UART
+    /// text returns true, or <paramref name="timeoutMs"/> elapses.
+    /// </summary>
+    public bool RunUntilOutput(UartProbe uart, Func<string, bool> predicate, double timeoutMs = 10_000)
+    {
+        const double batchMs = 100.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs)
+        {
+            RunMilliseconds(batchMs);
+            if (predicate(uart.Text))
+                return true;
+            elapsed += batchMs;
+        }
+        return false;
     }
 
     public void Dispose() => Machine.Dispose();
