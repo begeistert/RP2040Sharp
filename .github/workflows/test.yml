@@ -60,3 +60,6 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: dotnet sonarscanner end /d:sonar.login="${SONAR_TOKEN}"
+
+      - name: Pack (verify packability)
+        run: dotnet pack --configuration Release --no-build --output ./nupkgs
