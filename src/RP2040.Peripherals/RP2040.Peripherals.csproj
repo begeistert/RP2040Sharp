@@ -4,8 +4,6 @@
     <Description>RP2040 peripheral implementations for RP2040Sharp: UART, SPI, I2C, DMA, PWM, ADC, PIO, Timer, GPIO, and more.</Description>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
   <ItemGroup>

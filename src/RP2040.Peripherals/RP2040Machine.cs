@@ -91,9 +91,9 @@ public sealed class RP2040Machine : IDisposable
 
     private readonly ITickable[] _tickables;
 
-    public RP2040Machine()
+    public RP2040Machine(uint flashSize = 2 * 1024 * 1024)
     {
-        Bus = new BusInterconnect();
+        Bus = new BusInterconnect(flashSize);
         Cpu = new CortexM0Plus(Bus);
 
         // ── PPB (0xE) ────────────────────────────────────────────────────
@@ -283,11 +283,11 @@ public sealed class RP2040Machine : IDisposable
         Pio1.WriteGpioDirs = (value, mask) => { };
     }
 
-    /// <summary>Load a binary image into Flash starting at 0x10000000 (max 2 MB).</summary>
+    /// <summary>Load a binary image into Flash starting at 0x10000000.</summary>
     public unsafe void LoadFlash(ReadOnlySpan<byte> image)
     {
-        if (image.Length > BusInterconnect.MASK_FLASH + 1)
-            throw new ArgumentException("Flash image exceeds 2 MB");
+        if (image.Length > Bus.FlashSize)
+            throw new ArgumentException($"Flash image exceeds configured flash size ({Bus.FlashSize / 1024} KB)");
 
         image.CopyTo(new Span<byte>(Bus.PtrFlash, image.Length));
         Cpu.Reset();

@@ -4,8 +4,6 @@
     <Description>Core Cortex-M0+ CPU emulator, BusInterconnect, and memory subsystem for RP2040Sharp — a cycle-accurate RP2040 simulator in C#.</Description>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PublishTrimmed>true</PublishTrimmed>
     <IsTrimmable>true</IsTrimmable>
     <IsAotCompatible>true</IsAotCompatible>

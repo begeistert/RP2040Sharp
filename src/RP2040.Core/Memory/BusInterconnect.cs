@@ -9,9 +9,11 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public const uint REGION_FLASH = 0x1;
     public const uint REGION_SRAM = 0x2;
 
-    public const uint MASK_SRAM = 0x7FFFF; // 512KB (covers 264KB + mirrors)
-    public const uint MASK_FLASH = 0x1FFFFF; // 2MB
-    public const uint MASK_BOOTROM = 0x3FFF; // 16KB
+    public const uint MASK_SRAM = 0x7FFFF;    // 512KB (covers 264KB + mirrors)
+    public const uint MASK_BOOTROM = 0x3FFF;  // 16KB
+
+    public uint FlashSize { get; }
+    public uint MaskFlash { get; }
 
     public const uint SRAM_START_ADDRESS = 0x20000000;
     public const uint FLASH_START_ADDRESS = 0x10000000;
@@ -37,15 +39,18 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
 
     private bool _disposed;
 
-    public BusInterconnect()
+    public BusInterconnect(uint flashSizeBytes = 2 * 1024 * 1024)
     {
+        FlashSize = flashSizeBytes;
+        MaskFlash = flashSizeBytes - 1;
+
 #if !BROWSER
         _pageTable = (byte**)NativeMemory.AllocZeroed(16, (nuint)sizeof(byte*));
         _maskTable = (uint*)NativeMemory.AllocZeroed(16, sizeof(uint));
 #endif
 
         _sram = new RandomAccessMemory(512 * 1024);
-        _flash = new RandomAccessMemory(2 * 1024 * 1024);
+        _flash = new RandomAccessMemory((int)flashSizeBytes);
         _bootRom = new RandomAccessMemory(16 * 1024);
 
         PtrSram = _sram.BasePtr;
@@ -56,7 +61,7 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         _maskTable[REGION_BOOTROM] = MASK_BOOTROM;
 
         _pageTable[REGION_FLASH] = PtrFlash;
-        _maskTable[REGION_FLASH] = MASK_FLASH;
+        _maskTable[REGION_FLASH] = MaskFlash;
 
         _pageTable[REGION_SRAM] = PtrSram;
         _maskTable[REGION_SRAM] = MASK_SRAM;

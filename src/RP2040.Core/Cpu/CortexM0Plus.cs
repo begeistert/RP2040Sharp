@@ -61,7 +61,7 @@ public sealed unsafe class CortexM0Plus
         {
             case BusInterconnect.REGION_FLASH:
                 _fetchPtr = Bus.PtrFlash;
-                _fetchMask = BusInterconnect.MASK_FLASH & ~1u;
+                _fetchMask = Bus.MaskFlash & ~1u;
                 break;
             case BusInterconnect.REGION_SRAM:
                 _fetchPtr = Bus.PtrSram;
