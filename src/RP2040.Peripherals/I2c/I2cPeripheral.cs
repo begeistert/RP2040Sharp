@@ -1,3 +1,4 @@
+using RP2040.Core.Cpu;
 using RP2040.Core.Memory;
 
 namespace RP2040.Peripherals.I2c;
@@ -9,33 +10,48 @@ namespace RP2040.Peripherals.I2c;
 /// </summary>
 public sealed class I2cPeripheral : IMemoryMappedDevice
 {
-    private const uint IC_CON            = 0x000;
-    private const uint IC_TAR            = 0x004;
-    private const uint IC_DATA_CMD       = 0x010;
-    private const uint IC_SS_SCL_HCNT   = 0x014;
-    private const uint IC_SS_SCL_LCNT   = 0x018;
-    private const uint IC_FS_SCL_HCNT   = 0x01C;
-    private const uint IC_FS_SCL_LCNT   = 0x020;
-    private const uint IC_INTR_STAT     = 0x02C;
-    private const uint IC_INTR_MASK     = 0x030;
-    private const uint IC_RAW_INTR_STAT = 0x034;
-    private const uint IC_RX_TL         = 0x038;
-    private const uint IC_TX_TL         = 0x03C;
-    private const uint IC_CLR_INTR      = 0x040;
-    private const uint IC_CLR_RD_REQ    = 0x050;
-    private const uint IC_CLR_TX_ABRT   = 0x054;
-    private const uint IC_CLR_STOP_DET  = 0x060;
-    private const uint IC_CLR_START_DET = 0x064;
-    private const uint IC_ENABLE        = 0x06C;
-    private const uint IC_STATUS        = 0x070;
-    private const uint IC_TXFLR         = 0x074;
-    private const uint IC_RXFLR         = 0x078;
-    private const uint IC_SDA_HOLD      = 0x07C;
-    private const uint IC_TX_ABRT_SOURCE= 0x080;
-    private const uint IC_ENABLE_STATUS = 0x09C;
-    private const uint IC_COMP_PARAM_1  = 0x0F4;
-    private const uint IC_COMP_VERSION  = 0x0F8;
-    private const uint IC_COMP_TYPE     = 0x0FC;
+    private const uint IC_CON                = 0x000;
+    private const uint IC_TAR                = 0x004;
+    private const uint IC_SAR                = 0x008;   // Slave address
+    private const uint IC_DATA_CMD           = 0x010;
+    private const uint IC_SS_SCL_HCNT        = 0x014;
+    private const uint IC_SS_SCL_LCNT        = 0x018;
+    private const uint IC_FS_SCL_HCNT        = 0x01C;
+    private const uint IC_FS_SCL_LCNT        = 0x020;
+    private const uint IC_INTR_STAT          = 0x02C;
+    private const uint IC_INTR_MASK          = 0x030;
+    private const uint IC_RAW_INTR_STAT      = 0x034;
+    private const uint IC_RX_TL              = 0x038;
+    private const uint IC_TX_TL              = 0x03C;
+    private const uint IC_CLR_INTR           = 0x040;
+    private const uint IC_CLR_RX_UNDER       = 0x044;
+    private const uint IC_CLR_RX_OVER        = 0x048;
+    private const uint IC_CLR_TX_OVER        = 0x04C;
+    private const uint IC_CLR_RD_REQ         = 0x050;
+    private const uint IC_CLR_TX_ABRT        = 0x054;
+    private const uint IC_CLR_RX_DONE        = 0x058;
+    private const uint IC_CLR_ACTIVITY       = 0x05C;
+    private const uint IC_CLR_STOP_DET       = 0x060;
+    private const uint IC_CLR_START_DET      = 0x064;
+    private const uint IC_CLR_GEN_CALL       = 0x068;
+    private const uint IC_ENABLE             = 0x06C;
+    private const uint IC_STATUS             = 0x070;
+    private const uint IC_TXFLR              = 0x074;
+    private const uint IC_RXFLR              = 0x078;
+    private const uint IC_SDA_HOLD           = 0x07C;
+    private const uint IC_TX_ABRT_SOURCE     = 0x080;
+    private const uint IC_SLV_DATA_NACK_ONLY = 0x084;
+    private const uint IC_DMA_CR             = 0x088;
+    private const uint IC_DMA_TDLR           = 0x08C;
+    private const uint IC_DMA_RDLR           = 0x090;
+    private const uint IC_SDA_SETUP          = 0x094;
+    private const uint IC_ACK_GENERAL_CALL   = 0x098;
+    private const uint IC_ENABLE_STATUS      = 0x09C;
+    private const uint IC_FS_SPKLEN          = 0x0A0;
+    private const uint IC_CLR_RESTART_DET    = 0x0A8;
+    private const uint IC_COMP_PARAM_1       = 0x0F4;
+    private const uint IC_COMP_VERSION       = 0x0F8;
+    private const uint IC_COMP_TYPE          = 0x0FC;
 
     // IC_STATUS bits
     private const uint ST_ACTIVITY  = 1u << 0;
@@ -47,14 +63,27 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
 
     private const int FIFO_DEPTH = 16;
 
+    private readonly CortexM0Plus? _cpu;
+    private readonly int _irq;
+
     private uint _con  = 0x65;  // default: master, 7-bit, fast-mode enabled, restart enabled
     private uint _tar;
+    private uint _sar  = 0x55;  // default slave address
+    private uint _ssSclHcnt, _ssSclLcnt;
+    private uint _fsSclHcnt = 0x06, _fsSclLcnt = 0x0D;
     private uint _intrMask = 0x8FF;
     private uint _rawIntr;
     private uint _rxTl;
     private uint _txTl;
     private uint _enable;
     private uint _sdaHold = 0x1;
+    private uint _slvDataNackOnly;
+    private uint _dmaCr;
+    private uint _dmaTdlr;
+    private uint _dmaRdlr;
+    private uint _sdaSetup = 0x64;
+    private uint _ackGeneralCall = 0x1;
+    private uint _fsSpklen = 0x7;
 
     private readonly Queue<byte> _rxFifo = new(FIFO_DEPTH);
 
@@ -66,39 +95,60 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
 
     public uint Size => 0x1000;
 
+    public I2cPeripheral(CortexM0Plus? cpu = null, int irq = 0)
+    {
+        _cpu = cpu;
+        _irq = irq;
+    }
+
     // ── IMemoryMappedDevice ──────────────────────────────────────────
 
     public uint ReadWord(uint address)
     {
         return address switch
         {
-            IC_CON            => _con,
-            IC_TAR            => _tar,
-            IC_DATA_CMD       => PopRxFifo(),
-            IC_SS_SCL_HCNT    => 0,
-            IC_SS_SCL_LCNT    => 0,
-            IC_FS_SCL_HCNT    => 0x06,
-            IC_FS_SCL_LCNT    => 0x0D,
-            IC_INTR_STAT      => _rawIntr & _intrMask,
-            IC_INTR_MASK      => _intrMask,
-            IC_RAW_INTR_STAT  => _rawIntr,
-            IC_RX_TL          => _rxTl,
-            IC_TX_TL          => _txTl,
-            IC_CLR_INTR       => ClearAllInterrupts(),
-            IC_CLR_RD_REQ     => ClearBit(8),
-            IC_CLR_TX_ABRT    => ClearBit(6),
-            IC_CLR_STOP_DET   => ClearBit(9),
-            IC_CLR_START_DET  => ClearBit(10),
-            IC_ENABLE         => _enable,
-            IC_STATUS         => BuildStatus(),
-            IC_TXFLR          => 0,   // TX FIFO always drained in simulation
-            IC_RXFLR          => (uint)_rxFifo.Count,
-            IC_SDA_HOLD       => _sdaHold,
-            IC_TX_ABRT_SOURCE => 0,
-            IC_ENABLE_STATUS  => _enable & 1,
-            IC_COMP_PARAM_1   => 0x00FFFF6E,
-            IC_COMP_VERSION   => 0x3230312A,
-            IC_COMP_TYPE      => 0x44570140,
+            IC_CON                => _con,
+            IC_TAR                => _tar,
+            IC_SAR                => _sar,
+            IC_DATA_CMD           => PopRxFifo(),
+            IC_SS_SCL_HCNT        => _ssSclHcnt,
+            IC_SS_SCL_LCNT        => _ssSclLcnt,
+            IC_FS_SCL_HCNT        => _fsSclHcnt,
+            IC_FS_SCL_LCNT        => _fsSclLcnt,
+            IC_INTR_STAT          => _rawIntr & _intrMask,
+            IC_INTR_MASK          => _intrMask,
+            IC_RAW_INTR_STAT      => _rawIntr,
+            IC_RX_TL              => _rxTl,
+            IC_TX_TL              => _txTl,
+            IC_CLR_INTR           => ClearAllInterrupts(),
+            IC_CLR_RX_UNDER       => ClearBit(0),
+            IC_CLR_RX_OVER        => ClearBit(1),
+            IC_CLR_TX_OVER        => ClearBit(3),
+            IC_CLR_RD_REQ         => ClearBit(5),
+            IC_CLR_TX_ABRT        => ClearBit(6),
+            IC_CLR_RX_DONE        => ClearBit(7),
+            IC_CLR_ACTIVITY       => ClearBit(8),
+            IC_CLR_STOP_DET       => ClearBit(9),
+            IC_CLR_START_DET      => ClearBit(10),
+            IC_CLR_GEN_CALL       => ClearBit(11),
+            IC_ENABLE             => _enable,
+            IC_STATUS             => BuildStatus(),
+            IC_TXFLR              => 0,   // TX FIFO always drained in simulation
+            IC_RXFLR              => (uint)_rxFifo.Count,
+            IC_SDA_HOLD           => _sdaHold,
+            IC_TX_ABRT_SOURCE     => 0,
+            IC_SLV_DATA_NACK_ONLY => _slvDataNackOnly,
+            IC_DMA_CR             => _dmaCr,
+            IC_DMA_TDLR           => _dmaTdlr,
+            IC_DMA_RDLR           => _dmaRdlr,
+            IC_SDA_SETUP          => _sdaSetup,
+            IC_ACK_GENERAL_CALL   => _ackGeneralCall,
+            IC_ENABLE_STATUS      => _enable & 1,
+            IC_FS_SPKLEN          => _fsSpklen,
+            IC_CLR_RESTART_DET    => ClearBit(12),
+            IC_COMP_PARAM_1       => 0x00FFFF6E,
+            IC_COMP_VERSION       => 0x3230312A,
+            IC_COMP_TYPE          => 0x44570140,
             _ => 0,
         };
     }
@@ -113,14 +163,31 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
     {
         switch (address)
         {
-            case IC_CON:       _con = value & 0x7FF; break;
-            case IC_TAR:       _tar = value & 0x3FF; break;
-            case IC_DATA_CMD:  HandleDataCmd(value); break;
-            case IC_INTR_MASK: _intrMask = value & 0xFFF; break;
-            case IC_RX_TL:     _rxTl = value & 0xFF; break;
-            case IC_TX_TL:     _txTl = value & 0xFF; break;
-            case IC_ENABLE:    _enable = value & 3; break;
-            case IC_SDA_HOLD:  _sdaHold = value & 0xFFFFFF; break;
+            case IC_CON:              _con              = value & 0x7FF; break;
+            case IC_TAR:              _tar              = value & 0x3FF; break;
+            case IC_SAR:              _sar              = value & 0x3FF; break;
+            case IC_DATA_CMD:         HandleDataCmd(value); break;
+            case IC_SS_SCL_HCNT:      _ssSclHcnt        = value & 0xFFFF; break;
+            case IC_SS_SCL_LCNT:      _ssSclLcnt        = value & 0xFFFF; break;
+            case IC_FS_SCL_HCNT:      _fsSclHcnt        = value & 0xFFFF; break;
+            case IC_FS_SCL_LCNT:      _fsSclLcnt        = value & 0xFFFF; break;
+            case IC_INTR_MASK:
+                _intrMask = value & 0xFFF;
+                CheckInterrupts();
+                break;
+            case IC_RX_TL:            _rxTl             = value & 0xFF; break;
+            case IC_TX_TL:            _txTl             = value & 0xFF; break;
+            case IC_ENABLE:
+                _enable = value & 3;
+                break;
+            case IC_SDA_HOLD:         _sdaHold          = value & 0xFFFFFF; break;
+            case IC_SLV_DATA_NACK_ONLY: _slvDataNackOnly = value & 1; break;
+            case IC_DMA_CR:           _dmaCr            = value & 3; break;
+            case IC_DMA_TDLR:         _dmaTdlr          = value & 0xF; break;
+            case IC_DMA_RDLR:         _dmaRdlr          = value & 0xF; break;
+            case IC_SDA_SETUP:        _sdaSetup         = value & 0xFF; break;
+            case IC_ACK_GENERAL_CALL: _ackGeneralCall   = value & 1; break;
+            case IC_FS_SPKLEN:        _fsSpklen         = value & 0xFF; break;
         }
     }
 
@@ -154,7 +221,8 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
             var rxByte = OnRead?.Invoke(addr) ?? 0;
             if (_rxFifo.Count < FIFO_DEPTH)
                 _rxFifo.Enqueue(rxByte);
-            _rawIntr |= 1u << 2;  // RX_FULL or similar
+            _rawIntr |= 1u << 2;  // RX_FULL
+            CheckInterrupts();
         }
         else
         {
@@ -163,13 +231,23 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
 
         // Signal STOP_DET when STOP bit set
         if ((value & (1u << 9)) != 0)
+        {
             _rawIntr |= 1u << 9;
+            CheckInterrupts();
+        }
     }
 
     private uint PopRxFifo()
     {
         if (_rxFifo.TryDequeue(out var data))
+        {
+            if (_rxFifo.Count == 0)
+            {
+                _rawIntr &= ~(1u << 2);
+                CheckInterrupts();
+            }
             return data;
+        }
         return 0;
     }
 
@@ -184,13 +262,21 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
     private uint ClearAllInterrupts()
     {
         _rawIntr = 0;
+        CheckInterrupts();
         return 0;
     }
 
     private uint ClearBit(int bit)
     {
         _rawIntr &= ~(1u << bit);
+        CheckInterrupts();
         return 0;
+    }
+
+    private void CheckInterrupts()
+    {
+        if (_cpu is null) return;
+        _cpu.SetInterrupt(_irq, (_rawIntr & _intrMask) != 0);
     }
 
     /// <summary>Inject a byte into the RX FIFO (simulates a slave device responding).</summary>

@@ -1,3 +1,4 @@
+using RP2040.Core.Cpu;
 using RP2040.Core.Memory;
 
 namespace RP2040.Peripherals.Uart;
@@ -22,6 +23,17 @@ public sealed class UartPeripheral : IMemoryMappedDevice
     private const uint UARTRIS   = 0x03C;   // Raw interrupt status
     private const uint UARTMIS   = 0x040;   // Masked interrupt status
     private const uint UARTICR   = 0x044;   // Interrupt clear
+    private const uint UARTDMACR = 0x048;   // DMA control
+
+    // PL011 Peripheral ID registers (read-only, return PL011 signature)
+    private const uint UARTPERIPHID0 = 0xFE0;
+    private const uint UARTPERIPHID1 = 0xFE4;
+    private const uint UARTPERIPHID2 = 0xFE8;
+    private const uint UARTPERIPHID3 = 0xFEC;
+    private const uint UARTPCELLID0  = 0xFF0;
+    private const uint UARTPCELLID1  = 0xFF4;
+    private const uint UARTPCELLID2  = 0xFF8;
+    private const uint UARTPCELLID3  = 0xFFC;
 
     // UARTFR bits
     private const uint FR_TXFE = 1u << 7;   // TX FIFO empty (1 = idle, buffer empty)
@@ -30,14 +42,24 @@ public sealed class UartPeripheral : IMemoryMappedDevice
     private const uint FR_RXFE = 1u << 4;   // RX FIFO empty
     private const uint FR_BUSY = 1u << 3;   // UART transmitting
 
+    private readonly CortexM0Plus? _cpu;
+    private readonly int _irq;
+
     private readonly Queue<byte> _rxFifo = new(32);
-    private uint _ibrd, _fbrd, _lcrH, _cr, _imsc;
+    private uint _ibrd, _fbrd, _lcrH, _cr, _imsc, _ifls, _dmacr;
     private uint _ris;   // raw interrupt status
 
     public uint Size => 0x1000;
 
     /// <summary>Called when a byte is written to UARTDR (TX).</summary>
     public Action<byte>? OnByteTransmit;
+
+    public UartPeripheral(CortexM0Plus? cpu = null, int irq = 0)
+    {
+        _cpu = cpu;
+        _irq = irq;
+        _ifls = 0x12;  // default: TX at 1/2 full, RX at 1/2 full
+    }
 
     /// <summary>Inject a byte into the RX FIFO (simulates remote device sending data).</summary>
     public void InjectByte(byte value)
@@ -46,6 +68,7 @@ public sealed class UartPeripheral : IMemoryMappedDevice
         {
             _rxFifo.Enqueue(value);
             _ris |= (1u << 4);   // RXRIS — RX interrupt raw
+            CheckInterrupts();
         }
     }
 
@@ -53,16 +76,26 @@ public sealed class UartPeripheral : IMemoryMappedDevice
     {
         return address switch
         {
-            UARTDR    => ReadData(),
-            UARTRSR   => 0,           // no errors
-            UARTFR    => BuildFr(),
-            UARTIBRD  => _ibrd,
-            UARTFBRD  => _fbrd,
-            UARTLCR_H => _lcrH,
-            UARTCR    => _cr,
-            UARTIMSC  => _imsc,
-            UARTRIS   => _ris,
-            UARTMIS   => _ris & _imsc,
+            UARTDR           => ReadData(),
+            UARTRSR          => 0,           // no errors
+            UARTFR           => BuildFr(),
+            UARTIBRD         => _ibrd,
+            UARTFBRD         => _fbrd,
+            UARTLCR_H        => _lcrH,
+            UARTCR           => _cr,
+            UARTIFLS         => _ifls,
+            UARTIMSC         => _imsc,
+            UARTRIS          => _ris,
+            UARTMIS          => _ris & _imsc,
+            UARTDMACR        => _dmacr,
+            UARTPERIPHID0    => 0x11,
+            UARTPERIPHID1    => 0x10,
+            UARTPERIPHID2    => 0x34,
+            UARTPERIPHID3    => 0x00,
+            UARTPCELLID0     => 0x0D,
+            UARTPCELLID1     => 0xF0,
+            UARTPCELLID2     => 0x05,
+            UARTPCELLID3     => 0xB1,
             _ => 0,
         };
     }
@@ -80,16 +113,25 @@ public sealed class UartPeripheral : IMemoryMappedDevice
             case UARTDR:
                 OnByteTransmit?.Invoke((byte)(value & 0xFF));
                 _ris |= (1u << 5);   // TXRIS — TX interrupt (ready for more data)
+                CheckInterrupts();
                 break;
             case UARTRSR:
                 // Write any value to clear error flags
                 break;
-            case UARTIBRD:  _ibrd = value & 0xFFFF; break;
-            case UARTFBRD:  _fbrd = value & 0x3F;   break;
-            case UARTLCR_H: _lcrH = value & 0xFF;   break;
-            case UARTCR:    _cr   = value & 0xFFFF; break;
-            case UARTIMSC:  _imsc = value & 0x7FF;  break;
-            case UARTICR:   _ris &= ~value;          break;   // clear selected IRQs
+            case UARTIBRD:  _ibrd  = value & 0xFFFF; break;
+            case UARTFBRD:  _fbrd  = value & 0x3F;   break;
+            case UARTLCR_H: _lcrH  = value & 0xFF;   break;
+            case UARTCR:    _cr    = value & 0xFFFF; break;
+            case UARTIFLS:  _ifls  = value & 0x3F;   break;
+            case UARTIMSC:
+                _imsc = value & 0x7FF;
+                CheckInterrupts();
+                break;
+            case UARTICR:
+                _ris &= ~value;
+                CheckInterrupts();
+                break;
+            case UARTDMACR: _dmacr = value & 0x7; break;
         }
     }
 
@@ -116,6 +158,7 @@ public sealed class UartPeripheral : IMemoryMappedDevice
         var b = _rxFifo.Dequeue();
         if (_rxFifo.Count == 0)
             _ris &= ~(1u << 4);   // clear RXRIS when FIFO empties
+        CheckInterrupts();
         return b;
     }
 
@@ -125,5 +168,11 @@ public sealed class UartPeripheral : IMemoryMappedDevice
         if (_rxFifo.Count == 0) fr |= FR_RXFE;
         if (_rxFifo.Count >= 32) fr |= FR_RXFF;
         return fr;
+    }
+
+    private void CheckInterrupts()
+    {
+        if (_cpu is null) return;
+        _cpu.SetInterrupt(_irq, (_ris & _imsc) != 0);
     }
 }

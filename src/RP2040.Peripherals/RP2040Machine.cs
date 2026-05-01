@@ -156,20 +156,20 @@ public sealed class RP2040Machine : IDisposable
         apb.Register(0x40030000, Busctrl);
 
         // UART0 @ 0x40034000 (slot 13), UART1 @ 0x40038000 (slot 14)
-        Uart0 = new UartPeripheral();
-        Uart1 = new UartPeripheral();
+        Uart0 = new UartPeripheral(Cpu, irq: 20);
+        Uart1 = new UartPeripheral(Cpu, irq: 21);
         apb.Register(0x40034000, Uart0);
         apb.Register(0x40038000, Uart1);
 
         // SPI0 @ 0x4003C000 (slot 15), SPI1 @ 0x40040000 (slot 16)
-        Spi0 = new SpiPeripheral();
-        Spi1 = new SpiPeripheral();
+        Spi0 = new SpiPeripheral(Cpu, irq: 18);
+        Spi1 = new SpiPeripheral(Cpu, irq: 19);
         apb.Register(0x4003C000, Spi0);
         apb.Register(0x40040000, Spi1);
 
         // I2C0 @ 0x40044000 (slot 17), I2C1 @ 0x40048000 (slot 18)
-        I2c0 = new I2cPeripheral();
-        I2c1 = new I2cPeripheral();
+        I2c0 = new I2cPeripheral(Cpu, irq: 23);
+        I2c1 = new I2cPeripheral(Cpu, irq: 24);
         apb.Register(0x40044000, I2c0);
         apb.Register(0x40048000, I2c1);
 

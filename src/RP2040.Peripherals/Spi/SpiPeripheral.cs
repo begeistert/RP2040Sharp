@@ -1,3 +1,4 @@
+using RP2040.Core.Cpu;
 using RP2040.Core.Memory;
 
 namespace RP2040.Peripherals.Spi;
@@ -20,6 +21,16 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
     private const uint SSPICR  = 0x020;  // Interrupt clear
     private const uint SSPDMACR= 0x024;  // DMA control
 
+    // PL022 Peripheral ID registers (read-only)
+    private const uint SSPPERIPHID0 = 0xFE0;
+    private const uint SSPPERIPHID1 = 0xFE4;
+    private const uint SSPPERIPHID2 = 0xFE8;
+    private const uint SSPPERIPHID3 = 0xFEC;
+    private const uint SSPPCELLID0  = 0xFF0;
+    private const uint SSPPCELLID1  = 0xFF4;
+    private const uint SSPPCELLID2  = 0xFF8;
+    private const uint SSPPCELLID3  = 0xFFC;
+
     // SSPSR bits
     private const uint SR_TFE = 1u << 0;  // TX FIFO empty
     private const uint SR_TNF = 1u << 1;  // TX FIFO not full
@@ -27,13 +38,21 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
     private const uint SR_RFF = 1u << 3;  // RX FIFO full
     private const uint SR_BSY = 1u << 4;  // Busy
 
+    // SSPCR1 bits
+    private const uint CR1_LBM = 1u << 0;  // Loopback mode
+    private const uint CR1_SSE = 1u << 1;  // SSP enable
+
     private const int FIFO_DEPTH = 8;
+
+    private readonly CortexM0Plus? _cpu;
+    private readonly int _irq;
 
     private uint _cr0;
     private uint _cr1;
     private uint _cpsr;
     private uint _imsc;
     private uint _ris;
+    private uint _dmacr;
 
     private readonly Queue<ushort> _txFifo = new(FIFO_DEPTH);
     private readonly Queue<ushort> _rxFifo = new(FIFO_DEPTH);
@@ -46,21 +65,36 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
 
     public uint Size => 0x1000;
 
+    public SpiPeripheral(CortexM0Plus? cpu = null, int irq = 0)
+    {
+        _cpu = cpu;
+        _irq = irq;
+    }
+
     // ── IMemoryMappedDevice ──────────────────────────────────────────
 
     public uint ReadWord(uint address)
     {
         return address switch
         {
-            SSPCR0  => _cr0,
-            SSPCR1  => _cr1,
-            SSPDR   => ReadData(),
-            SSPSR   => BuildStatus(),
-            SSPCPSR => _cpsr,
-            SSPIMSC => _imsc,
-            SSPRIS  => _ris,
-            SSPMIS  => _ris & _imsc,
-            _       => 0,
+            SSPCR0          => _cr0,
+            SSPCR1          => _cr1,
+            SSPDR           => ReadData(),
+            SSPSR           => BuildStatus(),
+            SSPCPSR         => _cpsr,
+            SSPIMSC         => _imsc,
+            SSPRIS          => _ris,
+            SSPMIS          => _ris & _imsc,
+            SSPDMACR        => _dmacr,
+            SSPPERIPHID0    => 0x22,
+            SSPPERIPHID1    => 0x10,
+            SSPPERIPHID2    => 0x04,
+            SSPPERIPHID3    => 0x00,
+            SSPPCELLID0     => 0x0D,
+            SSPPCELLID1     => 0xF0,
+            SSPPCELLID2     => 0x05,
+            SSPPCELLID3     => 0xB1,
+            _               => 0,
         };
     }
 
@@ -75,11 +109,20 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
         switch (address)
         {
             case SSPCR0:  _cr0  = value; break;
-            case SSPCR1:  _cr1  = value & 0xF; break;
+            case SSPCR1:
+                _cr1 = value & 0xF;
+                break;
             case SSPDR:   WriteData((ushort)value); break;
             case SSPCPSR: _cpsr = value & 0xFE; break;  // even values only, bits[7:0]
-            case SSPIMSC: _imsc = value & 0xF; break;
-            case SSPICR:  _ris &= ~(value & 0x3); break;  // clear RORIC and RTIC
+            case SSPIMSC:
+                _imsc = value & 0xF;
+                CheckInterrupts();
+                break;
+            case SSPICR:
+                _ris &= ~(value & 0x3);  // clear RORIC and RTIC
+                CheckInterrupts();
+                break;
+            case SSPDMACR: _dmacr = value & 0x3; break;
         }
     }
 
@@ -99,23 +142,43 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
 
     // ── Private ──────────────────────────────────────────────────────
 
-    private bool IsEnabled => (_cr1 & (1u << 1)) != 0;
+    private bool IsEnabled => (_cr1 & CR1_SSE) != 0;
+    private bool IsLoopback => (_cr1 & CR1_LBM) != 0;
 
     private void WriteData(ushort txData)
     {
         if (!IsEnabled || _txFifo.Count >= FIFO_DEPTH)
             return;
 
-        // In simulation, perform the transfer immediately
-        var rxData = OnTransfer?.Invoke(txData) ?? 0;
+        ushort rxData;
+        if (IsLoopback)
+        {
+            // Loopback: TX data loops back into RX FIFO directly
+            rxData = txData;
+        }
+        else
+        {
+            rxData = OnTransfer?.Invoke(txData) ?? 0;
+        }
+
         if (_rxFifo.Count < FIFO_DEPTH)
             _rxFifo.Enqueue(rxData);
+
+        _ris |= 0x4;  // RXRIS — RX not empty
+        CheckInterrupts();
     }
 
     private uint ReadData()
     {
         if (_rxFifo.TryDequeue(out var data))
+        {
+            if (_rxFifo.Count == 0)
+            {
+                _ris &= ~0x4u;  // clear RXRIS
+                CheckInterrupts();
+            }
             return data;
+        }
         return 0;
     }
 
@@ -126,6 +189,12 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
         if (_rxFifo.Count > 0)         sr |= SR_RNE;
         if (_rxFifo.Count >= FIFO_DEPTH) sr |= SR_RFF;
         return sr;
+    }
+
+    private void CheckInterrupts()
+    {
+        if (_cpu is null) return;
+        _cpu.SetInterrupt(_irq, (_ris & _imsc) != 0);
     }
 
     /// <summary>Inject a byte into the RX FIFO (simulates incoming data).</summary>
