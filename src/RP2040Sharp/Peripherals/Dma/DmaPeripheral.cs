@@ -233,6 +233,12 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case OFF_TRANS_COUNT:
                 _transCount[ch] = value; break;
             case OFF_CTRL_TRIG:
+                if (value == 0)
+                {
+                    // Null trigger: signal completion without starting a transfer
+                    NullTrigger(ch);
+                    break;
+                }
                 _ctrl[ch] = value & ~CTRL_BUSY;  // BUSY is HW-driven
                 if ((value & CTRL_EN) != 0 && _transCount[ch] > 0)
                     ExecuteChannel(ch);
@@ -244,6 +250,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case 0x1C:
                 _transCount[ch] = value;
                 if ((_ctrl[ch] & CTRL_EN) != 0 && _transCount[ch] > 0) ExecuteChannel(ch);
+                else if (_transCount[ch] == 0) NullTrigger(ch);
                 break;
             // AL2: CTRL, TRANS, READ, WRITE_TRIG (last triggers)
             case 0x20: _ctrl[ch] = value & ~CTRL_BUSY; break;
@@ -252,6 +259,7 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case 0x2C:
                 _writeAddr[ch] = value;
                 if ((_ctrl[ch] & CTRL_EN) != 0 && _transCount[ch] > 0) ExecuteChannel(ch);
+                else if (_transCount[ch] == 0) NullTrigger(ch);
                 break;
             // AL3: CTRL, WRITE, TRANS, READ_TRIG (last triggers)
             case 0x30: _ctrl[ch] = value & ~CTRL_BUSY; break;
@@ -260,7 +268,22 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
             case 0x3C:
                 _readAddr[ch] = value;
                 if ((_ctrl[ch] & CTRL_EN) != 0 && _transCount[ch] > 0) ExecuteChannel(ch);
+                else if (_transCount[ch] == 0) NullTrigger(ch);
                 break;
+        }
+    }
+
+    private void NullTrigger(int ch)
+    {
+        // Null trigger: signal completion without performing any transfer.
+        // Per RP2040 TRM §2.5.2 and rp2040js: fires when IRQ_QUIET IS SET.
+        // IRQ_QUIET suppresses normal end-of-transfer IRQs to allow chained sub-transfers;
+        // a null write (value=0) to the final trigger alias signals the logical transfer is done.
+        if ((_ctrl[ch] & CTRL_IRQ_QUIET) != 0)
+        {
+            _intr |= 1u << ch;
+            if ((_inte0 & (1u << ch)) != 0) _cpu.SetInterrupt(11, true);
+            if ((_inte1 & (1u << ch)) != 0) _cpu.SetInterrupt(12, true);
         }
     }
 
