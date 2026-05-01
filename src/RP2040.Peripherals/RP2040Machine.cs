@@ -1,9 +1,12 @@
 using System.Runtime.InteropServices;
 using RP2040.Core.Cpu;
 using RP2040.Core.Memory;
+using RP2040.Peripherals.Adc;
 using RP2040.Peripherals.Apb;
+using RP2040.Peripherals.Dma;
 using RP2040.Peripherals.Gpio;
 using RP2040.Peripherals.Ppb;
+using RP2040.Peripherals.Pwm;
 using RP2040.Peripherals.Sio;
 using RP2040.Peripherals.Timer;
 using RP2040.Peripherals.Uart;
@@ -28,12 +31,15 @@ public sealed class RP2040Machine : IDisposable
     public CortexM0Plus    Cpu  { get; }
 
     // ── Peripherals ─────────────────────────────────────────────────
-    public PpbPeripheral    Ppb   { get; }
-    public SioPeripheral    Sio   { get; }
-    public UartPeripheral   Uart0 { get; }
-    public UartPeripheral   Uart1 { get; }
-    public TimerPeripheral  Timer { get; }
+    public PpbPeripheral     Ppb    { get; }
+    public SioPeripheral     Sio    { get; }
+    public UartPeripheral    Uart0  { get; }
+    public UartPeripheral    Uart1  { get; }
+    public TimerPeripheral   Timer  { get; }
     public IoBank0Peripheral IoBank0 { get; }
+    public DmaPeripheral     Dma    { get; }
+    public PwmPeripheral     Pwm    { get; }
+    public AdcPeripheral     Adc    { get; }
     public IReadOnlyList<GpioPin> Gpio { get; }
 
     private readonly ITickable[] _tickables;
@@ -69,6 +75,18 @@ public sealed class RP2040Machine : IDisposable
         IoBank0 = new IoBank0Peripheral(Sio);
         apb.Register(0x40014000, IoBank0);
 
+        // PWM @ 0x40050000
+        Pwm = new PwmPeripheral(Cpu);
+        apb.Register(0x40050000, Pwm);
+
+        // ADC @ 0x4004C000
+        Adc = new AdcPeripheral(Cpu);
+        apb.Register(0x4004C000, Adc);
+
+        // ── DMA (0x5) ────────────────────────────────────────────────
+        Dma = new DmaPeripheral(Bus, Cpu);
+        Bus.MapDevice(5, Dma);
+
         // ── GPIO pins ────────────────────────────────────────────────
         var pins = new GpioPin[30];
         for (var i = 0; i < 30; i++)
@@ -76,7 +94,7 @@ public sealed class RP2040Machine : IDisposable
         Gpio = pins;
 
         // ── Tickable list (fixed-size, no allocation in hot path) ────
-        _tickables = [Ppb, Timer];
+        _tickables = [Ppb, Timer, Pwm];
     }
 
     /// <summary>
