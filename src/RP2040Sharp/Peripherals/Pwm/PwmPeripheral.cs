@@ -62,7 +62,10 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
     {
         _cpu = cpu;
         for (var i = 0; i < SLICE_COUNT; i++)
-            _top[i] = 0xFFFF;  // default wrap at 0xFFFF
+        {
+            _top[i] = 0xFFFF;   // default wrap at 0xFFFF
+            _div[i] = 0x10;     // reset: integer=1, frac=0
+        }
     }
 
     // ── ITickable ────────────────────────────────────────────────────
@@ -188,7 +191,15 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
 
         switch (address)
         {
-            case REG_EN:   _enable = value & 0xFF;   break;
+            case REG_EN:
+                _enable = value & 0xFF;
+                // Mirror enable bits into per-slice CSR so Tick() sees the change
+                for (var i = 0; i < SLICE_COUNT; i++)
+                {
+                    if ((_enable & (1u << i)) != 0) _csr[i] |=  CSR_EN;
+                    else                            _csr[i] &= ~CSR_EN;
+                }
+                break;
             case REG_INTR: _intr &= ~value;          break;  // write 1 to clear
             case REG_INTE: _inte = value & 0xFF;     break;
             case REG_INTF: _intf = value & 0xFF;     break;
