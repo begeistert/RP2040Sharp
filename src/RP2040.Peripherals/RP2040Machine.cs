@@ -2,10 +2,12 @@ using System.Runtime.InteropServices;
 using RP2040.Core.Cpu;
 using RP2040.Core.Memory;
 using RP2040.Peripherals.Adc;
+using RP2040.Peripherals.Ahb;
 using RP2040.Peripherals.Apb;
 using RP2040.Peripherals.Dma;
 using RP2040.Peripherals.Gpio;
 using RP2040.Peripherals.I2c;
+using RP2040.Peripherals.Pio;
 using RP2040.Peripherals.Ppb;
 using RP2040.Peripherals.Pwm;
 using RP2040.Peripherals.Sio;
@@ -46,6 +48,8 @@ public sealed class RP2040Machine : IDisposable
     public SpiPeripheral     Spi1   { get; }
     public I2cPeripheral     I2c0   { get; }
     public I2cPeripheral     I2c1   { get; }
+    public PioPeripheral     Pio0   { get; }
+    public PioPeripheral     Pio1   { get; }
     public IReadOnlyList<GpioPin> Gpio { get; }
 
     private readonly ITickable[] _tickables;
@@ -101,9 +105,19 @@ public sealed class RP2040Machine : IDisposable
         apb.Register(0x40044000, I2c0);
         apb.Register(0x40048000, I2c1);
 
-        // ── DMA (0x5) ────────────────────────────────────────────────
+        // ── AHB bridge (0x5): DMA + PIO ─────────────────────────────
+        var ahb = new AhbBridge();
+        Bus.MapDevice(5, ahb);
+
+        // DMA @ 0x50000000
         Dma = new DmaPeripheral(Bus, Cpu);
-        Bus.MapDevice(5, Dma);
+        ahb.Register(0x50000000, Dma);
+
+        // PIO0 @ 0x50200000, PIO1 @ 0x50300000
+        Pio0 = new PioPeripheral(Cpu, 0);
+        Pio1 = new PioPeripheral(Cpu, 1);
+        ahb.Register(0x50200000, Pio0);
+        ahb.Register(0x50300000, Pio1);
 
         // ── GPIO pins ────────────────────────────────────────────────
         var pins = new GpioPin[30];
@@ -112,7 +126,7 @@ public sealed class RP2040Machine : IDisposable
         Gpio = pins;
 
         // ── Tickable list (fixed-size, no allocation in hot path) ────
-        _tickables = [Ppb, Timer, Pwm];
+        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1];
     }
 
     /// <summary>
