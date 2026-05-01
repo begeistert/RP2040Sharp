@@ -56,7 +56,7 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
     {
         return address switch
         {
-            ADC_CS     => _cs,
+            ADC_CS     => _cs | (1u << 8),  // READY is always 1 in synchronous simulation
             ADC_RESULT => _result & 0xFFF,
             ADC_FCS    => BuildFcs(),
             ADC_FIFO   => ReadFifo(),
@@ -80,7 +80,7 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
         switch (address)
         {
             case ADC_CS:
-                _cs = value;
+                _cs = value & ~(1u << 8);  // READY is read-only HW; don't store it
                 if ((value & (1u << 2)) != 0)  // START_ONCE
                     PerformConversion();
                 break;
@@ -125,8 +125,10 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
         _result = ReadChannel?.Invoke(channel) ?? 0;
         _result &= 0xFFF;
 
-        // Clear START_ONCE, set READY
-        _cs = (_cs & ~(1u << 2)) | (1u << 8);
+        // Clear START_ONCE (READY is always 1 in ReadWord, no need to set it here)
+        _cs &= ~(1u << 2);
+
+        AdvanceRoundRobin();
 
         // Push to FIFO if enabled
         if ((_fcs & 1) != 0)
@@ -167,6 +169,25 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
     private uint BuildIntr()
     {
         var thresh = (int)((_fcs >> 24) & 0xF);
-        return ((_fcs & 1) != 0 && _adcFifo.Count >= thresh) ? 1u : 0u;
+        var effectiveThresh = thresh == 0 ? 1 : thresh;  // threshold 0 behaves as 1 (matches hardware)
+        return ((_fcs & 1) != 0 && _adcFifo.Count >= effectiveThresh) ? 1u : 0u;
+    }
+
+    private void AdvanceRoundRobin()
+    {
+        // RROBIN bits [20:16]: 5-bit bitmask of channels participating in round-robin (channels 0–4)
+        var rrobin = (int)((_cs >> 16) & 0x1F);
+        if (rrobin == 0) return;
+
+        var current = (int)((_cs >> 12) & 0x7);
+        for (var i = 1; i <= 5; i++)
+        {
+            var next = (current + i) % 5;  // 5 channels: 0–3 external + 4 temperature sensor
+            if ((rrobin & (1 << next)) != 0)
+            {
+                _cs = (_cs & ~(0x7u << 12)) | ((uint)next << 12);
+                return;
+            }
+        }
     }
 }
