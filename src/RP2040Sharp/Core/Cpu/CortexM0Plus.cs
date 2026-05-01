@@ -118,7 +118,15 @@ public sealed unsafe class CortexM0Plus
                 regionId = _currentRegionId;
 
                 if (fetchPtr == null)
-                    break;
+                {
+                    // PC landed in an un-executable region — raise HardFault per ARMv6-M spec
+                    ExceptionEntry(EXC_HARDFAULT);
+                    UpdateFetchCache(Registers.PC);
+                    fetchPtr  = _fetchPtr;
+                    fetchMask = _fetchMask;
+                    regionId  = _currentRegionId;
+                    continue;
+                }
             }
 
             // ULTRA-FAST FETCH
@@ -242,6 +250,7 @@ public sealed unsafe class CortexM0Plus
     public void TriggerNmi() { Registers.PendingNMI = true; Registers.InterruptsUpdated = true; }
     public void TriggerSysTick() { Registers.PendingSystick = true; Registers.InterruptsUpdated = true; }
     public void TriggerPendSv() { Registers.PendingPendSV = true; Registers.InterruptsUpdated = true; }
+    public void TriggerHardFault() => ExceptionEntry(EXC_HARDFAULT);
 
     /// <summary>Returns true if an interrupt was taken (PC changed).</summary>
     [MethodImpl(MethodImplOptions.NoInlining)]

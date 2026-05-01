@@ -301,7 +301,9 @@ public sealed unsafe class InstructionDecoder : IDisposable
 
     private static void HandleUndefined(ushort opcode, CortexM0Plus cpu)
     {
-        throw new Exception($"Undefined Opcode: 0x{opcode:X4} PC={cpu.Registers.PC:X8}");
+        // ARMv6-M B1.5.6: executing an UNDEFINED encoding raises HardFault.
+        // Do not throw a C# exception — let the handler vector take over.
+        cpu.TriggerHardFault();
     }
 
     [ExcludeFromCodeCoverage]
