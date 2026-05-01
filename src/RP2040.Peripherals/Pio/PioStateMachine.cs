@@ -57,6 +57,14 @@ internal sealed class PioStateMachine
     public int AutopullThreshold => (int)((ShiftCtrl >> 25) & 0x1F) is 0 ? 32 : (int)((ShiftCtrl >> 25) & 0x1F);
     public bool AutopushEnabled => (ShiftCtrl & (1u << 16)) != 0;
     public bool AutopullEnabled => (ShiftCtrl & (1u << 17)) != 0;
+    /// <summary>FJOIN_TX (bit 31): double TX FIFO to 8 entries (RX disabled).</summary>
+    public bool FifoJoinTx => (ShiftCtrl & (1u << 31)) != 0;
+    /// <summary>FJOIN_RX (bit 30): double RX FIFO to 8 entries (TX disabled).</summary>
+    public bool FifoJoinRx => (ShiftCtrl & (1u << 30)) != 0;
+    /// <summary>Effective TX FIFO depth: 8 when FJOIN_TX, 0 when FJOIN_RX, else 4.</summary>
+    public int TxDepth => FifoJoinTx ? 8 : FifoJoinRx ? 0 : 4;
+    /// <summary>Effective RX FIFO depth: 0 when FJOIN_TX, 8 when FJOIN_RX, else 4.</summary>
+    public int RxDepth => FifoJoinTx ? 0 : FifoJoinRx ? 8 : 4;
 
     // ── EXECCTRL helpers ──────────────────────────────────────────────
     /// <summary>Wrap top (inclusive): EXECCTRL bits [16:12].</summary>

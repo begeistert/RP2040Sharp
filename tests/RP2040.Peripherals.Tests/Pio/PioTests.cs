@@ -241,4 +241,53 @@ public abstract class PioTests
             (fdebug & (1u << 24)).Should().Be(0u, "SM should not be stalled");
         }
     }
+
+    public class FifoJoin
+    {
+        private const uint SM0_SHIFTCTRL = 0x0D0;
+        private const uint FJOIN_TX = 1u << 31;  // double TX to 8 entries
+        private const uint FJOIN_RX = 1u << 30;  // double RX to 8 entries
+
+        [Fact]
+        public void FJOIN_TX_allows_8_entries_in_TX_FIFO()
+        {
+            using var f = new Fixture();
+            // Enable FJOIN_TX: TX FIFO becomes 8 deep
+            f.Pio.WriteWord(SM0_SHIFTCTRL, FJOIN_TX);
+
+            // Write 8 words — all should be accepted
+            for (uint i = 0; i < 8; i++)
+                f.Pio.WriteWord(Fixture.TXF0, i);
+
+            // FLEVEL TX should be 8
+            var flevel = f.Pio.ReadWord(Fixture.FLEVEL);
+            (flevel & 0xFu).Should().Be(8u, "TX FIFO depth is 8 with FJOIN_TX");
+        }
+
+        [Fact]
+        public void FJOIN_TX_caps_at_8_entries()
+        {
+            using var f = new Fixture();
+            f.Pio.WriteWord(SM0_SHIFTCTRL, FJOIN_TX);
+
+            // Write 10 words — only 8 fit
+            for (uint i = 0; i < 10; i++)
+                f.Pio.WriteWord(Fixture.TXF0, i);
+
+            var flevel = f.Pio.ReadWord(Fixture.FLEVEL);
+            (flevel & 0xFu).Should().Be(8u, "TX FIFO caps at 8 with FJOIN_TX");
+        }
+
+        [Fact]
+        public void Without_FJOIN_TX_FIFO_caps_at_4()
+        {
+            using var f = new Fixture();
+            // No join: default depth = 4
+            for (uint i = 0; i < 6; i++)
+                f.Pio.WriteWord(Fixture.TXF0, i);
+
+            var flevel = f.Pio.ReadWord(Fixture.FLEVEL);
+            (flevel & 0xFu).Should().Be(4u, "TX FIFO depth is still 4 without FJOIN");
+        }
+    }
 }

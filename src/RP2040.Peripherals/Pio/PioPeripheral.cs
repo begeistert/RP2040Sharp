@@ -176,7 +176,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         {
             var smIdx = (int)((off - REG_TXF_BASE) / 4);
             var sm = _sm[smIdx];
-            if (sm.TxFifo.Count < 4)
+            if (sm.TxFifo.Count < sm.TxDepth)
                 sm.TxFifo.Enqueue(value);
             else
                 _fdebug |= 1u << (8 + smIdx);  // TXOVER bits [11:8]
@@ -221,8 +221,9 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
     /// <summary>Inject a value directly into the RX FIFO of <paramref name="smIndex"/>.</summary>
     public void InjectRxData(int smIndex, uint value)
     {
-        if (_sm[smIndex].RxFifo.Count < 4)
-            _sm[smIndex].RxFifo.Enqueue(value);
+        var sm = _sm[smIndex];
+        if (sm.RxFifo.Count < sm.RxDepth)
+            sm.RxFifo.Enqueue(value);
     }
 
     // ── Private: Ctrl ────────────────────────────────────────────────
@@ -266,10 +267,11 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         uint result = 0;
         for (var i = 0; i < SM_COUNT; i++)
         {
-            if (_sm[i].TxFifo.Count == 4)  result |= 1u << i;         // TX full [3:0]
-            if (_sm[i].TxFifo.Count == 0)  result |= 1u << (8  + i);  // TX empty [11:8]
-            if (_sm[i].RxFifo.Count == 4)  result |= 1u << (16 + i);  // RX full [19:16]
-            if (_sm[i].RxFifo.Count == 0)  result |= 1u << (24 + i);  // RX empty [27:24]
+            var sm = _sm[i];
+            if (sm.TxFifo.Count >= sm.TxDepth) result |= 1u << i;         // TX full [3:0]
+            if (sm.TxFifo.Count == 0)           result |= 1u << (8  + i);  // TX empty [11:8]
+            if (sm.RxFifo.Count >= sm.RxDepth) result |= 1u << (16 + i);  // RX full [19:16]
+            if (sm.RxFifo.Count == 0)           result |= 1u << (24 + i);  // RX empty [27:24]
         }
         return result;
     }
@@ -297,8 +299,9 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         intr <<= 8;
         for (var i = 0; i < SM_COUNT; i++)
         {
-            if (_sm[i].RxFifo.Count > 0)  intr |= 1u << i;        // RX not empty [3:0]
-            if (_sm[i].TxFifo.Count < 4)  intr |= 1u << (4 + i);  // TX not full [7:4]
+            var sm = _sm[i];
+            if (sm.RxFifo.Count > 0)                  intr |= 1u << i;        // RX not empty [3:0]
+            if (sm.TxFifo.Count < sm.TxDepth)          intr |= 1u << (4 + i);  // TX not full [7:4]
         }
         return intr;
     }
@@ -596,7 +599,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     private void DoPush(PioStateMachine sm, bool block)
     {
-        if (sm.RxFifo.Count >= 4)
+        if (sm.RxFifo.Count >= sm.RxDepth)
         {
             sm.Stalled = block;
             return;
