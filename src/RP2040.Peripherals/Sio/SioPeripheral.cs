@@ -359,8 +359,8 @@ public sealed class SioPeripheral : IMemoryMappedDevice
         }
 
         var baseVal = lane == 0 ? st.Base0 : st.Base1;
-        // Base replaces the unmasked bits (bits NOT in mask are set to base's bits)
-        return (masked & mask) | (baseVal & ~mask);
+        // RESULT = (shifted & mask) + BASE  (RP2040 TRM § 2.3.1.7)
+        return masked + baseVal;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -379,19 +379,20 @@ public sealed class SioPeripheral : IMemoryMappedDevice
 
     private static uint PopLane(ref InterpState st, int lane)
     {
-        uint result = ComputeLane(ref st, lane);
-        // POP: update accum[lane] = full result (lane0) or lane1 result
-        // RP2040 TRM: after POP, ACCUM feeds the full result back
-        if (lane == 0) st.Accum0 = ComputeFull(ref st);
-        else            st.Accum1 = result;
-        return result;
+        uint r0 = ComputeLane(ref st, 0);
+        uint r1 = ComputeLane(ref st, 1);
+        st.Accum0 = r0;
+        st.Accum1 = r1;
+        return lane == 0 ? r0 : r1;
     }
 
     private static uint PopFull(ref InterpState st)
     {
-        uint result = ComputeFull(ref st);
-        st.Accum0 = result;
-        return result;
+        uint r0 = ComputeLane(ref st, 0);
+        uint r1 = ComputeLane(ref st, 1);
+        st.Accum0 = r0;
+        st.Accum1 = r1;
+        return r0 + st.Base2;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

@@ -290,4 +290,163 @@ public abstract class PioTests
             (flevel & 0xFu).Should().Be(4u, "TX FIFO depth is still 4 without FJOIN");
         }
     }
+
+    public class Sideset
+    {
+        // Helper: encode a raw sideset+delay field into bits [12:8] of a JMP 0 instruction.
+        private static ushort JmpWithField(int field5bit)
+            => (ushort)(0x0000 | ((field5bit & 0x1F) << 8));
+
+        // PINCTRL.SIDESET_COUNT = N → bits [31:29] = N (inclusive of enable when SIDE_EN=1)
+        // PINCTRL.SIDESET_BASE  = B → bits [14:10] = B
+        private static uint PinCtrl(uint sidesetCount, uint sidesetBase)
+            => (sidesetCount << 29) | (sidesetBase << 10);
+
+        // EXECCTRL: SIDE_EN = bit 30, WRAP_TOP = bits [16:12] = 0 (wrap at 0)
+        private static uint ExecCtrl(bool sideEn = false)
+            => sideEn ? (1u << 30) : 0u;
+
+        [Fact]
+        public void Sideset_drives_pins_without_SideEn()
+        {
+            using var f = new Fixture();
+            uint capturedPins = 0, capturedMask = 0;
+            f.Pio.WriteGpioPins = (v, m) => { capturedPins = v; capturedMask = m; };
+
+            // PINCTRL: SIDESET_COUNT=2, SIDESET_BASE=0 → occupies field bits [4:3]
+            f.Pio.WriteWord(Fixture.SM0_PINCTRL, PinCtrl(2, 0));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, ExecCtrl(false));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+
+            // sideset=0b11 (both pins high), no delay → field bits [4:3]=0b11 → field = 0b11000 = 24
+            var instr = JmpWithField(0b11000); // 0b11 << 3
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, instr);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(1);
+
+            (capturedMask & 3u).Should().Be(3u, "mask covers pins 0 and 1");
+            (capturedPins & 3u).Should().Be(3u, "both sideset pins driven high");
+        }
+
+        [Fact]
+        public void Sideset_with_nonzero_base_drives_correct_pins()
+        {
+            using var f = new Fixture();
+            uint capturedPins = 0;
+            f.Pio.WriteGpioPins = (v, m) => { capturedPins = v; };
+
+            // PINCTRL: SIDESET_COUNT=1, SIDESET_BASE=5 → pin 5 only
+            f.Pio.WriteWord(Fixture.SM0_PINCTRL, PinCtrl(1, 5));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, ExecCtrl(false));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+
+            // sideset=1 (pin 5 high), no delay → top 1 bit of field = bit 4 → field = 0b10000 = 16
+            var instr = JmpWithField(0b10000);
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, instr);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(1);
+
+            (capturedPins & (1u << 5)).Should().NotBe(0u, "pin 5 driven high");
+        }
+
+        [Fact]
+        public void Delay_stalls_SM_for_correct_number_of_cycles()
+        {
+            using var f = new Fixture();
+
+            // PINCTRL: SIDESET_COUNT=0 → all 5 bits are delay
+            f.Pio.WriteWord(Fixture.SM0_PINCTRL, PinCtrl(0, 0));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, ExecCtrl(false));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+
+            // delay=3 in bits [2:0] of the 5-bit field → field = 0b00011 = 3
+            var instr = JmpWithField(3);
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, instr);
+
+            // Set WRAP_TOP=31 so SM doesn't get stuck in wrap at 0
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, (31u << 12));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            // Tick 1: instruction executes, delay counter = 3, PC → 1
+            // Ticks 2-4: SM burning delay (PC stays at 1, no advance per delay tick)
+            f.Tick(1); // executes JMP 0 → PC=0 again, delay=3 loaded
+            // SM is now at PC=0 with delay=3, 3 more cycles needed before next exec
+            f.Tick(3); // burning 3 delay cycles
+            // After 3 delay burns the counter hits 0 — on tick 5 the instruction re-executes
+            f.Pio.ReadWord(Fixture.SM0_ADDR).Should().Be(0u, "PC back at 0 (JMP 0) after delay burned");
+        }
+
+        [Fact]
+        public void Sideset_not_applied_when_SM_stalls()
+        {
+            using var f = new Fixture();
+            var sidesetCallCount = 0;
+            f.Pio.WriteGpioPins = (_, _) => sidesetCallCount++;
+
+            // Configure sideset on pin 0
+            f.Pio.WriteWord(Fixture.SM0_PINCTRL, PinCtrl(1, 0));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, ExecCtrl(false));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+
+            // PULL block — will stall because TX FIFO is empty
+            // sideset value = 1 → field bit 4 = 1 → field = 0b10000 = 16
+            var pullField = (ushort)(EncodePull(block: true) | (16 << 8));
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, pullField);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            // Run 5 ticks — SM stalls on empty FIFO every tick
+            f.Tick(5);
+
+            sidesetCallCount.Should().Be(0, "sideset must not fire on stall cycles");
+        }
+
+        [Fact]
+        public void SideEn_enable_bit_gates_sideset()
+        {
+            using var f = new Fixture();
+            var sidesetCallCount = 0;
+            f.Pio.WriteGpioPins = (_, _) => sidesetCallCount++;
+
+            // PINCTRL: SIDESET_COUNT=3 (inclusive: 1 enable + 2 pins), SIDESET_BASE=0
+            f.Pio.WriteWord(Fixture.SM0_PINCTRL, PinCtrl(3, 0));
+            // EXECCTRL: SIDE_EN=1 (bit 30)
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, ExecCtrl(sideEn: true));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+
+            // Instruction with enable=0 in field: bit 4=0, pins=0b11 → field = 0b01100 = 12
+            var instrNoEnable = JmpWithField(0b01100);
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, instrNoEnable);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(2);
+            sidesetCallCount.Should().Be(0, "sideset must not fire when enable bit is 0");
+        }
+
+        [Fact]
+        public void SideEn_enable_bit_set_fires_sideset()
+        {
+            using var f = new Fixture();
+            uint capturedPins = 0;
+            f.Pio.WriteGpioPins = (v, _) => capturedPins = v;
+
+            // PINCTRL: SIDESET_COUNT=3 (1 enable + 2 pins), SIDESET_BASE=2
+            f.Pio.WriteWord(Fixture.SM0_PINCTRL, PinCtrl(3, 2));
+            // EXECCTRL: SIDE_EN=1
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, ExecCtrl(sideEn: true));
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+
+            // enable=1, pins=0b11 → top 3 bits of field: bit4=1, [3:2]=0b11 → field = 0b11100 = 28
+            var instrWithEnable = JmpWithField(0b11100);
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, instrWithEnable);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(1);
+
+            // Pins 2 and 3 (sidesetBase=2, 2 pins) should both be high
+            (capturedPins & (3u << 2)).Should().Be(3u << 2, "pins 2 and 3 driven high");
+        }
+    }
 }

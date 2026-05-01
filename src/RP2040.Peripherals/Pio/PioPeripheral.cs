@@ -389,9 +389,6 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         sm.PcJumped = false;
 
-        // Apply sideset from bits[12:8] BEFORE execution (as hardware does)
-        ApplySideset(sm, instr);
-
         ExecuteInstr(sm, instr, opcode);
 
         // Update FDEBUG stall bits (sticky — cleared by writing 1 to FDEBUG)
@@ -403,10 +400,13 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
                 _fdebug |= 1u << (24 + smIdx);   // RXSTALL bits [27:24]
         }
 
-        // Compute delay after execution (delay only counted on non-stall)
+        // Sideset, delay, and PC advance only on completing cycle (not on stall)
         if (!sm.Stalled)
         {
-            var sidesetCount = (int)sm.SidesetCount + (sm.SideEn != 0 ? 1 : 0);
+            // Apply sideset AFTER instruction completes (hardware fires sideset on completion)
+            ApplySideset(sm, instr);
+            // PINCTRL.SIDESET_COUNT includes enable bit when SIDE_EN is set → no +1 needed
+            var sidesetCount = (int)sm.SidesetCount;
             var delayBits = 5 - sidesetCount;
             if (delayBits > 0)
             {
@@ -424,7 +424,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
     }
 
     // Apply sideset bits from instruction field [12:8]
-    private static void ApplySideset(PioStateMachine sm, ushort instr)
+    private void ApplySideset(PioStateMachine sm, ushort instr)
     {
         var sidesetCount = (int)sm.SidesetCount;
         if (sidesetCount == 0) return;
@@ -432,22 +432,30 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         var field = (instr >> 8) & 0x1F;  // 5 bits: delay+sideset
 
         // If sideEn bit is set in EXECCTRL, MSB of the field is the enable
+        // The enable is always field bit 4 (0x10) — MSB of the 5-bit field — regardless of
+        // sidesetCount. PINCTRL.SIDESET_COUNT is inclusive of the enable bit per the TRM.
         var sideEn = sm.SideEn != 0;
         int sideValue;
+        int pinCount;
         if (sideEn)
         {
-            if ((field & (1 << (sidesetCount - 1 + 1))) == 0) return;  // enable bit=0 → no sideset
+            if ((field & 0x10) == 0) return;  // field bit 4 is the enable gate; 0 → no sideset
             sideValue = (field >> (5 - sidesetCount)) & ((1 << (sidesetCount - 1)) - 1);
+            pinCount = sidesetCount - 1;       // one bit consumed by enable
         }
         else
         {
             sideValue = (field >> (5 - sidesetCount)) & ((1 << sidesetCount) - 1);
+            pinCount = sidesetCount;
         }
 
-        var sideBase  = (int)sm.SidesetBase;
-        var sidePinDir = sm.SidePinDir != 0;
+        if (pinCount <= 0) return;
 
-        for (var bit = 0; bit < sidesetCount; bit++)
+        var sideBase   = (int)sm.SidesetBase;
+        var sidePinDir = sm.SidePinDir != 0;
+        var pinMask    = pinCount < 32 ? ((1u << pinCount) - 1) << sideBase : 0xFFFFFFFFu;
+
+        for (var bit = 0; bit < pinCount; bit++)
         {
             var pin = (sideBase + bit) & 0x1F;
             var v = (sideValue >> bit) & 1;
@@ -456,6 +464,12 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             else
                 sm.GpioPins = (sm.GpioPins & ~(1u << pin)) | ((uint)v << pin);
         }
+
+        // Propagate to physical GPIO (same as SET/OUT pin operations)
+        if (sidePinDir)
+            WriteGpioDirs?.Invoke(sm.GpioPinDirs, pinMask);
+        else
+            WriteGpioPins?.Invoke(sm.GpioPins, pinMask);
     }
 
     private void ExecuteInstr(PioStateMachine sm, ushort instr, int opcode)

@@ -234,7 +234,7 @@ public sealed class RP2040Machine : IDisposable
         Gpio = pins;
 
         // ── Tickable list ─────────────────────────────────────────────────
-        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc];
+        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog];
 
         // ── DMA DREQ sources ──────────────────────────────────────────────
         // PIO0 TX/RX SM0-3: DREQ 0-3 (TX), 4-7 (RX)
