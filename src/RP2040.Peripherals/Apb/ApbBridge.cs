@@ -45,11 +45,74 @@ public sealed class ApbBridge : IMemoryMappedDevice
     }
 
     public void WriteWord(uint address, uint value)
-        => _devices[(address >> 14) & 0xFF]?.WriteWord(address & 0xFFF, value);
+    {
+        var device = _devices[(address >> 14) & 0xFF];
+        if (device == null) return;
+
+        var atomicType = (address >> 12) & 0x3;
+        var offset = address & 0xFFF;
+
+        if (atomicType == 0)
+        {
+            device.WriteWord(offset, value);
+            return;
+        }
+
+        var current = device.ReadWord(offset);
+        device.WriteWord(offset, atomicType switch
+        {
+            1 => current ^ value,    // XOR  (+0x1000)
+            2 => current | value,    // SET  (+0x2000)
+            3 => current & ~value,   // CLR  (+0x3000)
+            _ => value,
+        });
+    }
 
     public void WriteHalfWord(uint address, ushort value)
-        => _devices[(address >> 14) & 0xFF]?.WriteHalfWord(address & 0xFFF, value);
+    {
+        var device = _devices[(address >> 14) & 0xFF];
+        if (device == null) return;
+
+        var atomicType = (address >> 12) & 0x3;
+        var offset = address & 0xFFF;
+
+        if (atomicType == 0) { device.WriteHalfWord(offset, value); return; }
+
+        var aligned = offset & ~3u;
+        var shift = (int)((offset & 2) << 3);
+        var current = device.ReadWord(aligned);
+        uint expanded = (uint)value << shift;
+        uint mask = 0xFFFFu << shift;
+        device.WriteWord(aligned, atomicType switch
+        {
+            1 => (current & ~mask) | ((current ^ expanded) & mask),
+            2 => current | expanded,
+            3 => current & ~expanded,
+            _ => (current & ~mask) | expanded,
+        });
+    }
 
     public void WriteByte(uint address, byte value)
-        => _devices[(address >> 14) & 0xFF]?.WriteByte(address & 0xFFF, value);
+    {
+        var device = _devices[(address >> 14) & 0xFF];
+        if (device == null) return;
+
+        var atomicType = (address >> 12) & 0x3;
+        var offset = address & 0xFFF;
+
+        if (atomicType == 0) { device.WriteByte(offset, value); return; }
+
+        var aligned = offset & ~3u;
+        var shift = (int)((offset & 3) << 3);
+        var current = device.ReadWord(aligned);
+        uint expanded = (uint)value << shift;
+        uint mask = 0xFFu << shift;
+        device.WriteWord(aligned, atomicType switch
+        {
+            1 => (current & ~mask) | ((current ^ expanded) & mask),
+            2 => current | expanded,
+            3 => current & ~expanded,
+            _ => (current & ~mask) | expanded,
+        });
+    }
 }
