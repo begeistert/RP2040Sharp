@@ -114,6 +114,11 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
             case SSPCR0:  _cr0  = value; break;
             case SSPCR1:
                 _cr1 = value & 0xF;
+                // TXRIS (bit 3): TX FIFO is always ≤ half full in synchronous simulation.
+                // Set when SSP is enabled; clear when disabled.
+                if (IsEnabled) _ris |=  (1u << 3);
+                else           _ris &= ~(1u << 3);
+                CheckInterrupts();
                 break;
             case SSPDR:   WriteData((ushort)value); break;
             case SSPCPSR: _cpsr = value & 0xFE; break;  // even values only, bits[7:0]
@@ -168,6 +173,7 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
             _rxFifo.Enqueue(rxData);
 
         _ris |= 0x4;  // RXRIS — RX not empty
+        _ris |= 0x8;  // TXRIS — TX FIFO ≤ half full (always true after immediate transfer)
         CheckInterrupts();
     }
 
