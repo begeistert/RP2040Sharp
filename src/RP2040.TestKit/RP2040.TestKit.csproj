@@ -7,8 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\RP2040.Core\RP2040.Core.csproj" />
-    <ProjectReference Include="..\RP2040.Peripherals\RP2040.Peripherals.csproj" />
+    <ProjectReference Include="..\RP2040Sharp\RP2040Sharp.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FluentAssertions" Version="8.8.0" />

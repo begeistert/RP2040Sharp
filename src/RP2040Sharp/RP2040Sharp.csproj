@@ -1,7 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <PackageId>RP2040Sharp.Core</PackageId>
-    <Description>Core Cortex-M0+ CPU emulator, BusInterconnect, and memory subsystem for RP2040Sharp — a cycle-accurate RP2040 simulator in C#.</Description>
+    <PackageId>RP2040Sharp</PackageId>
+    <Description>Cycle-accurate RP2040 emulator: Cortex-M0+ CPU, BusInterconnect, and all peripherals. Single-package, AOT-compatible.</Description>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <PublishTrimmed>true</PublishTrimmed>
