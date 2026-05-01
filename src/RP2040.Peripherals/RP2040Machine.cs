@@ -26,6 +26,7 @@ using RP2040.Peripherals.SysInfo;
 using RP2040.Peripherals.Tbman;
 using RP2040.Peripherals.Timer;
 using RP2040.Peripherals.Uart;
+using RP2040.Peripherals.Usb;
 using RP2040.Peripherals.Vreg;
 using RP2040.Peripherals.Watchdog;
 using RP2040.Peripherals.Xosc;
@@ -85,6 +86,7 @@ public sealed class RP2040Machine : IDisposable
     public DmaPeripheral     Dma       { get; }
     public PioPeripheral     Pio0      { get; }
     public PioPeripheral     Pio1      { get; }
+    public UsbPeripheral     Usb       { get; }
     public IReadOnlyList<GpioPin> Gpio { get; }
 
     private readonly ITickable[] _tickables;
@@ -214,6 +216,10 @@ public sealed class RP2040Machine : IDisposable
         // DMA @ 0x50000000 (slot 0)
         Dma = new DmaPeripheral(Bus, Cpu);
         ahb.Register(0x50000000, Dma);
+
+        // USB @ 0x50100000 (slot 1, covers DPRAM + REGS at 0x50110000)
+        Usb = new UsbPeripheral(Cpu);
+        ahb.Register(0x50100000, Usb);
 
         // PIO0 @ 0x50200000 (slot 2), PIO1 @ 0x50300000 (slot 3)
         Pio0 = new PioPeripheral(Cpu, 0);
