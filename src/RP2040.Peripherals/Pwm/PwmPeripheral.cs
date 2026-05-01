@@ -108,7 +108,7 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
                             _phaseDir[s] = true;
                             _intr |= 1u << s;
                             if ((_inte & (1u << s)) != 0)
-                                _cpu.SetInterrupt(4 + s, true);
+                                _cpu.SetInterrupt(4, true); // PWM_IRQ_WRAP is single shared IRQ
                         }
                         else _ctr[s]--;
                     }
@@ -121,7 +121,7 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
                         _ctr[s] = 0;
                         _intr |= 1u << s;
                         if ((_inte & (1u << s)) != 0)
-                            _cpu.SetInterrupt(4 + s, true);
+                            _cpu.SetInterrupt(4, true); // PWM_IRQ_WRAP is single shared IRQ
                     }
                 }
             }

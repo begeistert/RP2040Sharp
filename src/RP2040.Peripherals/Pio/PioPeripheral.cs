@@ -70,6 +70,13 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     public uint Size => 0x100000;  // up to 1 MB address space per block
 
+    /// <summary>Read current physical GPIO input levels (used by WAIT GPIO, IN PINS).</summary>
+    public Func<uint>? ReadGpioIn { get; set; }
+    /// <summary>Write physical GPIO output pins: (pinValue, pinMask).</summary>
+    public Action<uint, uint>? WriteGpioPins { get; set; }
+    /// <summary>Write physical GPIO pin directions: (dirValue, pinMask).</summary>
+    public Action<uint, uint>? WriteGpioDirs { get; set; }
+
     public PioPeripheral(CortexM0Plus cpu, uint blockIndex)
     {
         _cpu = cpu;
@@ -505,8 +512,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         bool condition = source switch
         {
-            0 => ((sm.GpioPins >> (int)index) & 1) == polarity,  // GPIO (absolute)
-            1 => ((sm.GpioPins >> (int)((index + sm.InBase) & 0x1F)) & 1) == polarity,  // PIN relative to IN_BASE
+            0 => (((ReadGpioIn?.Invoke() ?? sm.GpioPins) >> (int)index) & 1) == polarity,  // GPIO (absolute)
+            1 => (((ReadGpioIn?.Invoke() ?? sm.GpioPins) >> (int)((index + sm.InBase) & 0x1F)) & 1) == polarity,  // PIN relative to IN_BASE
             2 => ((_irq >> (int)(index & 7)) & 1) == polarity,   // IRQ flag
             _ => true,
         };
@@ -525,7 +532,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         uint data = source switch
         {
-            0 => sm.GpioPins,   // PINS
+            0 => (ReadGpioIn?.Invoke() ?? sm.GpioPins) >> (int)sm.InBase,  // PINS: read from InBase
             1 => sm.X,
             2 => sm.Y,
             3 => 0,             // NULL
@@ -570,11 +577,25 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         switch (dest)
         {
-            case 0: sm.GpioPins = data; break;   // PINS
+            case 0: {  // PINS: write bitCount pins at OutBase
+                var outBase = (int)sm.OutBase;
+                var pinMask = bitCount < 32 ? ((1u << bitCount) - 1) << outBase : 0xFFFFFFFFu;
+                var pinValue = (data & (bitCount < 32 ? (1u << bitCount) - 1 : 0xFFFFFFFFu)) << outBase;
+                sm.GpioPins = (sm.GpioPins & ~pinMask) | pinValue;
+                WriteGpioPins?.Invoke(pinValue, pinMask);
+                break;
+            }
             case 1: sm.X = data; break;
             case 2: sm.Y = data; break;
             case 3: break;  // NULL
-            case 4: sm.GpioPinDirs = data; break;  // PINDIRS
+            case 4: {  // PINDIRS: write bitCount dirs at OutBase
+                var outBase = (int)sm.OutBase;
+                var pinMask = bitCount < 32 ? ((1u << bitCount) - 1) << outBase : 0xFFFFFFFFu;
+                var pinValue = (data & (bitCount < 32 ? (1u << bitCount) - 1 : 0xFFFFFFFFu)) << outBase;
+                sm.GpioPinDirs = (sm.GpioPinDirs & ~pinMask) | pinValue;
+                WriteGpioDirs?.Invoke(pinValue, pinMask);
+                break;
+            }
             case 5: sm.PC = data & 0x1F; sm.PcJumped = true; sm.Stalled = false; return;  // PC
             case 6: sm.ISR = data; sm.IsrCount = (uint)bitCount; break;
             case 7: ExecuteInstr(sm, (ushort)data, (int)((data >> 13) & 7)); return;  // EXEC
@@ -651,7 +672,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         uint data = source switch
         {
-            0 => sm.GpioPins,
+            0 => ReadGpioIn?.Invoke() ?? sm.GpioPins,  // PINS: read physical GPIO
             1 => sm.X,
             2 => sm.Y,
             3 => 0,
@@ -670,7 +691,15 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         switch (dest)
         {
-            case 0: sm.GpioPins = data; break;
+            case 0: {  // PINS: write via OutBase/OutCount
+                var outBase  = (int)sm.OutBase;
+                var outCount = (int)sm.OutCount;
+                var pinMask  = outCount > 0 ? ((1u << outCount) - 1) << outBase : 0xFFFFFFFFu;
+                var pinValue = outCount > 0 ? (data & ((1u << outCount) - 1)) << outBase : data;
+                sm.GpioPins = (sm.GpioPins & ~pinMask) | pinValue;
+                WriteGpioPins?.Invoke(pinValue, pinMask);
+                break;
+            }
             case 1: sm.X = data; break;
             case 2: sm.Y = data; break;
             case 4: ExecuteInstr(sm, (ushort)data, (int)((data >> 13) & 7)); return;  // EXEC
@@ -681,13 +710,17 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         sm.Stalled = false;
     }
 
-    // IRQ: bits [6]=clear, [5]=wait, [4:0]=index
+    // IRQ: bits [6]=clear, [5]=wait, [4:0]=index (bit 4 = REL flag)
     private void ExecIrq(PioStateMachine sm, ushort instr)
     {
+        var smIdx   = Array.IndexOf(_sm, sm);
         var doClear = (instr & 0x40) != 0;
         var doWait  = (instr & 0x20) != 0;
         var index   = (uint)(instr & 0x1F);
-        var flagIdx = (int)(index & 0x7);
+        var rel     = (index & 0x10) != 0;
+        // If REL: bits[3:2] unchanged, bits[1:0] = (index + smIdx) mod 4
+        var flagIdx = rel ? (int)((index & 0x1C) | (((index & 3) + (uint)smIdx) & 3))
+                         : (int)(index & 0x7);
 
         if (doClear)
         {
@@ -712,10 +745,26 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         switch (dest)
         {
-            case 0: sm.GpioPins    = data; break;  // PINS
+            case 0: {  // PINS: SET_COUNT pins at SET_BASE
+                var setBase  = (int)sm.SetBase;
+                var setCount = (int)sm.SetCount;
+                var pinMask  = setCount > 0 ? ((1u << setCount) - 1) << setBase : 0u;
+                var pinValue = setCount > 0 ? (data & ((1u << setCount) - 1)) << setBase : 0u;
+                sm.GpioPins = (sm.GpioPins & ~pinMask) | pinValue;
+                WriteGpioPins?.Invoke(pinValue, pinMask);
+                break;
+            }
             case 1: sm.X           = data; break;
             case 2: sm.Y           = data; break;
-            case 4: sm.GpioPinDirs = data; break;  // PINDIRS
+            case 4: {  // PINDIRS: SET_COUNT dirs at SET_BASE
+                var setBase  = (int)sm.SetBase;
+                var setCount = (int)sm.SetCount;
+                var pinMask  = setCount > 0 ? ((1u << setCount) - 1) << setBase : 0u;
+                var pinValue = setCount > 0 ? (data & ((1u << setCount) - 1)) << setBase : 0u;
+                sm.GpioPinDirs = (sm.GpioPinDirs & ~pinMask) | pinValue;
+                WriteGpioDirs?.Invoke(pinValue, pinMask);
+                break;
+            }
         }
         sm.Stalled = false;
     }

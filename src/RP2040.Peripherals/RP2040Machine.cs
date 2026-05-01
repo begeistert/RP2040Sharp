@@ -192,7 +192,7 @@ public sealed class RP2040Machine : IDisposable
         apb.Register(0x40058000, Watchdog);
 
         // RTC @ 0x4005C000 (slot 23)
-        Rtc = new RtcPeripheral();
+        Rtc = new RtcPeripheral(Cpu);
         apb.Register(0x4005C000, Rtc);
 
         // TBMAN @ 0x4006C000 (slot 27)
@@ -230,11 +230,11 @@ public sealed class RP2040Machine : IDisposable
         // ── GPIO pins ─────────────────────────────────────────────────────
         var pins = new GpioPin[30];
         for (var i = 0; i < 30; i++)
-            pins[i] = new GpioPin(i, Sio);
+            pins[i] = new GpioPin(i, Sio, IoBank0);
         Gpio = pins;
 
         // ── Tickable list ─────────────────────────────────────────────────
-        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1];
+        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc];
 
         // ── DMA DREQ sources ──────────────────────────────────────────────
         // PIO0 TX/RX SM0-3: DREQ 0-3 (TX), 4-7 (RX)
@@ -257,6 +257,30 @@ public sealed class RP2040Machine : IDisposable
         Dma.RegisterDreq(21, () => Uart0.RxDataAvailable);
         Dma.RegisterDreq(22, () => true);              // UART1 TX always ready
         Dma.RegisterDreq(23, () => Uart1.RxDataAvailable);
+        // ADC DREQ 36: RX FIFO has data
+        Dma.RegisterDreq(36, () => Adc.HasFifoData);
+
+        // ── PIO GPIO integration ───────────────────────────────────────────
+        // Shared helpers: read physical GPIO levels; update SIO output and notify IoBank0
+        uint ReadGpio() => Sio.GpioIn | Sio.GpioOut;
+
+        void ApplyPins(uint value, uint mask)
+        {
+            // PIO output: update SIO GpioIn so physical level is visible to CPU reads
+            Sio.GpioIn = (Sio.GpioIn & ~mask) | (value & mask);
+            // Notify IoBank0 for edge/level interrupt detection on each changed pin
+            for (var pin = 0; pin < 30; pin++)
+                if ((mask & (1u << pin)) != 0)
+                    IoBank0.UpdatePinInput(pin, (value & (1u << pin)) != 0);
+        }
+
+        Pio0.ReadGpioIn    = ReadGpio;
+        Pio0.WriteGpioPins = ApplyPins;
+        Pio0.WriteGpioDirs = (value, mask) => { /* dir changes tracked in SM only */ };
+
+        Pio1.ReadGpioIn    = ReadGpio;
+        Pio1.WriteGpioPins = ApplyPins;
+        Pio1.WriteGpioDirs = (value, mask) => { };
     }
 
     /// <summary>Load a binary image into Flash starting at 0x10000000 (max 2 MB).</summary>

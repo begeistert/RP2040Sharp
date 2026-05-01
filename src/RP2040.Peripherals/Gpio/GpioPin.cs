@@ -9,11 +9,13 @@ public sealed class GpioPin
 {
     private readonly int _pinIndex;
     private readonly Sio.SioPeripheral _sio;
+    private readonly IoBank0Peripheral? _ioBank0;
 
-    internal GpioPin(int pinIndex, Sio.SioPeripheral sio)
+    internal GpioPin(int pinIndex, Sio.SioPeripheral sio, IoBank0Peripheral? ioBank0 = null)
     {
         _pinIndex = pinIndex;
         _sio = sio;
+        _ioBank0 = ioBank0;
     }
 
     /// <summary>Pin is configured as output (SIO GPIO_OE bit is set).</summary>
@@ -32,10 +34,12 @@ public sealed class GpioPin
     /// <summary>
     /// Inject an external signal level into this pin (simulates a physical connection).
     /// Only effective when the pin is configured as an input.
+    /// Notifies IoBank0 to trigger edge/level GPIO interrupts.
     /// </summary>
     public void ForceInput(bool high)
     {
         var mask = 1u << _pinIndex;
         _sio.GpioIn = high ? (_sio.GpioIn | mask) : (_sio.GpioIn & ~mask);
+        _ioBank0?.UpdatePinInput(_pinIndex, high);
     }
 }

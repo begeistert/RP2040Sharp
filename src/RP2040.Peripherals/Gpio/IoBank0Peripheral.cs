@@ -110,6 +110,12 @@ public sealed class IoBank0Peripheral : IMemoryMappedDevice
         if (address >= PROC1_INTF_BASE && address < PROC1_INTS_BASE)
             return _proc1Intf[(address - PROC1_INTF_BASE) >> 2];
 
+        if (address >= PROC1_INTS_BASE && address < PROC1_INTS_BASE + 0x10)
+        {
+            var reg = (int)((address - PROC1_INTS_BASE) >> 2);
+            return (BuildIntr(reg) | _proc1Intf[reg]) & _proc1Inte[reg];
+        }
+
         return 0;
     }
 

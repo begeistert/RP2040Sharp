@@ -454,7 +454,10 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     public void InjectFifoRx(uint value)
     {
         if (_fifoRx.Count < FIFO_DEPTH)
+        {
             _fifoRx.Enqueue(value);
+            _cpu.SetInterrupt(15, true);   // SIO_IRQ_PROC0: notify core 0 data is available
+        }
     }
 
     /// <summary>

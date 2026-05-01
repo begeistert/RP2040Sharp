@@ -42,6 +42,9 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
     /// </summary>
     public Func<int, ushort>? ReadChannel;
 
+    /// <summary>DREQ source for DMA: true when the ADC FIFO has data to read.</summary>
+    public bool HasFifoData => _adcFifo.Count > 0;
+
     public uint Size => 0x100;
 
     public AdcPeripheral(CortexM0Plus cpu)

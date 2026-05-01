@@ -86,6 +86,10 @@ internal sealed class PioStateMachine
     public uint SidesetCount => (PinCtrl >> 29) & 7;
     /// <summary>Side-set base pin: PINCTRL bits [14:10].</summary>
     public uint SidesetBase  => (PinCtrl >> 10) & 0x1F;
+    /// <summary>OUT pin count: PINCTRL bits [25:20].</summary>
+    public uint OutCount    => (PinCtrl >> 20) & 0x3F;
+    /// <summary>SET pin count: PINCTRL bits [28:26].</summary>
+    public uint SetCount    => (PinCtrl >> 26) & 0x7;
     /// <summary>IN base pin: PINCTRL bits [19:15].</summary>
     public uint InBase       => (PinCtrl >> 15) & 0x1F;
     /// <summary>OUT base pin: PINCTRL bits [4:0].</summary>
