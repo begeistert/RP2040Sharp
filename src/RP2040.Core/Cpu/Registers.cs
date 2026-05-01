@@ -48,6 +48,24 @@ public struct Registers
     public bool C; // Carry
     public bool V; // Overflow
 
+    // --- Interrupt / Exception State ---
+    public uint VTOR;                 // Vector Table Offset Register
+    public uint PendingInterrupts;    // Bitmap of 26 hardware IRQs pending
+    public uint EnabledInterrupts;    // Bitmap of 26 hardware IRQs enabled
+    public uint InterruptPriorities0; // Priority bucket 0 (highest)
+    public uint InterruptPriorities1;
+    public uint InterruptPriorities2;
+    public uint InterruptPriorities3; // Priority bucket 3 (lowest)
+    public uint SHPR2;                // SVC priority (bits 31:24)
+    public uint SHPR3;                // PendSV (bits 23:16) + SysTick (bits 31:24) priority
+    public bool PendingNMI;
+    public bool PendingPendSV;
+    public bool PendingSVCall;
+    public bool PendingSystick;
+    public bool InterruptsUpdated;    // Signal Run() to call CheckForInterrupts
+    public bool EventRegistered;      // SEV/WFE event flag
+    public bool Waiting;              // WFI/WFE sleep state
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public byte GetC() => Unsafe.As<bool, byte>(ref C);
 

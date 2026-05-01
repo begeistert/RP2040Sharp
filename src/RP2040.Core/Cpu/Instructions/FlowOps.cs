@@ -173,6 +173,40 @@ public static class FlowOps
         cpu.Cycles++;
     }
 
+    // ================================================================
+    // CBZ / CBNZ  (Compare and Branch if Zero/Non-Zero)
+    // mask=0xF500, CBZ=0xB100, CBNZ=0xB900
+    // Encoding: bit11=0(CBZ)/1(CBNZ), bit9=imm5[5], bits[7:3]=imm5[4:0]
+    // offset = imm5:0 (zero-extended, already bit1=0 so effective *2)
+    // Branch target = PC_after_fetch + offset  (PC was already +2 at dispatch)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Cbz(ushort opcode, CortexM0Plus cpu)
+    {
+        if (cpu.Registers[opcode & 0x7] == 0)
+            TakeCbBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Cbnz(ushort opcode, CortexM0Plus cpu)
+    {
+        if (cpu.Registers[opcode & 0x7] != 0)
+            TakeCbBranch(opcode, cpu);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void TakeCbBranch(ushort opcode, CortexM0Plus cpu)
+    {
+        // imm32 = ZeroExtend(i:imm5:0, 32)
+        // i = bit[10], imm5 = bits[7:3]
+        // combined: (imm5 | (i << 5)) << 1
+        var imm32 = (uint)((((opcode >> 3) & 0x1F) | ((opcode >> 5) & 0x20)) << 1);
+        // PC was already advanced by 2 (speculative fetch); add imm32 + 2 more
+        cpu.Registers.PC += imm32 + 2;
+        cpu.Cycles++;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void TakeBranch(ushort opcode, CortexM0Plus cpu)
     {

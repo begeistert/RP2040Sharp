@@ -44,11 +44,25 @@ public sealed unsafe class InstructionDecoder : IDisposable
             // DMB, DSB, ISB (F3BF)
             // Mask: 1111 1111 1111 1111
             new OpcodeRule(0xFFFF, 0xF3BF, &SystemOps.Barrier),
+            // CPSIE i (enable interrupts)
+            new OpcodeRule(0xFFFF, 0xB662, &SystemOps.Cpsie),
+            // CPSID i (disable interrupts)
+            new OpcodeRule(0xFFFF, 0xB672, &SystemOps.Cpsid),
+            // NOP — must be exact match to prevent CBNZ(mask 0xFB00) from overriding
+            new OpcodeRule(0xFFFF, 0xBF00, &SystemOps.Nop),
+            // SEV
+            new OpcodeRule(0xFFFF, 0xBF40, &SystemOps.Sev),
+            // WFE
+            new OpcodeRule(0xFFFF, 0xBF20, &SystemOps.Wfe),
+            // WFI
+            new OpcodeRule(0xFFFF, 0xBF30, &SystemOps.Wfi),
             // ================================================================
             // GROUP 2: Mask 0xFFF0
             // ================================================================
             // MSR spec_reg, Rn (F38x)
             new OpcodeRule(0xFFF0, 0xF380, &SystemOps.Msr),
+            // CLZ Rd, Rm (Thumb-2 32-bit: first halfword 0xFABx)
+            new OpcodeRule(0xFFF0, 0xFAB0, &BitOps.Clz),
             // ================================================================
             // GROUP 3: Mask 0xFFC0 (10 bits significant)
             // IMPORTANT: Must come before 0xFF00 to prevent generic instructions
@@ -92,6 +106,16 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFFC0, 0xBA00, &BitOps.Rev),
             // SBCS (Rn, Rm)
             new OpcodeRule(0xFFC0, 0x4180, &ArithmeticOps.Sbcs),
+            // ROR (register)
+            new OpcodeRule(0xFFC0, 0x41C0, &BitOps.Ror),
+            // SXTH Rd, Rm
+            new OpcodeRule(0xFFC0, 0xB200, &BitOps.Sxth),
+            // SXTB Rd, Rm
+            new OpcodeRule(0xFFC0, 0xB240, &BitOps.Sxtb),
+            // UXTH Rd, Rm
+            new OpcodeRule(0xFFC0, 0xB280, &BitOps.Uxth),
+            // UXTB Rd, Rm
+            new OpcodeRule(0xFFC0, 0xB2C0, &BitOps.Uxtb),
             // ================================================================
             // GROUP 4: Mask 0xFF87 (High Register Special Cases)
             // CRITICAL: These are specific cases of the 0xFF00 generic group.
@@ -117,8 +141,22 @@ public sealed unsafe class InstructionDecoder : IDisposable
             // Sub (SP - imm)
             new OpcodeRule(0xFF80, 0xB080, &ArithmeticOps.SubSp),
             // ================================================================
+            // GROUP 5b: Mask 0xFB00 — CBZ / CBNZ
+            // NOTE: Hint instructions (NOP/WFE/WFI/SEV) overlap with CBNZ(i=1)
+            // but are already registered in Group 1 with exact match, so they
+            // take priority in the lookup table.
+            // ================================================================
+            // CBZ  Rn, label
+            new OpcodeRule(0xFB00, 0xB300, &FlowOps.Cbz),
+            // CBNZ Rn, label
+            new OpcodeRule(0xFB00, 0xBB00, &FlowOps.Cbnz),
+            // ================================================================
             // GROUP 6: Mask 0xFF00 (8 bits significant - Broad Categories)
             // ================================================================
+            // BKPT #imm8 — must be before NOP group (0xBF00) and hint range
+            new OpcodeRule(0xFF00, 0xBE00, &SystemOps.Bkpt),
+            // SVC #imm8 — must be before conditional branches (0xDF00 range)
+            new OpcodeRule(0xFF00, 0xDF00, &SystemOps.Svc),
             // 3. Low Priority: ADD Generic (R0-R12, R14)
             new OpcodeRule(0xFF00, 0x4400, &ArithmeticOps.AddHighToReg),
             // CMP Rn, Rm (High Registers - Encoding T2)
@@ -163,6 +201,20 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFE00, 0x1A00, &ArithmeticOps.SubsRegister),
             // LDR (register)
             new OpcodeRule(0xFE00, 0x5800, &MemoryOps.LdrRegister),
+            // STR (register)
+            new OpcodeRule(0xFE00, 0x5000, &MemoryOps.StrRegister),
+            // STRH (register)
+            new OpcodeRule(0xFE00, 0x5200, &MemoryOps.StrhRegister),
+            // STRB (register)
+            new OpcodeRule(0xFE00, 0x5400, &MemoryOps.StrbRegister),
+            // LDRSB (register, sign-extend)
+            new OpcodeRule(0xFE00, 0x5600, &MemoryOps.Ldrsb),
+            // LDRH (register)
+            new OpcodeRule(0xFE00, 0x5A00, &MemoryOps.LdrhRegister),
+            // LDRB (register)
+            new OpcodeRule(0xFE00, 0x5C00, &MemoryOps.LdrbRegister),
+            // LDRSH (register, sign-extend)
+            new OpcodeRule(0xFE00, 0x5E00, &MemoryOps.Ldrsh),
             // ================================================================
             // GROUP 8: Mask 0xF800 (5 bits significant - Most Generic)
             // ================================================================
@@ -186,12 +238,26 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xF800, 0x2000, &BitOps.Movs),
             // LDMIA (Load Multiple Increment After)
             new OpcodeRule(0xF800, 0xC800, &MemoryOps.Ldmia),
+            // STMIA (Store Multiple Increment After)
+            new OpcodeRule(0xF800, 0xC000, &MemoryOps.Stmia),
             // LDR (literal)
             new OpcodeRule(0xF800, 0x4800, &MemoryOps.LdrLiteral),
             // LDR (imm5)
             new OpcodeRule(0xF800, 0x6800, &MemoryOps.LdrImmediate),
             // LDR (SP, imm8)
             new OpcodeRule(0xF800, 0x9800, &MemoryOps.LdrSpRelative),
+            // STR (imm5)
+            new OpcodeRule(0xF800, 0x6000, &MemoryOps.StrImmediate),
+            // STR (SP + imm8)
+            new OpcodeRule(0xF800, 0x9000, &MemoryOps.StrSpRelative),
+            // STRB (imm5)
+            new OpcodeRule(0xF800, 0x7000, &MemoryOps.StrbImmediate),
+            // STRH (imm5)
+            new OpcodeRule(0xF800, 0x8000, &MemoryOps.StrhImmediate),
+            // LDRB (imm5)
+            new OpcodeRule(0xF800, 0x7800, &MemoryOps.LdrbImmediate),
+            // LDRH (imm5)
+            new OpcodeRule(0xF800, 0x8800, &MemoryOps.LdrhImmediate),
             // LSLS (Rd, Rm, imm5)
             new OpcodeRule(0xF800, 0x0000, &BitOps.LslsImm5),
             // LSRS (Rd, Rm, imm5)

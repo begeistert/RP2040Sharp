@@ -245,6 +245,201 @@ public static unsafe class MemoryOps
         cpu.Cycles += (int)regCount;
     }
 
+    // ================================================================
+    // STR variants (Store Word)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var imm5 = (uint)((opcode >> 6) & 0x1F) << 2;
+        var address = cpu.Registers[rn] + imm5;
+        WriteWordWithCycles(cpu, address, cpu.Registers[rt]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrSpRelative(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = (opcode >> 8) & 0x7;
+        var imm8 = (uint)(opcode & 0xFF) << 2;
+        var address = cpu.Registers.SP + imm8;
+        WriteWordWithCycles(cpu, address, cpu.Registers[rt]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        var address = cpu.Registers[rn] + cpu.Registers[rm];
+        WriteWordWithCycles(cpu, address, cpu.Registers[rt]);
+    }
+
+    // ================================================================
+    // STRB variants (Store Byte)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrbImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var imm5 = (uint)((opcode >> 6) & 0x1F);
+        var address = cpu.Registers[rn] + imm5;
+        WriteByteWithCycles(cpu, address, (byte)cpu.Registers[rt]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrbRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        var address = cpu.Registers[rn] + cpu.Registers[rm];
+        WriteByteWithCycles(cpu, address, (byte)cpu.Registers[rt]);
+    }
+
+    // ================================================================
+    // STRH variants (Store Halfword)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrhImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var imm5 = (uint)((opcode >> 6) & 0x1F) << 1;
+        var address = cpu.Registers[rn] + imm5;
+        WriteHalfWordWithCycles(cpu, address, (ushort)cpu.Registers[rt]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void StrhRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        var address = cpu.Registers[rn] + cpu.Registers[rm];
+        WriteHalfWordWithCycles(cpu, address, (ushort)cpu.Registers[rt]);
+    }
+
+    // ================================================================
+    // LDRB variants (Load Byte, zero-extend)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrbImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var imm5 = (uint)((opcode >> 6) & 0x1F);
+        cpu.Registers[rt] = ReadByteWithCycles(cpu, cpu.Registers[rn] + imm5);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrbRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        cpu.Registers[rt] = ReadByteWithCycles(cpu, cpu.Registers[rn] + cpu.Registers[rm]);
+    }
+
+    // ================================================================
+    // LDRH variants (Load Halfword, zero-extend)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrhImmediate(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var imm5 = (uint)((opcode >> 6) & 0x1F) << 1;
+        cpu.Registers[rt] = ReadHalfWordWithCycles(cpu, cpu.Registers[rn] + imm5);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void LdrhRegister(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        cpu.Registers[rt] = ReadHalfWordWithCycles(cpu, cpu.Registers[rn] + cpu.Registers[rm]);
+    }
+
+    // ================================================================
+    // LDRSB / LDRSH (Load Signed Byte/Halfword, sign-extend to 32 bits)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Ldrsb(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        cpu.Registers[rt] = (uint)(sbyte)ReadByteWithCycles(cpu, cpu.Registers[rn] + cpu.Registers[rm]);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Ldrsh(ushort opcode, CortexM0Plus cpu)
+    {
+        var rt = opcode & 0x7;
+        var rn = (opcode >> 3) & 0x7;
+        var rm = (opcode >> 6) & 0x7;
+        cpu.Registers[rt] = (uint)(short)ReadHalfWordWithCycles(cpu, cpu.Registers[rn] + cpu.Registers[rm]);
+    }
+
+    // ================================================================
+    // STMIA (Store Multiple Increment After)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Stmia(ushort opcode, CortexM0Plus cpu)
+    {
+        var rn = (opcode >> 8) & 0x7;
+        var mask = (uint)(opcode & 0xFF);
+
+        var regCount = (uint)BitOperations.PopCount(mask);
+        var baseAddr = cpu.Registers[rn];
+
+        if ((baseAddr >> 28) == BusInterconnect.REGION_SRAM)
+        {
+            var ptr = cpu.Bus.PtrSram + (baseAddr & BusInterconnect.MASK_SRAM);
+
+            while (mask != 0)
+            {
+                var regIdx = BitOperations.TrailingZeroCount(mask);
+                Unsafe.WriteUnaligned<uint>(ptr, cpu.Registers[regIdx]);
+
+                ptr += 4;
+                mask &= (mask - 1);
+            }
+        }
+        else
+        {
+            var writePtr = baseAddr;
+            while (mask != 0)
+            {
+                var regIdx = BitOperations.TrailingZeroCount(mask);
+                cpu.Bus.WriteWord(writePtr, cpu.Registers[regIdx]);
+
+                writePtr += 4;
+                mask &= (mask - 1);
+            }
+        }
+
+        // STMIA always writes back (unlike LDMIA which skips if Rn is in list)
+        cpu.Registers[rn] = baseAddr + (regCount * 4);
+        cpu.Cycles += (int)regCount;
+    }
+
+    // ================================================================
+    // Private helpers
+    // ================================================================
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint ReadWordWithCycles(CortexM0Plus cpu, uint address)
     {
@@ -268,5 +463,65 @@ public static unsafe class MemoryOps
         }
 
         return cpu.Bus.ReadWord(address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint ReadByteWithCycles(CortexM0Plus cpu, uint address)
+    {
+        var region = address >> 28;
+        switch (region)
+        {
+            case <= BusInterconnect.REGION_SRAM: cpu.Cycles += 1; break;
+            case 0x4: case 0x5: cpu.Cycles += 2; break;
+        }
+        return cpu.Bus.ReadByte(address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint ReadHalfWordWithCycles(CortexM0Plus cpu, uint address)
+    {
+        var region = address >> 28;
+        switch (region)
+        {
+            case <= BusInterconnect.REGION_SRAM: cpu.Cycles += 1; break;
+            case 0x4: case 0x5: cpu.Cycles += 2; break;
+        }
+        return cpu.Bus.ReadHalfWord(address);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void WriteWordWithCycles(CortexM0Plus cpu, uint address, uint value)
+    {
+        var region = address >> 28;
+        switch (region)
+        {
+            case <= BusInterconnect.REGION_SRAM: cpu.Cycles += 1; break;
+            case 0x4: case 0x5: cpu.Cycles += 2; break;
+        }
+        cpu.Bus.WriteWord(address, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void WriteByteWithCycles(CortexM0Plus cpu, uint address, byte value)
+    {
+        var region = address >> 28;
+        switch (region)
+        {
+            case <= BusInterconnect.REGION_SRAM: cpu.Cycles += 1; break;
+            case 0x4: case 0x5: cpu.Cycles += 2; break;
+        }
+        cpu.Bus.WriteByte(address, value);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void WriteHalfWordWithCycles(CortexM0Plus cpu, uint address, ushort value)
+    {
+        var region = address >> 28;
+        switch (region)
+        {
+            case <= BusInterconnect.REGION_SRAM: cpu.Cycles += 1; break;
+            case 0x4: case 0x5: cpu.Cycles += 2; break;
+        }
+        cpu.Bus.WriteHalfWord(address, value);
     }
 }

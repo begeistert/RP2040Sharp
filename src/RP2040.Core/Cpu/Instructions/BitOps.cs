@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 
 namespace RP2040.Core.Cpu.Instructions;
@@ -368,5 +369,101 @@ public static class BitOps
 
         cpu.Registers.N = (int)result < 0;
         cpu.Registers.Z = result == 0;
+    }
+
+    // ================================================================
+    // ROR (Rotate Right, register)  mask=0xFFC0 pattern=0x41C0
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Ror(ushort opcode, CortexM0Plus cpu)
+    {
+        var rdn = opcode & 0x7;
+        var rm = (opcode >> 3) & 0x7;
+
+        ref var ptrRdn = ref cpu.Registers[rdn];
+        var val = ptrRdn;
+        var shift = cpu.Registers[rm] & 0xFF;
+
+        if (shift == 0)
+        {
+            cpu.Registers.N = (int)val < 0;
+            cpu.Registers.Z = val == 0;
+            return;
+        }
+
+        var shiftMod = (int)(shift & 0x1F);
+        uint result;
+        bool carry;
+
+        if (shiftMod == 0)
+        {
+            // shift is a multiple of 32: result = val, C = bit31
+            result = val;
+            carry = (val >> 31) != 0;
+        }
+        else
+        {
+            result = (val >> shiftMod) | (val << (32 - shiftMod));
+            carry = ((val >> (shiftMod - 1)) & 1) != 0;
+        }
+
+        ptrRdn = result;
+        cpu.Registers.N = (int)result < 0;
+        cpu.Registers.Z = result == 0;
+        cpu.Registers.C = carry;
+    }
+
+    // ================================================================
+    // Sign/Zero extend  (mask=0xFFC0, 16-bit Thumb)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Sxth(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rd = opcode & 0x7;
+        cpu.Registers[rd] = (uint)(short)(ushort)cpu.Registers[rm];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Sxtb(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rd = opcode & 0x7;
+        cpu.Registers[rd] = (uint)(sbyte)(byte)cpu.Registers[rm];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Uxth(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rd = opcode & 0x7;
+        cpu.Registers[rd] = cpu.Registers[rm] & 0xFFFFu;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Uxtb(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = (opcode >> 3) & 0x7;
+        var rd = opcode & 0x7;
+        cpu.Registers[rd] = cpu.Registers[rm] & 0xFFu;
+    }
+
+    // ================================================================
+    // CLZ (Count Leading Zeros) — Thumb-2 32-bit, mask=0xFFF0 pattern=0xFAB0
+    // First halfword: 0xFABx (Rm in bits 3:0)
+    // Second halfword: 0xF08x (Rd in bits 11:8, Rm in bits 3:0)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Clz(ushort opcode, CortexM0Plus cpu)
+    {
+        var rm = opcode & 0xF;
+        var second = cpu.Bus.ReadHalfWord(cpu.Registers.PC);
+        cpu.Registers.PC += 2;
+
+        var rd = (second >> 8) & 0xF;
+        cpu.Registers[rd] = (uint)BitOperations.LeadingZeroCount(cpu.Registers[rm]);
     }
 }

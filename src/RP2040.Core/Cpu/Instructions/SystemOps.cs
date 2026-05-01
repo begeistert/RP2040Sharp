@@ -156,4 +156,72 @@ public static class SystemOps
         }
         cpu.Cycles += 2;
     }
+
+    // ================================================================
+    // CPS (Change Processor State) — exact opcodes, Group 1 (mask 0xFFFF)
+    // CPSIE i = 0xB662  → PRIMASK = 0 (interrupts enabled)
+    // CPSID i = 0xB672  → PRIMASK = 1 (interrupts disabled)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Cpsie(ushort opcode, CortexM0Plus cpu)
+    {
+        cpu.Registers.PRIMASK = 0;
+        cpu.Registers.InterruptsUpdated = true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Cpsid(ushort opcode, CortexM0Plus cpu)
+    {
+        cpu.Registers.PRIMASK = 1;
+    }
+
+    // ================================================================
+    // Hint instructions — exact opcodes, Group 1 (mask 0xFFFF)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Wfi(ushort opcode, CortexM0Plus cpu)
+    {
+        cpu.Registers.Waiting = true;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Wfe(ushort opcode, CortexM0Plus cpu)
+    {
+        if (!cpu.Registers.EventRegistered)
+            cpu.Registers.Waiting = true;
+        else
+            cpu.Registers.EventRegistered = false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Sev(ushort opcode, CortexM0Plus cpu)
+    {
+        cpu.Registers.EventRegistered = true;
+    }
+
+    // ================================================================
+    // BKPT — mask=0xFF00, pattern=0xBE00
+    // Calls the configurable breakpoint handler on the CPU
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Bkpt(ushort opcode, CortexM0Plus cpu)
+    {
+        var imm8 = (byte)(opcode & 0xFF);
+        cpu.OnBreakpoint?.Invoke(imm8);
+    }
+
+    // ================================================================
+    // SVC (Supervisor Call) — mask=0xFF00, pattern=0xDF00
+    // Triggers exception entry for EXC_SVCALL (11)
+    // ================================================================
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Svc(ushort opcode, CortexM0Plus cpu)
+    {
+        cpu.Registers.PendingSVCall = true;
+        cpu.Registers.InterruptsUpdated = true;
+    }
 }

@@ -21,6 +21,15 @@ public unsafe class CortexM0Plus
     private const uint EXC_RETURN_THREAD_MSP = 0xFFFFFFF9; // Return to Thread mode, using MSP
     private const uint EXC_RETURN_THREAD_PSP = 0xFFFFFFFD; // Return to Thread mode, using PSP
 
+    private const uint EXC_NMI = 2;
+    private const uint EXC_HARDFAULT = 3;
+    private const uint EXC_SVCALL = 11;
+    private const uint EXC_PENDSV = 14;
+    private const uint EXC_SYSTICK = 15;
+
+    /// <summary>Called when a BKPT instruction is executed. Parameter is the imm8 value.</summary>
+    public Action<byte>? OnBreakpoint;
+
     public CortexM0Plus(BusInterconnect bus)
     {
         Bus = bus;
@@ -79,6 +88,23 @@ public unsafe class CortexM0Plus
 
         while (instructions-- > 0)
         {
+            // Interrupt check — predictable branch (nearly always not taken)
+            if (Registers.InterruptsUpdated)
+            {
+                Registers.InterruptsUpdated = false;
+                if (CheckForInterrupts())
+                {
+                    UpdateFetchCache(Registers.PC);
+                    fetchPtr = _fetchPtr;
+                    fetchMask = _fetchMask;
+                    regionId = _currentRegionId;
+                }
+            }
+
+            // WFI/WFE sleep: skip fetch until woken by interrupt
+            if (Registers.Waiting)
+                continue;
+
             var pc = Registers.PC;
 
             // FAST GUARD
@@ -189,13 +215,89 @@ public unsafe class CortexM0Plus
         Registers.IPSR = exceptionNumber;
         Registers.CONTROL &= ~2u;
 
-        uint vtor = 0; // TODO: Read from Registers.VTOR or PPB
+        uint vtor = Registers.VTOR;
         var vectorAddress = vtor + (exceptionNumber * 4);
 
         var targetPc = Bus.ReadWord(vectorAddress);
         Registers.PC = targetPc & 0xFFFFFFFE;
 
         Cycles += 12; // Exception Entry cost (aprox 12-15 cycles)
+    }
+
+    // ================================================================
+    // Interrupt / Exception management (called by PPB peripheral)
+    // ================================================================
+
+    public void SetInterrupt(int irq, bool pending)
+    {
+        if (irq is < 0 or > 25) return;
+        var bit = 1u << irq;
+        if (pending)
+            Registers.PendingInterrupts |= bit;
+        else
+            Registers.PendingInterrupts &= ~bit;
+        Registers.InterruptsUpdated = true;
+    }
+
+    public void TriggerNmi() { Registers.PendingNMI = true; Registers.InterruptsUpdated = true; }
+    public void TriggerSysTick() { Registers.PendingSystick = true; Registers.InterruptsUpdated = true; }
+    public void TriggerPendSv() { Registers.PendingPendSV = true; Registers.InterruptsUpdated = true; }
+
+    /// <summary>Returns true if an interrupt was taken (PC changed).</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool CheckForInterrupts()
+    {
+        if (Registers.PRIMASK != 0 && !Registers.PendingNMI)
+            return false;
+
+        // NMI (priority -2, always takes over everything)
+        if (Registers.PendingNMI)
+        {
+            Registers.PendingNMI = false;
+            Registers.Waiting = false;
+            ExceptionEntry(EXC_NMI);
+            return true;
+        }
+
+        // SVCall — only when triggered via SVC instruction
+        if (Registers.PendingSVCall && Registers.PRIMASK == 0)
+        {
+            Registers.PendingSVCall = false;
+            Registers.Waiting = false;
+            ExceptionEntry(EXC_SVCALL);
+            return true;
+        }
+
+        // SysTick
+        if (Registers.PendingSystick && Registers.PRIMASK == 0)
+        {
+            Registers.PendingSystick = false;
+            Registers.Waiting = false;
+            ExceptionEntry(EXC_SYSTICK);
+            return true;
+        }
+
+        // PendSV (lowest priority system exception)
+        if (Registers.PendingPendSV && Registers.PRIMASK == 0)
+        {
+            Registers.PendingPendSV = false;
+            Registers.Waiting = false;
+            ExceptionEntry(EXC_PENDSV);
+            return true;
+        }
+
+        // Hardware IRQs
+        var pending = Registers.PendingInterrupts & Registers.EnabledInterrupts;
+        if (pending != 0 && Registers.PRIMASK == 0)
+        {
+            var irq = System.Numerics.BitOperations.TrailingZeroCount(pending);
+            Registers.PendingInterrupts &= ~(1u << irq);
+            Registers.Waiting = false;
+            ExceptionEntry((uint)(irq + 16)); // IRQ0 = Exception 16
+            return true;
+        }
+
+        return false;
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]
