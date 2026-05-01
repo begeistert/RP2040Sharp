@@ -65,6 +65,12 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private readonly uint[] _transCount = new uint[CHANNEL_COUNT];
     private readonly uint[] _ctrl       = new uint[CHANNEL_COUNT];
 
+    // DREQ sources: 64 DREQ lines. Null = always ready (same as PERMANENT/TREQ=63).
+    // Returns true when the peripheral is ready for one data beat.
+    private readonly Func<bool>?[] _dreqSources = new Func<bool>?[64];
+
+    private const int TREQ_PERMANENT = 0x3F;
+
     // System registers
     private uint _intr;   // pending channel complete flags
     private uint _inte0;  // IRQ0 enable mask
@@ -76,6 +82,18 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
     private uint _sniffData;
 
     public uint Size => 0x1000;
+
+    /// <summary>
+    /// Register a DREQ source for the given DREQ index (0–62).
+    /// The delegate returns <c>true</c> when the peripheral is ready for one beat.
+    /// DREQ 63 (PERMANENT) is always ready and cannot be overridden.
+    /// </summary>
+    public void RegisterDreq(int dreqIndex, Func<bool> ready)
+    {
+        if (dreqIndex is < 0 or >= TREQ_PERMANENT)
+            throw new ArgumentOutOfRangeException(nameof(dreqIndex));
+        _dreqSources[dreqIndex] = ready;
+    }
 
     public DmaPeripheral(BusInterconnect bus, CortexM0Plus cpu)
     {
@@ -259,13 +277,22 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
         var wAddr  = _writeAddr[ch];
         var stride = 1u << dataSize;
 
+        // DREQ: bits [20:15] of CTRL
+        var treqSel = (int)((_ctrl[ch] >> 15) & 0x3F);
+        var dreqSource = treqSel == TREQ_PERMANENT ? null : _dreqSources[treqSel];
+
         // Ring buffer: RING_SIZE bits [9:6], RING_SEL bit 10
         var ringSize = (int)((_ctrl[ch] >> 6) & 0xF);
         var ringSel  = ((_ctrl[ch] >> 10) & 1) != 0;  // false=read ring, true=write ring
         var ringMask = ringSize > 0 ? (1u << ringSize) - 1 : 0u;
 
+        var beatsExecuted = 0u;
         for (var i = 0u; i < count; i++)
         {
+            // Check DREQ: if source is registered and says not ready, stop
+            if (dreqSource != null && !dreqSource())
+                break;
+
             uint data = dataSize switch
             {
                 0 => _bus.ReadByte(rAddr),
@@ -303,26 +330,32 @@ public sealed class DmaPeripheral : IMemoryMappedDevice
                 else
                     wAddr += stride;
             }
+            beatsExecuted++;
         }
 
         _readAddr[ch]   = rAddr;
         _writeAddr[ch]  = wAddr;
-        _transCount[ch] = 0;
-        // Hardware keeps EN=1 after transfer completes; only BUSY is cleared
-        _ctrl[ch] &= ~CTRL_BUSY;
+        _transCount[ch] = count - beatsExecuted;
 
-        // Signal completion
-        _intr |= 1u << ch;
+        // If not all beats completed (DREQ not ready), stay BUSY
+        if (_transCount[ch] == 0)
+        {
+            // Hardware keeps EN=1 after transfer completes; only BUSY is cleared
+            _ctrl[ch] &= ~CTRL_BUSY;
 
-        // Fire CPU interrupt if unmasked — DMA_IRQ0=11, DMA_IRQ1=12
-        if ((_inte0 & (1u << ch)) != 0)
-            _cpu.SetInterrupt(11, true);
-        if ((_inte1 & (1u << ch)) != 0)
-            _cpu.SetInterrupt(12, true);
+            // Signal completion
+            _intr |= 1u << ch;
 
-        // Chain to another channel if configured
-        var chainTo = (int)((_ctrl[ch] & CTRL_CHAIN_TO) >> 11);
-        if (chainTo != ch && (_ctrl[chainTo] & CTRL_EN) != 0)
-            ExecuteChannel(chainTo);
+            // Fire CPU interrupt if unmasked — DMA_IRQ0=11, DMA_IRQ1=12
+            if ((_inte0 & (1u << ch)) != 0)
+                _cpu.SetInterrupt(11, true);
+            if ((_inte1 & (1u << ch)) != 0)
+                _cpu.SetInterrupt(12, true);
+
+            // Chain to another channel if configured
+            var chainTo = (int)((_ctrl[ch] & CTRL_CHAIN_TO) >> 11);
+            if (chainTo != ch && (_ctrl[chainTo] & CTRL_EN) != 0)
+                ExecuteChannel(chainTo);
+        }
     }
 }

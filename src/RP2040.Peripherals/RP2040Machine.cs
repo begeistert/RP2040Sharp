@@ -235,6 +235,28 @@ public sealed class RP2040Machine : IDisposable
 
         // ── Tickable list ─────────────────────────────────────────────────
         _tickables = [Ppb, Timer, Pwm, Pio0, Pio1];
+
+        // ── DMA DREQ sources ──────────────────────────────────────────────
+        // PIO0 TX/RX SM0-3: DREQ 0-3 (TX), 4-7 (RX)
+        // PIO1 TX/RX SM0-3: DREQ 8-11 (TX), 12-15 (RX)
+        for (var i = 0; i < 4; i++)
+        {
+            var sm = i;
+            Dma.RegisterDreq( 0 + sm, () => Pio0.TxFifoNotFull(sm));
+            Dma.RegisterDreq( 4 + sm, () => !Pio0.RxFifoEmpty(sm));
+            Dma.RegisterDreq( 8 + sm, () => Pio1.TxFifoNotFull(sm));
+            Dma.RegisterDreq(12 + sm, () => !Pio1.RxFifoEmpty(sm));
+        }
+        // SPI0 TX(16), RX(17), SPI1 TX(18), RX(19)
+        Dma.RegisterDreq(16, () => true);              // SPI0 TX always ready
+        Dma.RegisterDreq(17, () => Spi0.RxDataAvailable);
+        Dma.RegisterDreq(18, () => true);              // SPI1 TX always ready
+        Dma.RegisterDreq(19, () => Spi1.RxDataAvailable);
+        // UART0 TX(20), RX(21), UART1 TX(22), RX(23)
+        Dma.RegisterDreq(20, () => true);              // UART0 TX always ready
+        Dma.RegisterDreq(21, () => Uart0.RxDataAvailable);
+        Dma.RegisterDreq(22, () => true);              // UART1 TX always ready
+        Dma.RegisterDreq(23, () => Uart1.RxDataAvailable);
     }
 
     /// <summary>Load a binary image into Flash starting at 0x10000000 (max 2 MB).</summary>

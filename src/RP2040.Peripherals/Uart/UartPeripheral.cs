@@ -72,6 +72,9 @@ public sealed class UartPeripheral : IMemoryMappedDevice
         }
     }
 
+    /// <summary>DREQ source for DMA RX: true when RX FIFO has data to read.</summary>
+    public bool RxDataAvailable => _rxFifo.Count > 0;
+
     public uint ReadWord(uint address)
     {
         return address switch

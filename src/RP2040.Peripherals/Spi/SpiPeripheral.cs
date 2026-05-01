@@ -63,6 +63,9 @@ public sealed class SpiPeripheral : IMemoryMappedDevice
     /// </summary>
     public Func<ushort, ushort>? OnTransfer;
 
+    /// <summary>DREQ source for DMA RX: true when RX FIFO has data to read.</summary>
+    public bool RxDataAvailable => _rxFifo.Count > 0;
+
     public uint Size => 0x1000;
 
     public SpiPeripheral(CortexM0Plus? cpu = null, int irq = 0)

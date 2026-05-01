@@ -217,6 +217,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     /// <summary>Returns true if RX FIFO of <paramref name="smIndex"/> has data.</summary>
     public bool RxFifoEmpty(int smIndex) => _sm[smIndex].RxFifo.Count == 0;
+    /// <summary>DREQ source for DMA TX: true when TX FIFO has space to accept data.</summary>
+    public bool TxFifoNotFull(int smIndex) => _sm[smIndex].TxFifo.Count < _sm[smIndex].TxDepth;
 
     /// <summary>Inject a value directly into the RX FIFO of <paramref name="smIndex"/>.</summary>
     public void InjectRxData(int smIndex, uint value)

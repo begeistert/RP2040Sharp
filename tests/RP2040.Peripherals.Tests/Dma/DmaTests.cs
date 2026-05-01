@@ -191,5 +191,81 @@ public abstract class DmaTests
             f.Bus.ReadHalfWord(0x2000D000u).Should().Be((ushort)0xABCD);
         }
     }
+
+    public class DreqHandshake
+    {
+        private const uint CTRL_DATA_SIZE_BYTE = 0u;  // SIZE=0 (byte)
+
+        [Fact]
+        public void DREQ_gated_transfer_executes_only_ready_beats()
+        {
+            using var f = new Fixture();
+
+            // Write 3 bytes to SRAM (source)
+            f.Bus.WriteByte(0x20010000u, 0xAA);
+            f.Bus.WriteByte(0x20010001u, 0xBB);
+            f.Bus.WriteByte(0x20010002u, 0xCC);
+
+            // Register DREQ index 1 that is ready only 2 times
+            var readyCount = 2;
+            f.Dma.RegisterDreq(1, () => readyCount-- > 0);
+
+            var ctrl = CTRL_EN | CTRL_DATA_SIZE_BYTE | CTRL_INCR_READ | CTRL_INCR_WRITE
+                       | (1u << 15);  // TREQ_SEL=1
+
+            f.Dma.WriteWord(READ_ADDR(5),   0x20010000u);
+            f.Dma.WriteWord(WRITE_ADDR(5),  0x20011000u);
+            f.Dma.WriteWord(TRANS_COUNT(5), 3u);
+            f.Dma.WriteWord(CTRL_TRIG(5),   ctrl);
+
+            // Only 2 beats should have executed (DREQ was ready twice)
+            f.Bus.ReadByte(0x20011000u).Should().Be(0xAA);
+            f.Bus.ReadByte(0x20011001u).Should().Be(0xBB);
+            // Third byte not transferred (DREQ was not ready)
+            f.Bus.ReadByte(0x20011002u).Should().Be(0x00);
+            // Channel should still be BUSY and TRANS_COUNT should be 1
+            (f.Dma.ReadWord(CTRL_TRIG(5)) & (1u << 24)).Should().Be(1u << 24, "channel still BUSY");
+            f.Dma.ReadWord(TRANS_COUNT(5)).Should().Be(1u, "1 transfer remaining");
+        }
+
+        [Fact]
+        public void DREQ_not_ready_transfers_zero_beats()
+        {
+            using var f = new Fixture();
+            f.Bus.WriteWord(0x20012000u, 0x55555555u);
+
+            // DREQ always not ready
+            f.Dma.RegisterDreq(2, () => false);
+
+            var ctrl = CTRL_EN | CTRL_DATA_SIZE_WORD | CTRL_INCR_READ | CTRL_INCR_WRITE
+                       | (2u << 15);  // TREQ_SEL=2
+
+            f.Dma.WriteWord(READ_ADDR(6),   0x20012000u);
+            f.Dma.WriteWord(WRITE_ADDR(6),  0x20013000u);
+            f.Dma.WriteWord(TRANS_COUNT(6), 1u);
+            f.Dma.WriteWord(CTRL_TRIG(6),   ctrl);
+
+            // No transfer should have occurred
+            f.Bus.ReadWord(0x20013000u).Should().Be(0u);
+            f.Dma.ReadWord(TRANS_COUNT(6)).Should().Be(1u, "no beats consumed");
+        }
+
+        [Fact]
+        public void TREQ_PERMANENT_ignores_dreq_registration()
+        {
+            using var f = new Fixture();
+            f.Bus.WriteWord(0x20014000u, 0x12345678u);
+
+            // Even if we tried to register DREQ 63, it can't be registered
+            // (RegisterDreq throws on index 63). So PERMANENT always works.
+            f.Dma.WriteWord(READ_ADDR(7),   0x20014000u);
+            f.Dma.WriteWord(WRITE_ADDR(7),  0x20015000u);
+            f.Dma.WriteWord(TRANS_COUNT(7), 1u);
+            f.Dma.WriteWord(CTRL_TRIG(7),
+                CTRL_EN | CTRL_DATA_SIZE_WORD | CTRL_INCR_READ | CTRL_INCR_WRITE | CTRL_TREQ_PERMANENT);
+
+            f.Bus.ReadWord(0x20015000u).Should().Be(0x12345678u);
+        }
+    }
 }
 
