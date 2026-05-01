@@ -324,63 +324,95 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     }
 
     /// <summary>
-    /// Compute the result for one lane.
-    /// RP2040 TRM §2.3.1.3: masked-and-shifted accumulator OR'd with base.
+    /// Compute the primary (pre-CROSS_RESULT) result for one lane.
+    /// Implements the full RP2040 TRM §2.3.1 interpolator pipeline:
+    /// shift → mask → sign-extend → +BASE, with ADD_RAW, BLEND, CLAMP modes.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint ComputeLane(ref InterpState st, int lane)
     {
-        var ctrl = lane == 0 ? st.Ctrl0 : st.Ctrl1;
-        var shift    = (int)(ctrl & 0x1F);
-        var maskLsb  = (int)((ctrl >> 5) & 0x1F);
-        var maskMsb  = (int)((ctrl >> 10) & 0x1F);
-        var signed   = (ctrl & (1u << 15)) != 0;
-        var crossIn  = (ctrl & (1u << 16)) != 0;
-        // CROSS_RESULT: lane 0 reads lane 1's result — handled at full-result level
+        var ctrl    = lane == 0 ? st.Ctrl0 : st.Ctrl1;
+        var shift   = (int)(ctrl & 0x1F);
+        var maskLsb = (int)((ctrl >> 5) & 0x1F);
+        var maskMsb = (int)((ctrl >> 10) & 0x1F);
+        var signed  = (ctrl & (1u << 15)) != 0;
+        var crossIn = (ctrl & (1u << 16)) != 0;
+        var addRaw  = (ctrl & (1u << 20)) != 0;  // ADD_RAW: add raw (unshifted) accum to result
+        var blend   = (ctrl & (1u << 21)) != 0;  // BLEND: linear interpolation (lane 0 ctrl only)
+        var clamp   = (ctrl & (1u << 22)) != 0;  // CLAMP: clamp result to [BASE0, BASE1]
 
         uint accum = crossIn
             ? (lane == 0 ? st.Accum1 : st.Accum0)
             : (lane == 0 ? st.Accum0 : st.Accum1);
 
+        // BLEND mode (RP2040 TRM §2.3.1.4): only used for lane 0; result = Base0 + alpha*(Base1-Base0)/256
+        // where alpha = accum0[7:0]. Ignores shift/mask/sign.
+        if (blend && lane == 0)
+        {
+            uint alpha = st.Accum0 & 0xFF;
+            // Arithmetic on signed Base values to handle Base1 < Base0 wrap
+            int blended = (int)st.Base0 + (int)((alpha * ((long)(int)st.Base1 - (int)st.Base0)) / 256);
+            return (uint)blended;
+        }
+
         uint shifted = signed
             ? (uint)((int)accum >> shift)
             : accum >> shift;
 
-        // Build mask covering [maskMsb:maskLsb]
-        uint mask = BuildMask(maskLsb, maskMsb);
+        uint mask   = BuildMask(maskLsb, maskMsb);
         uint masked = shifted & mask;
 
-        // Sign-extend at maskMsb if SIGNED
+        // Sign-extend at maskMsb when SIGNED
         if (signed && maskMsb < 31)
         {
             uint signBit = 1u << maskMsb;
             if ((masked & signBit) != 0)
-                masked |= ~mask;   // extend sign
+                masked |= ~mask;
         }
 
-        var baseVal = lane == 0 ? st.Base0 : st.Base1;
-        // RESULT = (shifted & mask) + BASE  (RP2040 TRM § 2.3.1.7)
-        return masked + baseVal;
+        uint baseVal = lane == 0 ? st.Base0 : st.Base1;
+
+        uint result;
+        if (addRaw)
+            // ADD_RAW: skip mask, add the raw shifted (but not masked) accumulator to BASE
+            result = shifted + baseVal;
+        else
+            result = masked + baseVal;
+
+        // CLAMP (RP2040 TRM §2.3.1.5): only applies to lane 0; clamp to [BASE0, BASE1].
+        // Base0 is the lower bound, Base1 the upper bound (unsigned comparison).
+        if (clamp && lane == 0)
+        {
+            if (result < st.Base0) result = st.Base0;
+            if (result > st.Base1) result = st.Base1;
+        }
+
+        return result;
     }
 
+    /// <summary>
+    /// Compute the FULL result: applies CROSS_RESULT routing and adds BASE2.
+    /// CROSS_RESULT on a lane swaps which lane's primary result feeds into the full output.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static uint ComputeFull(ref InterpState st)
     {
-        var crossResult0 = (st.Ctrl0 & (1u << 17)) != 0;
-        var crossResult1 = (st.Ctrl1 & (1u << 17)) != 0;
-
         uint r0 = ComputeLane(ref st, 0);
         uint r1 = ComputeLane(ref st, 1);
 
-        // CROSS_RESULT: each lane uses the other lane's primary result
-        uint l0 = crossResult0 ? r1 : r0;
-        return l0 + st.Base2;
+        // CROSS_RESULT (bit 17): if set for lane 0, lane 0's contribution to FULL uses lane 1's result.
+        // If set for lane 1, lane 1's contribution is ignored for FULL (the full result uses lane 0).
+        // Per TRM: FULL = RESULT0 + BASE2, with CROSS_RESULT_0 swapping RESULT0 ↔ RESULT1 for that slot.
+        var crossResult0 = (st.Ctrl0 & (1u << 17)) != 0;
+        uint fullBase = crossResult0 ? r1 : r0;
+        return fullBase + st.Base2;
     }
 
     private static uint PopLane(ref InterpState st, int lane)
     {
         uint r0 = ComputeLane(ref st, 0);
         uint r1 = ComputeLane(ref st, 1);
+        // POP writes results back to accumulators (advances the pipeline)
         st.Accum0 = r0;
         st.Accum1 = r1;
         return lane == 0 ? r0 : r1;
@@ -392,7 +424,9 @@ public sealed class SioPeripheral : IMemoryMappedDevice
         uint r1 = ComputeLane(ref st, 1);
         st.Accum0 = r0;
         st.Accum1 = r1;
-        return r0 + st.Base2;
+        var crossResult0 = (st.Ctrl0 & (1u << 17)) != 0;
+        uint fullBase = crossResult0 ? r1 : r0;
+        return fullBase + st.Base2;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -415,6 +449,10 @@ public sealed class SioPeripheral : IMemoryMappedDevice
         {
             if (_divSdivisor == 0)
             {
+                // RP2040 TRM §2.3.1.6: for signed div-by-zero:
+                //   quotient = +1 when dividend >= 0  (0x00000001)
+                //   quotient = -1 when dividend <  0  (0xFFFFFFFF)
+                // remainder = dividend in both cases.
                 _divQuotient  = _divSdividend >= 0 ? 1u : 0xFFFFFFFF;
                 _divRemainder = (uint)_divSdividend;
             }
