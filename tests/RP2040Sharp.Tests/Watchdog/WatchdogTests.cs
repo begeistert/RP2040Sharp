@@ -15,8 +15,8 @@ public class WatchdogTests
 
     private const uint CTRL_TRIGGER = 1u << 31;
     private const uint CTRL_ENABLE  = 1u << 30;
-    private const uint REASON_TIMER = 1u << 1;
-    private const uint REASON_FORCE = 1u << 0;
+    private const uint REASON_TIMER = 1u << 0;  // bit 0 per RP2040 TRM §4.7.6
+    private const uint REASON_FORCE = 1u << 1;  // bit 1 per RP2040 TRM §4.7.6
     private const uint TICK_ENABLE  = 1u << 9;
     private const uint TICK_RUNNING = 1u << 10;
 

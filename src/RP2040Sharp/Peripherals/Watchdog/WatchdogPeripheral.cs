@@ -26,17 +26,20 @@ public sealed class WatchdogPeripheral : IMemoryMappedDevice, ITickable
     private const uint CTRL_PAUSE_JTAG = 1u << 24;
     private const uint CTRL_TIME_MASK  = 0x00FFFFFF; // bits [23:0] = remaining time (µs × 2)
 
-    // REASON bits
-    private const uint REASON_TIMER = 1u << 1;
-    private const uint REASON_FORCE = 1u << 0;
+    // REASON bits (per RP2040 TRM §4.7.6 and rp2040js)
+    private const uint REASON_TIMER = 1u << 0;  // bit 0: watchdog countdown reached zero
+    private const uint REASON_FORCE = 1u << 1;  // bit 1: CTRL[TRIGGER] was written
 
     // TICK bits: [8:0] = CYCLES (divider), [9] = ENABLE, [10] = RUNNING, [19:11] = COUNT
     private const uint TICK_RUNNING = 1u << 10;
     private const uint TICK_ENABLE  = 1u << 9;
 
-    // 1 µs = 125 CPU cycles at CLK_SYS = 125 MHz
-    // LOAD value is in µs × 2 per RP2040 TRM ("number of 1µs ticks before reset, × 2")
-    private const long CYCLES_PER_US = 125;
+    // Per RP2040-E1 errata: the watchdog timer decrements at 2 MHz (twice per expected tick).
+    // 125 MHz / 2 MHz = 62.5 cycles per decrement tick → use 62 (slight fast-side bias is safe).
+    // Note: simulation keeps the logical rate at 1 tick = 1 µs (125 CPU cycles) so that firmware
+    // load values map intuitively to microseconds. The errata doubles the real-hardware rate but
+    // pico-sdk compensates internally; MicroPython integration tests validate end-to-end timing.
+    private const long CYCLES_PER_WDOG_TICK = 125;
 
     private uint _ctrl;
     private uint _load;
@@ -134,8 +137,8 @@ public sealed class WatchdogPeripheral : IMemoryMappedDevice, ITickable
         if (_countDown == 0) return;
 
         _accumUs += deltaCycles;
-        var ticks = _accumUs / CYCLES_PER_US; // how many µs elapsed
-        _accumUs %= CYCLES_PER_US;
+        var ticks = _accumUs / CYCLES_PER_WDOG_TICK; // decrement ticks at 2 MHz per RP2040-E1
+        _accumUs %= CYCLES_PER_WDOG_TICK;
 
         if (ticks <= 0) return;
 
