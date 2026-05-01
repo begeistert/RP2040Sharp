@@ -1,0 +1,129 @@
+using RP2040.Core.Memory;
+
+namespace RP2040.Peripherals.Uart;
+
+/// <summary>
+/// PL011 UART peripheral (UART0 base 0x40034000, UART1 base 0x40038000).
+/// For simulation: TX bytes are immediately forwarded to <see cref="OnByteTransmit"/>;
+/// RX bytes come from <see cref="InjectByte"/> via a 32-byte FIFO.
+/// </summary>
+public sealed class UartPeripheral : IMemoryMappedDevice
+{
+    // PL011 register offsets (local addresses from ApbBridge, i.e., address & 0xFFF)
+    private const uint UARTDR    = 0x000;
+    private const uint UARTRSR   = 0x004;   // Receive Status / Error Clear
+    private const uint UARTFR    = 0x018;   // Flag Register
+    private const uint UARTIBRD  = 0x024;   // Integer baud-rate divisor
+    private const uint UARTFBRD  = 0x028;   // Fractional baud-rate divisor
+    private const uint UARTLCR_H = 0x02C;   // Line Control
+    private const uint UARTCR    = 0x030;   // Control Register
+    private const uint UARTIFLS  = 0x034;   // FIFO level select
+    private const uint UARTIMSC  = 0x038;   // Interrupt mask set/clear
+    private const uint UARTRIS   = 0x03C;   // Raw interrupt status
+    private const uint UARTMIS   = 0x040;   // Masked interrupt status
+    private const uint UARTICR   = 0x044;   // Interrupt clear
+
+    // UARTFR bits
+    private const uint FR_TXFE = 1u << 7;   // TX FIFO empty (1 = idle, buffer empty)
+    private const uint FR_RXFF = 1u << 6;   // RX FIFO full
+    private const uint FR_TXFF = 1u << 5;   // TX FIFO full
+    private const uint FR_RXFE = 1u << 4;   // RX FIFO empty
+    private const uint FR_BUSY = 1u << 3;   // UART transmitting
+
+    private readonly Queue<byte> _rxFifo = new(32);
+    private uint _ibrd, _fbrd, _lcrH, _cr, _imsc;
+    private uint _ris;   // raw interrupt status
+
+    public uint Size => 0x1000;
+
+    /// <summary>Called when a byte is written to UARTDR (TX).</summary>
+    public Action<byte>? OnByteTransmit;
+
+    /// <summary>Inject a byte into the RX FIFO (simulates remote device sending data).</summary>
+    public void InjectByte(byte value)
+    {
+        if (_rxFifo.Count < 32)
+        {
+            _rxFifo.Enqueue(value);
+            _ris |= (1u << 4);   // RXRIS — RX interrupt raw
+        }
+    }
+
+    public uint ReadWord(uint address)
+    {
+        return address switch
+        {
+            UARTDR    => ReadData(),
+            UARTRSR   => 0,           // no errors
+            UARTFR    => BuildFr(),
+            UARTIBRD  => _ibrd,
+            UARTFBRD  => _fbrd,
+            UARTLCR_H => _lcrH,
+            UARTCR    => _cr,
+            UARTIMSC  => _imsc,
+            UARTRIS   => _ris,
+            UARTMIS   => _ris & _imsc,
+            _ => 0,
+        };
+    }
+
+    public ushort ReadHalfWord(uint address) =>
+        (ushort)(ReadWord(address & ~3u) >> (int)((address & 2) << 3));
+
+    public byte ReadByte(uint address) =>
+        (byte)(ReadWord(address & ~3u) >> (int)((address & 3) << 3));
+
+    public void WriteWord(uint address, uint value)
+    {
+        switch (address)
+        {
+            case UARTDR:
+                OnByteTransmit?.Invoke((byte)(value & 0xFF));
+                _ris |= (1u << 5);   // TXRIS — TX interrupt (ready for more data)
+                break;
+            case UARTRSR:
+                // Write any value to clear error flags
+                break;
+            case UARTIBRD:  _ibrd = value & 0xFFFF; break;
+            case UARTFBRD:  _fbrd = value & 0x3F;   break;
+            case UARTLCR_H: _lcrH = value & 0xFF;   break;
+            case UARTCR:    _cr   = value & 0xFFFF; break;
+            case UARTIMSC:  _imsc = value & 0x7FF;  break;
+            case UARTICR:   _ris &= ~value;          break;   // clear selected IRQs
+        }
+    }
+
+    public void WriteHalfWord(uint address, ushort value)
+    {
+        var aligned = address & ~3u;
+        var shift = (int)((address & 2) << 3);
+        var current = ReadWord(aligned);
+        WriteWord(aligned, (current & ~(0xFFFFu << shift)) | ((uint)value << shift));
+    }
+
+    public void WriteByte(uint address, byte value)
+    {
+        var aligned = address & ~3u;
+        var shift = (int)((address & 3) << 3);
+        var current = ReadWord(aligned);
+        WriteWord(aligned, (current & ~(0xFFu << shift)) | ((uint)value << shift));
+    }
+
+    private uint ReadData()
+    {
+        if (_rxFifo.Count == 0)
+            return 0;
+        var b = _rxFifo.Dequeue();
+        if (_rxFifo.Count == 0)
+            _ris &= ~(1u << 4);   // clear RXRIS when FIFO empties
+        return b;
+    }
+
+    private uint BuildFr()
+    {
+        var fr = FR_TXFE;   // TX always idle (immediate transmit in sim)
+        if (_rxFifo.Count == 0) fr |= FR_RXFE;
+        if (_rxFifo.Count >= 32) fr |= FR_RXFF;
+        return fr;
+    }
+}
