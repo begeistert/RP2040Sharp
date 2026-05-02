@@ -102,7 +102,7 @@ public sealed class ClocksPeripheral : IMemoryMappedDevice
             CLK_SYS_RESUS_STATUS => 0,   // no resuscitation needed
             FC0_SRC             => _fc0Src,
             FC0_STATUS          => 0x10, // FC_DONE
-            FC0_RESULT          => 125_000,  // 125 MHz in kHz
+            FC0_RESULT          => 125_000 << 5,  // 125 MHz: KHZ field at bits[28:5], so 125000 << 5
             WAKE_EN0            => _wakeEn0,
             WAKE_EN1            => _wakeEn1,
             SLEEP_EN0           => _sleepEn0,
