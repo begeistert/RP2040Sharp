@@ -140,12 +140,12 @@ public abstract class UsbTests
         public void SIE_STATUS_write1_clears_bits()
         {
             using var f = new Fixture();
-            f.Usb.SignalBusReset();  // sets SIE_STATUS bit 12
+            f.Usb.SignalBusReset();  // sets SIE_STATUS bit 19 (BUS_RESET)
 
-            (f.Usb.ReadWord(SIE_STATUS) & (1u << 12)).Should().Be(1u << 12, "BUS_RESET bit set");
+            (f.Usb.ReadWord(SIE_STATUS) & (1u << 19)).Should().Be(1u << 19, "BUS_RESET bit set");
 
-            f.Usb.WriteWord(SIE_STATUS, 1u << 12);  // W1C
-            (f.Usb.ReadWord(SIE_STATUS) & (1u << 12)).Should().Be(0u, "BUS_RESET cleared");
+            f.Usb.WriteWord(SIE_STATUS, 1u << 19);  // W1C
+            (f.Usb.ReadWord(SIE_STATUS) & (1u << 19)).Should().Be(0u, "BUS_RESET cleared");
         }
 
         [Fact]
@@ -203,7 +203,7 @@ public abstract class UsbTests
             using var f = new Fixture();
             f.Usb.SignalSetupPacket();
             (f.Usb.ReadWord(SIE_STATUS) & (1u << 17)).Should().Be(1u << 17, "SETUP_REC in SIE_STATUS");
-            (f.Usb.ReadWord(INTR) & (1u << 17)).Should().Be(1u << 17, "SETUP_REC in INTR");
+            (f.Usb.ReadWord(INTR) & (1u << 16)).Should().Be(1u << 16, "SETUP_REQ in INTR");
         }
     }
 }

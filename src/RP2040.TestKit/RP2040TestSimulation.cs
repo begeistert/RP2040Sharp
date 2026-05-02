@@ -1,6 +1,7 @@
 using RP2040.Peripherals;
 using RP2040.Peripherals.Gpio;
 using RP2040.Peripherals.Uart;
+using RP2040.Peripherals.Usb;
 using RP2040.TestKit.Probes;
 
 namespace RP2040.TestKit;
@@ -71,6 +72,17 @@ public class RP2040TestSimulation : IDisposable
         var uart = index == 0 ? Machine.Uart0 : Machine.Uart1;
         probe = new UartProbe();
         probe.Attach(uart);
+        return this;
+    }
+
+    /// <summary>Lazily-created CDC-ACM host driver bound to the device USB peripheral.</summary>
+    public UsbCdcHost UsbCdcHost => _usbCdcHost ??= new UsbCdcHost(Machine.Usb);
+    private UsbCdcHost? _usbCdcHost;
+
+    /// <summary>Attach a <see cref="UsbCdcProbe"/> to the auto-enumerated USB-CDC channel.</summary>
+    public RP2040TestSimulation AddUsbCdc(out UsbCdcProbe probe)
+    {
+        probe = new UsbCdcProbe().Attach(UsbCdcHost);
         return this;
     }
 
@@ -192,4 +204,22 @@ public class RP2040TestSimulation : IDisposable
     }
 
     public void Dispose() => Machine.Dispose();
+}
+
+public static class UsbCdcProbeRunExtensions
+{
+    /// <summary>Run the simulation until <paramref name="expectedText"/> appears in the CDC stream.</summary>
+    public static bool RunUntilOutput(this RP2040TestSimulation sim, UsbCdcProbe cdc, string expectedText, double timeoutMs = 10_000)
+    {
+        const double batchMs = 100.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs)
+        {
+            sim.RunMilliseconds(batchMs);
+            if (cdc.Text.Contains(expectedText, StringComparison.Ordinal))
+                return true;
+            elapsed += batchMs;
+        }
+        return false;
+    }
 }

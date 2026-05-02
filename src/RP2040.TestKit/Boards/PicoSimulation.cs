@@ -23,6 +23,9 @@ public sealed class PicoSimulation : RP2040TestSimulation
     /// <summary>Probe for UART1 (GP4/GP5).</summary>
     public UartProbe Uart1 { get; }
 
+    /// <summary>Auto-enumerated USB CDC-ACM channel (TinyUSB-compatible).</summary>
+    public UsbCdcProbe UsbCdc { get; }
+
     /// <summary>All 30 GPIO pins.</summary>
     public IReadOnlyList<GpioPin> Gpio => Machine.Gpio;
 
@@ -31,8 +34,10 @@ public sealed class PicoSimulation : RP2040TestSimulation
         WithFrequency(125_000_000);
         AddUart(0, out var u0);
         AddUart(1, out var u1);
+        AddUsbCdc(out var cdc);
         Uart0 = u0;
         Uart1 = u1;
+        UsbCdc = cdc;
     }
 
     /// <summary>Load firmware into Flash and reset.</summary>

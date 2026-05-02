@@ -1,3 +1,4 @@
+using RP2040.TestKit;
 using RP2040.TestKit.Boards;
 
 namespace RP2040Sharp.Demo;
@@ -72,19 +73,19 @@ internal static class Program
                 Console.Error.WriteLine($"  [exc19-handler] exc#19 entry: LR=0x{cpu.Registers.LR:X8} SP=0x{cpu.Registers.SP:X8} R0=0x{cpu.Registers.R0:X8} R1=0x{cpu.Registers.R1:X8} cycles={cpu.Cycles}");
         });
 
-        Console.Write("[UART] Tracing boot...");
+        Console.Write("[USB-CDC] Tracing boot...");
         Console.Error.WriteLine($"\n  [trace] Initial PC=0x{pico.Cpu.Registers.PC:X8} SP=0x{pico.Cpu.Registers.SP:X8}");
 
-        // Run in batches until UART has output or BootROM is entered
+        // Run in batches until USB-CDC enumerates and produces output, or BootROM is entered
         var bootRomHit = false;
         var prevCycles = pico.Cpu.Cycles;
-        for (var ms = 0; ms < 20_000 && pico.Uart0.ByteCount == 0; ms += 100)
+        for (var ms = 0; ms < 20_000 && pico.UsbCdc.ByteCount == 0; ms += 100)
         {
             try { pico.RunMilliseconds(100); }
             catch (Exception ex) {
                 Console.Error.WriteLine($"  [crash] Exception at ms={ms+100}: {ex.GetType().Name}: {ex.Message}");
                 Console.Error.WriteLine($"  [crash] PC=0x{pico.Cpu.Registers.PC:X8} SP=0x{pico.Cpu.Registers.SP:X8} LR=0x{pico.Cpu.Registers.LR:X8}");
-                Console.Error.WriteLine($"  [crash] R0=0x{pico.Cpu.Registers.R0:X8} R1=0x{pico.Cpu.Registers.R1:X8} UART={pico.Uart0.ByteCount}B");
+                Console.Error.WriteLine($"  [crash] R0=0x{pico.Cpu.Registers.R0:X8} R1=0x{pico.Cpu.Registers.R1:X8} CDC={pico.UsbCdc.ByteCount}B UART={pico.Uart0.ByteCount}B");
                 break;
             }
             var pc = pico.Cpu.Registers.PC;
@@ -93,30 +94,32 @@ internal static class Program
                 Console.Error.WriteLine($"  [trace] BootROM entered at PC=0x{pc:X8} after {ms+100}ms sim");
                 bootRomHit = true;
             }
-            if (pico.Uart0.ByteCount > 0)
-                Console.Error.WriteLine($"  [trace] First UART byte at {ms+100}ms sim");
+            if (pico.UsbCdc.ByteCount > 0)
+                Console.Error.WriteLine($"  [trace] First CDC byte at {ms+100}ms sim (enumerated={pico.UsbCdc.IsConnected})");
             // Print PC snapshot every simulated second to track progress
             if ((ms % 1000) == 900)
-                Console.Error.WriteLine($"  [trace] {ms+100}ms: PC=0x{pc:X8} UART={pico.Uart0.ByteCount}B");
+                Console.Error.WriteLine($"  [trace] {ms+100}ms: PC=0x{pc:X8} CDC={pico.UsbCdc.ByteCount}B (enum={pico.UsbCdc.IsConnected}) UART={pico.Uart0.ByteCount}B");
         }
 
-        var booted = pico.RunUntilOutput(pico.Uart0, ">>> ", timeoutMs: 60_000);
+        var booted = pico.RunUntilOutput(pico.UsbCdc, ">>> ", timeoutMs: 60_000);
         if (!booted)
         {
             // Print last 10 seconds snapshot
             for (var s = 0; s < 10; s++)
             {
                 pico.RunMilliseconds(1000);
-                Console.Error.WriteLine($"  [snap] PC=0x{pico.Cpu.Registers.PC:X8} UART={pico.Uart0.ByteCount}B text='{pico.Uart0.Text.Replace("\r","\\r").Replace("\n","\\n")[..Math.Min(100, pico.Uart0.Text.Length)]}'");
+                Console.Error.WriteLine($"  [snap] PC=0x{pico.Cpu.Registers.PC:X8} CDC={pico.UsbCdc.ByteCount}B text='{pico.UsbCdc.Text.Replace("\r","\\r").Replace("\n","\\n")[..Math.Min(100, pico.UsbCdc.Text.Length)]}'");
             }
             Console.WriteLine();
-            Console.Error.WriteLine($"  [debug] UART captured {pico.Uart0.ByteCount} bytes hex: {BitConverter.ToString(pico.Uart0.Bytes.Take(64).ToArray())}");
-            Console.Error.WriteLine($"  [debug] UART text: '{pico.Uart0.Text.Replace("\r", "\\r").Replace("\n", "\\n")[..Math.Min(500, pico.Uart0.Text.Length)]}'");
+            Console.Error.WriteLine($"  [debug] CDC captured {pico.UsbCdc.ByteCount} bytes hex: {BitConverter.ToString(pico.UsbCdc.Bytes.Take(64).ToArray())}");
+            Console.Error.WriteLine($"  [debug] CDC text: '{pico.UsbCdc.Text.Replace("\r", "\\r").Replace("\n", "\\n")[..Math.Min(500, pico.UsbCdc.Text.Length)]}'");
+            Console.Error.WriteLine($"  [debug] UART captured {pico.Uart0.ByteCount} bytes");
             Console.Error.WriteLine($"  [debug] CPU cycles executed: {pico.Cpu.Cycles:N0}");
+            Console.Error.WriteLine($"  [debug] CDC enumerated: {pico.UsbCdc.IsConnected}");
             if (panicInfo is not null)
                 Console.Error.WriteLine($"  [debug] {panicInfo}");
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("ERROR: MicroPython did not produce a REPL prompt within 20 s.");
+            Console.WriteLine("ERROR: MicroPython did not produce a REPL prompt within 60 s.");
             Console.ResetColor();
             return 1;
         }
@@ -147,12 +150,12 @@ internal static class Program
         Console.ResetColor();
         Console.WriteLine(pythonCode);
 
-        pico.Uart0.Clear();
-        pico.Uart0.InjectString(pythonCode + "\r\n");
+        pico.UsbCdc.Clear();
+        pico.UsbCdc.InjectString(pythonCode + "\r\n");
 
         if (expectedOutput is not null)
         {
-            var found = pico.RunUntilOutput(pico.Uart0, expectedOutput, timeoutMs: 5_000);
+            var found = pico.RunUntilOutput(pico.UsbCdc, expectedOutput, timeoutMs: 5_000);
             if (!found)
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
@@ -163,11 +166,11 @@ internal static class Program
         else
         {
             // Just wait for next prompt
-            pico.RunUntilOutput(pico.Uart0, ">>> ", timeoutMs: 5_000);
+            pico.RunUntilOutput(pico.UsbCdc, ">>> ", timeoutMs: 5_000);
         }
 
-        // Print whatever was emitted on UART since the command was injected
-        var output = pico.Uart0.Text.Split('\n')
+        // Print whatever was emitted on CDC since the command was injected
+        var output = pico.UsbCdc.Text.Split('\n')
             .Select(l => l.TrimEnd('\r'))
             .Where(l => l.Length > 0 && l != pythonCode && l != ">>> ")
             .FirstOrDefault();
