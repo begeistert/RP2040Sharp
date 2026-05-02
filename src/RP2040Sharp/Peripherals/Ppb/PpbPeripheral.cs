@@ -171,6 +171,7 @@ public sealed class PpbPeripheral : IMemoryMappedDevice, ITickable
                 break;
 
             case SCB_VTOR:
+                System.Console.Error.WriteLine($"  [vtor] VTOR write: 0x{value:X8} -> 0x{value & 0xFFFFFF00u:X8} (callerPC implied by LR)");
                 _cpu.Registers.VTOR = value & 0xFFFFFF00;
                 break;
 
