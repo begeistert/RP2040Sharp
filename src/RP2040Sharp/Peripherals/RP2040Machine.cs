@@ -293,7 +293,354 @@ public sealed class RP2040Machine : IDisposable
             throw new ArgumentException($"Flash image exceeds configured flash size ({Bus.FlashSize / 1024} KB)");
 
         image.CopyTo(new Span<byte>(Bus.PtrFlash, image.Length));
+
+        // If no BootROM has been loaded, install the minimal RP2040 BootROM stub that
+        // implements the ROM API functions (rom_table_lookup, memcpy44, memset4) needed
+        // by RP2040 SDK firmware during C-runtime startup.  The reset SP/PC entries are
+        // then patched to point at the firmware's own vector table located in flash.
+        if (*(uint*)Bus.PtrBootRom == 0 && *(uint*)(Bus.PtrBootRom + 4) == 0)
+        {
+            WriteBootRomStub(Bus.PtrBootRom);
+
+            if (TryFindVectorTable(Bus.PtrFlash, (int)image.Length, out var sp, out var resetPc,
+                    out var vectorTableOffset))
+            {
+                *(uint*)Bus.PtrBootRom       = sp;
+                *(uint*)(Bus.PtrBootRom + 4) = resetPc;
+                // Real BootROM sets VTOR to point at the firmware's own vector table
+                // before branching to the Reset handler.  pico-sdk code checks VTOR
+                // during spinlock initialisation, so this must be done before Reset().
+                Cpu.Registers.VTOR = 0x10000000u + (uint)vectorTableOffset;
+            }
+
+            // Register native C# hooks for flash erase/program so that MicroPython's
+            // LittleFS filesystem formatter can actually write to the emulated flash.
+            // Also hook rom_table_lookup (0x0060) to handle ROM function dispatch in C#
+            // so lookup is always correct and we can add debug logging.
+            Cpu.RegisterNativeHook(0x0060, RomTableLookupHook);
+            Cpu.RegisterNativeHook(0x0100, Memcpy44Hook);
+            Cpu.RegisterNativeHook(0x0120, Memset4Hook);
+            Cpu.RegisterNativeHook(0x01C0, Popcount32Hook);
+            Cpu.RegisterNativeHook(0x01D0, Reverse32Hook);
+            Cpu.RegisterNativeHook(0x01E0, Clz32Hook);
+            Cpu.RegisterNativeHook(0x01F0, Ctz32Hook);
+            Cpu.RegisterNativeHook(0x0190, FlashEraseHook);
+            Cpu.RegisterNativeHook(0x01A0, FlashProgramHook);
+            // Protect the ROM API metadata area (0x0010-0x001F) from being executed.
+            // If execution falls through there, something went wrong — log and return via LR.
+            for (uint addr = 0x0010; addr < 0x0020; addr += 2)
+            {
+                var capturedAddr = addr;
+                Cpu.RegisterNativeHook(capturedAddr, static cpu =>
+                    System.Console.Error.WriteLine($"  [romapi-exec] Execution hit ROM API metadata at 0x{cpu.Registers.PC:X8} LR=0x{cpu.Registers.LR:X8} R0=0x{cpu.Registers.R0:X8} cycles={cpu.Cycles}"));
+            }
+        }
+
         Cpu.Reset();
+    }
+
+    /// <summary>
+    /// Scans the flash image for an ARM Cortex-M vector table by looking for a word
+    /// whose upper byte places it in SRAM (0x20xxxxxx) followed by a Thumb-mode pointer
+    /// into Flash (0x1xxxxxxx with LSB set).
+    /// </summary>
+    private static unsafe bool TryFindVectorTable(byte* flash, int size,
+        out uint sp, out uint resetPc, out int vectorTableOffset)
+    {
+        // RP2040 SDK firmware: main vector table at offset 0x100 (after 256-byte boot2).
+        // Bare Cortex-M firmware (no boot2): vector table at offset 0.
+        // Also try 0x200 for exotic layouts.
+        ReadOnlySpan<int> offsets = [0x100, 0, 0x200];
+
+        foreach (var off in offsets)
+        {
+            if (off + 8 > size) continue;
+
+            var candidateSp = *(uint*)(flash + off);
+            var candidatePc = *(uint*)(flash + off + 4);
+
+            // SP must be within RP2040 SRAM (0x20000000 – 0x2007FFFF), 4-byte aligned.
+            if ((candidateSp >> 19) != (0x20000000u >> 19)) continue;
+            if ((candidateSp & 3) != 0) continue;
+
+            // Reset PC must be a Thumb pointer (LSB = 1) into Flash (0x10xxxxxx).
+            if ((candidatePc & 1) == 0) continue;
+            if ((candidatePc >> 24) != 0x10) continue;
+
+            sp = candidateSp;
+            resetPc = candidatePc;
+            vectorTableOffset = off;
+            return true;
+        }
+
+        sp = 0;
+        resetPc = 0;
+        vectorTableOffset = 0;
+        return false;
+    }
+
+    // ── Native hook: ROM function lookup ─────────────────────────────────────
+
+    /// <summary>
+    /// Function codes for the ROM function lookup table, indexed for fast access.
+    /// Key = 16-bit ROM code, Value = BootROM address (even, Thumb bit NOT included).
+    /// </summary>
+    private static readonly Dictionary<uint, uint> RomFuncTable = new()
+    {
+        [0x434D] = 0x0100,  // 'MC' = memcpy44
+        [0x534D] = 0x0120,  // 'MS' = memset4
+        [0x3443] = 0x0100,  // 'C4' = memcpy4 (alias)
+        [0x3453] = 0x0120,  // 'S4' = memset4 (alias)
+        [0x3350] = 0x01C0,  // 'P3' = popcount32       (native hook at 0x01C0)
+        [0x3352] = 0x01D0,  // 'R3' = reverse32        (native hook at 0x01D0)
+        [0x334C] = 0x01E0,  // 'L3' = clz32            (native hook at 0x01E0)
+        [0x3354] = 0x01F0,  // 'T3' = ctz32            (native hook at 0x01F0)
+        [0x4649] = 0x0180,  // 'IF' = connect_internal_flash (no-op)
+        [0x5845] = 0x0180,  // 'EX' = flash_exit_xip (no-op)
+        [0x4552] = 0x0190,  // 'RE' = flash_range_erase (native hook)
+        [0x5052] = 0x01A0,  // 'RP' = flash_range_program (native hook)
+        [0x4346] = 0x0180,  // 'FC' = flash_flush_cache (no-op)
+        [0x5843] = 0x0180,  // 'CX' = flash_enter_cmd_xip (no-op)
+        // Soft-float data table: 'SF' returns pointer to an empty table (terminator only at 0x0250)
+        [0x4653] = 0x0250,  // 'SF' = soft_float_table stub
+    };
+
+    private static int _romLookupCount = 0;
+    private static void RomTableLookupHook(Core.Cpu.CortexM0Plus cpu)
+    {
+        // r0 = table ptr (uint16_t*), r1 = code  →  r0 = func addr with Thumb bit, or 0
+        var code = cpu.Registers.R1 & 0xFFFF;
+        if (RomFuncTable.TryGetValue(code, out var addr))
+        {
+            if (System.Threading.Interlocked.Increment(ref _romLookupCount) <= 20)
+                System.Console.Error.WriteLine($"  [romtbl] code=0x{code:X4} ('{(char)(code & 0xFF)}{(char)((code >> 8) & 0xFF)}')->0x{addr | 1u:X4} LR=0x{cpu.Registers.LR:X8}");
+            cpu.Registers.R0 = addr | 1u;
+        }
+        else
+        {
+            System.Console.Error.WriteLine($"  [romtbl] Unknown ROM code=0x{code:X4} ('{(char)(code & 0xFF)}{(char)((code >> 8) & 0xFF)}') at LR=0x{cpu.Registers.LR:X8} R0=0x{cpu.Registers.R0:X8} R1=0x{cpu.Registers.R1:X8} SP=0x{cpu.Registers.SP:X8} cycles={cpu.Cycles} → returning no-op");
+            cpu.Registers.R0 = 0x0181u;  // BX LR (safe no-op instead of NULL)
+        }
+    }
+
+    /// <summary>
+    /// Native hook for <c>flash_range_erase(uint32_t flash_offs, size_t count, ...)</c>.
+    /// Fills the specified flash region with 0xFF (erased state).
+    /// Called by the CPU when PC = 0x0190 (registered in <see cref="LoadFlash"/>).
+    /// </summary>
+    private unsafe void FlashEraseHook(Core.Cpu.CortexM0Plus cpu)
+    {
+        var offset = (int)(cpu.Registers.R0 & (Bus.FlashSize - 1));
+        var count  = (int)cpu.Registers.R1;
+        if (count < 0 || offset + count > (int)Bus.FlashSize) count = (int)Bus.FlashSize - offset;
+        if (count > 0)
+            new Span<byte>(Bus.PtrFlash + offset, count).Fill(0xFF);
+    }
+
+    /// <summary>
+    /// Native hook for <c>flash_range_program(uint32_t flash_offs, const uint8_t* data, size_t count)</c>.
+    /// Copies bytes from SRAM (or anywhere in the address space) into the emulated flash.
+    /// Called by the CPU when PC = 0x01A0 (registered in <see cref="LoadFlash"/>).
+    /// </summary>
+    private unsafe void FlashProgramHook(Core.Cpu.CortexM0Plus cpu)
+    {
+        var flashOffset = (int)(cpu.Registers.R0 & (Bus.FlashSize - 1));
+        var srcAddr     = cpu.Registers.R1;
+        var count       = (int)cpu.Registers.R2;
+        if (count < 0 || flashOffset + count > (int)Bus.FlashSize)
+            count = (int)Bus.FlashSize - flashOffset;
+        for (var i = 0; i < count; i++)
+            Bus.PtrFlash[flashOffset + i] = Bus.ReadByte(srcAddr + (uint)i);
+    }
+
+    /// <summary>
+    /// Native hook for bootrom memcpy44: copies n bytes (arbitrary count) from src to dst.
+    /// Signature: void* memcpy44(void* dst, const void* src, size_t n) → R0=dst
+    /// </summary>
+    private unsafe void Memcpy44Hook(Core.Cpu.CortexM0Plus cpu)
+    {
+        var dst = cpu.Registers.R0;
+        var src = cpu.Registers.R1;
+        var n   = (int)cpu.Registers.R2;
+        for (var i = 0; i < n; i++)
+            Bus.WriteByte(dst + (uint)i, Bus.ReadByte(src + (uint)i));
+        // R0 = original dst (already set, unchanged)
+    }
+
+    /// <summary>
+    /// Native hook for bootrom memset4: fills n bytes with value c.
+    /// Signature: void* memset4(void* dst, uint8_t c, size_t n) → R0=dst
+    /// The real RP2040 bootrom 'MS' function handles arbitrary n.
+    /// </summary>
+    private unsafe void Memset4Hook(Core.Cpu.CortexM0Plus cpu)
+    {
+        var dst = cpu.Registers.R0;
+        var val = (byte)(cpu.Registers.R1 & 0xFF);
+        var n   = (int)cpu.Registers.R2;
+        for (var i = 0; i < n; i++)
+            Bus.WriteByte(dst + (uint)i, val);
+        // R0 = original dst (already set, unchanged)
+    }
+
+    private static void Popcount32Hook(Core.Cpu.CortexM0Plus cpu)
+        => cpu.Registers.R0 = (uint)System.Numerics.BitOperations.PopCount(cpu.Registers.R0);
+
+    private static void Reverse32Hook(Core.Cpu.CortexM0Plus cpu)
+    {
+        var v = cpu.Registers.R0;
+        v = ((v & 0xFFFF0000u) >> 16) | ((v & 0x0000FFFFu) << 16);
+        v = ((v & 0xFF00FF00u) >>  8) | ((v & 0x00FF00FFu) <<  8);
+        v = ((v & 0xF0F0F0F0u) >>  4) | ((v & 0x0F0F0F0Fu) <<  4);
+        v = ((v & 0xCCCCCCCCu) >>  2) | ((v & 0x33333333u) <<  2);
+        v = ((v & 0xAAAAAAAAu) >>  1) | ((v & 0x55555555u) <<  1);
+        cpu.Registers.R0 = v;
+    }
+
+    private static void Clz32Hook(Core.Cpu.CortexM0Plus cpu)
+        => cpu.Registers.R0 = (uint)System.Numerics.BitOperations.LeadingZeroCount(cpu.Registers.R0);
+
+    private static void Ctz32Hook(Core.Cpu.CortexM0Plus cpu)
+        => cpu.Registers.R0 = (uint)System.Numerics.BitOperations.TrailingZeroCount(cpu.Registers.R0);
+
+    /// 
+    /// The stub implements the ROM API (rom_table_lookup, memcpy44, memset4) using
+    /// hand-assembled ARM Thumb opcodes.  Entry [0] (initial SP) and entry [1]
+    /// (reset PC) are left at zero and must be patched by the caller after
+    /// locating the firmware's own vector table.
+    /// </summary>
+    private static unsafe void WriteBootRomStub(byte* rom)
+    {
+        // ── helpers ─────────────────────────────────────────────────────────
+        static void W16(byte* p, int off, ushort v)
+        {
+            p[off]     = (byte)(v & 0xFF);
+            p[off + 1] = (byte)(v >> 8);
+        }
+        static void W32(byte* p, int off, uint v)
+        {
+            p[off]     = (byte)( v        & 0xFF);
+            p[off + 1] = (byte)((v >>  8) & 0xFF);
+            p[off + 2] = (byte)((v >> 16) & 0xFF);
+            p[off + 3] = (byte)( v >> 24);
+        }
+
+        // ── Exception vector table (0x0000 – 0x003F + IRQs) ─────────────────
+        //   Entry [0] = Initial SP    ← patched later by LoadFlash
+        //   Entry [1] = Reset PC      ← patched later by LoadFlash
+        //   All others → default_handler (BX LR at 0x0180) with Thumb bit
+        const uint defaultHandler = 0x0181u;
+        W32(rom, 0x0000, 0x20041000);       // BootROM initial SP (overwritten later)
+        for (int i = 1; i < 16; i++)
+            W32(rom, i * 4, defaultHandler);
+        for (int i = 0; i < 26; i++)        // RP2040 has 26 external IRQs
+            W32(rom, 0x0040 + i * 4, defaultHandler);
+
+        // ── ROM API infrastructure (in reserved Cortex-M0+ vector slots) ─────
+        //   0x0010 – ROM code magic, 0x0012 – version, 0x0014 – func_table_ptr,
+        //   0x0016 – data_table_ptr, 0x0018 – rom_table_lookup fn ptr
+        W16(rom, 0x0010, 0x0210);   // ROM code magic (matches real RP2040 BootROM)
+        W16(rom, 0x0012, 0x02);     // ROM version 2
+        W16(rom, 0x0014, 0x0200);   // function table at 0x0200
+        W16(rom, 0x0016, 0x0250);   // data table at 0x0250 (just a terminator)
+        W16(rom, 0x0018, 0x0061);   // rom_table_lookup at 0x0060 (Thumb bit = 0x0061)
+
+        // ── default_handler at 0x0180: BX LR ─────────────────────────────────
+        W16(rom, 0x0180, 0x4770);   // BX LR
+
+        // ── rom_table_lookup at 0x0060 ────────────────────────────────────────
+        //   r0 = table (uint16_t*), r1 = code → r0 = func addr (with Thumb bit) or 0
+        //   Branch offsets: ARMv6-M PC = instruction_address + 4 when computing branch target.
+        //   loop(0x60): ldrh r2,[r0]; cbz r2,not_found(0x74); uxth r3,r1; cmp r2,r3
+        //               beq found(0x6E); adds r0,#4; b loop(0x60)
+        //   found(0x6E): ldrh r0,[r0,#2]; bx lr
+        //   not_found(0x74): movs r0,#0; bx lr
+        ReadOnlySpan<ushort> lookup =
+        [
+            0x8802,  // 0x0060  LDRH r2, [r0, #0]             ; loop:
+            0xB13A,  // 0x0062  CBZ  r2, not_found  ; PC=0x0066, +14 → 0x0074
+            0xB28B,  // 0x0064  UXTH r3, r1
+            0x429A,  // 0x0066  CMP  r2, r3
+            0xD001,  // 0x0068  BEQ  found          ; PC=0x006C, +1×2=2 → 0x006E
+            0x3004,  // 0x006A  ADDS r0, r0, #4
+            0xE7F8,  // 0x006C  B    loop            ; PC=0x0070, -8×2=-16 → 0x0060
+            0x8840,  // 0x006E  LDRH r0, [r0, #2]   ; found:
+            0x4770,  // 0x0070  BX   LR
+            0x2000,  // 0x0072  MOVS r0, #0          ; not_found:
+            0x4770,  // 0x0074  BX   LR
+        ];
+        for (int i = 0; i < lookup.Length; i++) W16(rom, 0x0060 + i * 2, lookup[i]);
+
+        // ── memcpy44 at 0x0100 ────────────────────────────────────────────────
+        //   void *memcpy44(void *dst, const void *src, uint n)  -- n bytes (multiple of 4)
+        //   Uses CBZ up-front guard so n=0 returns immediately without corrupting memory.
+        //   Layout: 0x0100 – 0x0110 (9 halfwords = 18 bytes)
+        ReadOnlySpan<ushort> memcpy44 =
+        [
+            0xB510,  // 0x0100  PUSH {r4, lr}
+            0x4604,  // 0x0102  MOV  r4, r0               ; save original dst
+            0xB11A,  // 0x0104  CBZ  r2, done (+6)         ; PC=0x0108, +6 → 0x010E
+            0xC908,  // 0x0106  LDMIA r1!, {r3}            ; loop: r3 = *src++
+            0xC008,  // 0x0108  STMIA r0!, {r3}            ; *dst++ = r3
+            0x3A04,  // 0x010A  SUBS r2, r2, #4
+            0xD1FB,  // 0x010C  BNE  loop          (-10)   ; PC=0x0110, -10 → 0x0106
+            0x4620,  // 0x010E  MOV  r0, r4                ; done: return original dst
+            0xBD10,  // 0x0110  POP  {r4, pc}
+        ];
+        for (int i = 0; i < memcpy44.Length; i++) W16(rom, 0x0100 + i * 2, memcpy44[i]);
+
+        // ── memset4  at 0x0120 ────────────────────────────────────────────────
+        //   void *memset4(void *dst, uint8_t c, uint n)
+        //   Fills n bytes (multiple of 4) with word pattern (c,c,c,c); returns dst.
+        //   Uses CBZ up-front guard: decrements n AFTER each store (no off-by-one).
+        //   Layout: 0x0120 – 0x0138 (13 halfwords = 26 bytes)
+        ReadOnlySpan<ushort> memset4 =
+        [
+            0xB510,  // 0x0120  PUSH {r4, lr}
+            0x4604,  // 0x0122  MOV  r4, r0              ; save original dst
+            0xB2C9,  // 0x0124  UXTB r1, r1              ; r1 = c & 0xFF (zero-extend)
+            0x020B,  // 0x0126  LSLS r3, r1, #8
+            0x4319,  // 0x0128  ORRS r1, r3              ; r1 = c | (c<<8)
+            0x040B,  // 0x012A  LSLS r3, r1, #16
+            0x4319,  // 0x012C  ORRS r1, r3              ; r1 = 4-byte word pattern
+            0xB112,  // 0x012E  CBZ  r2, done (+4)        ; PC=0x0132, +4 → 0x0136
+            0xC002,  // 0x0130  STMIA r0!, {r1}          ; loop: *dst++ = word
+            0x3A04,  // 0x0132  SUBS r2, r2, #4
+            0xD1FC,  // 0x0134  BNE  loop          (-8)   ; PC=0x0138, -8 → 0x0130
+            0x4620,  // 0x0136  MOV  r0, r4              ; done: return original dst
+            0xBD10,  // 0x0138  POP  {r4, pc}
+        ];
+        for (int i = 0; i < memset4.Length; i++) W16(rom, 0x0120 + i * 2, memset4[i]);
+
+        // ── Native-hook stubs ─────────────────────────────────────────────────
+        //   0x0190: flash_range_erase  hook  — BX LR fallback (hook fires first)
+        //   0x01A0: flash_range_program hook — BX LR fallback
+        //   0x01C0: popcount32, 0x01D0: reverse32, 0x01E0: clz32, 0x01F0: ctz32
+        W16(rom, 0x0190, 0x4770);  // BX LR
+        W16(rom, 0x01A0, 0x4770);  // BX LR
+        W16(rom, 0x01C0, 0x4770);  // BX LR (popcount32 — native hook)
+        W16(rom, 0x01D0, 0x4770);  // BX LR (reverse32 — native hook)
+        W16(rom, 0x01E0, 0x4770);  // BX LR (clz32 — native hook)
+        W16(rom, 0x01F0, 0x4770);  // BX LR (ctz32 — native hook)
+
+        // ── Function lookup table at 0x0200 ───────────────────────────────────
+        //   Format: pairs of uint16_t {code, func_ptr}, terminated by {0, 0}.
+        //   'RE' and 'RP' point to native-hook stubs so C# code can modify flash.
+        ReadOnlySpan<ushort> funcTable =
+        [
+            0x434D, 0x0101,  // 'MC' = MEMCPY / MEMCPY44     (Thumb bit: 0x0100|1)
+            0x534D, 0x0121,  // 'MS' = MEMSET / MEMSET4      (Thumb bit: 0x0120|1)
+            0x4649, 0x0181,  // 'IF' = connect_internal_flash (no-op BX LR)
+            0x5845, 0x0181,  // 'EX' = flash_exit_xip         (no-op BX LR)
+            0x4552, 0x0191,  // 'RE' = flash_range_erase  →  native hook at 0x0190
+            0x5052, 0x01A1,  // 'RP' = flash_range_program → native hook at 0x01A0
+            0x4346, 0x0181,  // 'FC' = flash_flush_cache       (no-op BX LR)
+            0x5843, 0x0181,  // 'CX' = flash_enter_cmd_xip    (no-op BX LR)
+            0x0000, 0x0000,  // terminator
+        ];
+        for (int i = 0; i < funcTable.Length; i++) W16(rom, 0x0200 + i * 2, funcTable[i]);
+
+        // Data table at 0x0250: just a terminator
+        W16(rom, 0x0250, 0x0000);
     }
 
     /// <summary>Load a binary image into BootROM at 0x00000000 (max 16 KB).</summary>
