@@ -22,13 +22,14 @@ public static class FirmwareCache
         if (File.Exists(path) && new FileInfo(path).Length > 0)
             return path;
 
-        // Official MicroPython release URL for Raspberry Pi Pico
-        var url = $"https://github.com/micropython/micropython/releases/download/{version}/rp2-pico-{version}.uf2";
-
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("RP2040Sharp-IntegrationTests/1.0");
+
+            // Resolve the exact filename (includes build date) from the download index
+            var url = await ResolveMicroPythonUrlAsync(http, version);
+            if (url is null) return null;
 
             var bytes = await http.GetByteArrayAsync(url);
             await File.WriteAllBytesAsync(path, bytes);
@@ -41,6 +42,29 @@ public static class FirmwareCache
                 File.Delete(path);
             return null;
         }
+    }
+
+    private static async Task<string?> ResolveMicroPythonUrlAsync(HttpClient http, string version)
+    {
+        // Firmware listed at https://micropython.org/download/RPI_PICO/
+        // Entries look like: /resources/firmware/RPI_PICO-{date}-{version}.uf2
+        var page = await http.GetStringAsync("https://micropython.org/download/RPI_PICO/");
+        // Filenames are RPI_PICO-{date}-v{semver}.uf2 — keep the v prefix
+        var tag = version.StartsWith('v') ? version : "v" + version;
+        const string needle = "/resources/firmware/RPI_PICO-";
+        var search = $"-{tag}.uf2";  // e.g. "-v1.21.0.uf2" (no trailing quote — rel slice excludes it)
+
+        var start = page.IndexOf(needle, StringComparison.Ordinal);
+        while (start >= 0)
+        {
+            var end = page.IndexOf('"', start + 1);
+            if (end < 0) break;
+            var rel = page[start..end];
+            if (rel.EndsWith(search, StringComparison.OrdinalIgnoreCase))
+                return "https://micropython.org" + rel;
+            start = page.IndexOf(needle, start + 1, StringComparison.Ordinal);
+        }
+        return null;
     }
 
     /// <summary>
