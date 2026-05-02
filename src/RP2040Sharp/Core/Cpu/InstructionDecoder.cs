@@ -140,16 +140,22 @@ public sealed unsafe class InstructionDecoder : IDisposable
             new OpcodeRule(0xFF80, 0xB000, &ArithmeticOps.AddSpImmediate7),
             // Sub (SP - imm)
             new OpcodeRule(0xFF80, 0xB080, &ArithmeticOps.SubSp),
+            // Stack Operations — must be before CBZ/CBNZ (0xF900 mask) since 0xFF00 is more specific
+            // but CBZ/CBNZ would match 0xB5xx (PUSH with LR) due to broader mask 0xF900
+            new OpcodeRule(0xFF00, 0xBC00, &MemoryOps.Pop),
+            new OpcodeRule(0xFF00, 0xBD00, &MemoryOps.PopPc),
+            new OpcodeRule(0xFF00, 0xB400, &MemoryOps.Push),
+            new OpcodeRule(0xFF00, 0xB500, &MemoryOps.PushLr),
             // ================================================================
             // GROUP 5b: Mask 0xFB00 — CBZ / CBNZ
             // NOTE: Hint instructions (NOP/WFE/WFI/SEV) overlap with CBNZ(i=1)
             // but are already registered in Group 1 with exact match, so they
             // take priority in the lookup table.
             // ================================================================
-            // CBZ  Rn, label
-            new OpcodeRule(0xFB00, 0xB300, &FlowOps.Cbz),
-            // CBNZ Rn, label
-            new OpcodeRule(0xFB00, 0xBB00, &FlowOps.Cbnz),
+            // CBZ  Rn, label  (0xB1xx i=0, 0xB3xx i=1)
+            new OpcodeRule(0xF900, 0xB100, &FlowOps.Cbz),
+            // CBNZ Rn, label (0xB9xx i=0, 0xBBxx i=1)
+            new OpcodeRule(0xF900, 0xB900, &FlowOps.Cbnz),
             // ================================================================
             // GROUP 6: Mask 0xFF00 (8 bits significant - Broad Categories)
             // ================================================================
@@ -169,8 +175,6 @@ public sealed unsafe class InstructionDecoder : IDisposable
             // Stack Operations
             new OpcodeRule(0xFF00, 0xBC00, &MemoryOps.Pop),
             new OpcodeRule(0xFF00, 0xBD00, &MemoryOps.PopPc),
-            new OpcodeRule(0xFF00, 0xB400, &MemoryOps.Push),
-            new OpcodeRule(0xFF00, 0xB500, &MemoryOps.PushLr),
             // Conditional Branches (T1)
             // SVC (0xDF00) is technically caught here if not handled separately.
             // Ensure the handler filters 0xF (SVC) or add a specific SVC rule with higher priority.
@@ -303,6 +307,7 @@ public sealed unsafe class InstructionDecoder : IDisposable
     {
         // ARMv6-M B1.5.6: executing an UNDEFINED encoding raises HardFault.
         // Do not throw a C# exception — let the handler vector take over.
+        System.Console.Error.WriteLine($"  [undef] Undefined instruction 0x{opcode:X4} at PC=0x{cpu.Registers.PC:X8} LR=0x{cpu.Registers.LR:X8} IPSR={cpu.Registers.IPSR}");
         cpu.TriggerHardFault();
     }
 

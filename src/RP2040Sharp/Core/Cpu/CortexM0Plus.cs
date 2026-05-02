@@ -30,6 +30,21 @@ public sealed unsafe class CortexM0Plus
     /// <summary>Called when a BKPT instruction is executed. Parameter is the imm8 value.</summary>
     public Action<byte>? OnBreakpoint;
 
+    /// <summary>
+    /// Native hooks: when the PC equals a registered address (Thumb bit stripped), the
+    /// corresponding delegate is called instead of fetching/executing an instruction.
+    /// The delegate is responsible for updating registers as needed.  After the delegate
+    /// returns the CPU automatically performs <c>PC = LR &amp; ~1</c> (same as BX LR).
+    /// </summary>
+    private Dictionary<uint, Action<CortexM0Plus>>? _nativeHooks;
+    private int _excTraceCount;
+
+    public void RegisterNativeHook(uint address, Action<CortexM0Plus> hook)
+    {
+        _nativeHooks ??= new Dictionary<uint, Action<CortexM0Plus>>();
+        _nativeHooks[address & ~1u] = hook;
+    }
+
     public CortexM0Plus(BusInterconnect bus)
     {
         Bus = bus;
@@ -40,7 +55,7 @@ public sealed unsafe class CortexM0Plus
     public void Reset()
     {
         Registers.SP = Bus.ReadWord(0x00000000);
-        Registers.PC = Bus.ReadWord(0x00000004);
+        Registers.PC = Bus.ReadWord(0x00000004) & 0xFFFFFFFE;  // strip Thumb bit, same as ExceptionEntry
 
         UpdateFetchCache(Registers.PC);
 
@@ -101,9 +116,18 @@ public sealed unsafe class CortexM0Plus
                 }
             }
 
-            // WFI/WFE sleep: skip fetch until woken by interrupt
+            // WFI/WFE sleep: bail out of the current batch, crediting the unused
+            // instruction budget as elapsed cycles so the outer Machine.Run can
+            // advance time-aware peripherals (Timer, Watchdog, ...) and let an
+            // alarm IRQ wake us on the next batch.  Without this, a CPU that
+            // sleeps on the very first instruction of a batch produces delta=0
+            // and the simulation deadlocks: the timer never ticks → the alarm
+            // never fires → WFE never returns.
             if (Registers.Waiting)
-                continue;
+            {
+                Cycles += (uint)(instructions + 1);
+                return;
+            }
 
             var pc = Registers.PC;
 
@@ -120,6 +144,7 @@ public sealed unsafe class CortexM0Plus
                 if (fetchPtr == null)
                 {
                     // PC landed in an un-executable region — raise HardFault per ARMv6-M spec
+                    System.Console.Error.WriteLine($"  [fetch-fault] Fetch fault at PC=0x{Registers.PC:X8} LR=0x{Registers.LR:X8} R0=0x{Registers.R0:X8} R1=0x{Registers.R1:X8} R2=0x{Registers.R2:X8} R3=0x{Registers.R3:X8} SP=0x{Registers.SP:X8}");
                     ExceptionEntry(EXC_HARDFAULT);
                     UpdateFetchCache(Registers.PC);
                     fetchPtr  = _fetchPtr;
@@ -130,6 +155,31 @@ public sealed unsafe class CortexM0Plus
             }
 
             // ULTRA-FAST FETCH
+            // Check for native hooks (BootROM or Flash regions) before normal dispatch.
+            if ((regionId == BusInterconnect.REGION_BOOTROM || regionId == BusInterconnect.REGION_FLASH)
+                && _nativeHooks != null
+                && _nativeHooks.TryGetValue(pc, out var nativeHook))
+            {
+                var pcBeforeHook = Registers.PC; // equals pc (not yet advanced; advance is only in normal dispatch)
+                nativeHook(this);
+                // If the hook itself changed PC (e.g., to redirect execution), honor that.
+                // Otherwise do the standard BX LR return.
+                if (Registers.PC == pcBeforeHook)
+                {
+                    var hookLr = Registers.LR;
+                    if (hookLr >= 0xFFFFFFF0)
+                        ExceptionReturn(hookLr);
+                    else
+                        Registers.PC = hookLr & ~1u;
+                }
+                UpdateFetchCache(Registers.PC);
+                fetchPtr  = _fetchPtr;
+                fetchMask = _fetchMask;
+                regionId  = _currentRegionId;
+                Cycles++;
+                continue;
+            }
+
             var opcode = Unsafe.ReadUnaligned<ushort>(fetchPtr + (pc & fetchMask));
 
             // PRE-UPDATE PC (Speculative)
@@ -179,6 +229,8 @@ public sealed unsafe class CortexM0Plus
     [MethodImpl(MethodImplOptions.NoInlining)]
     public void ExceptionEntry(uint exceptionNumber)
     {
+        if (exceptionNumber == EXC_HARDFAULT)
+            System.Console.Error.WriteLine($"  [hardfault] HardFault entry: callerPC=0x{Registers.PC:X8} callerLR=0x{Registers.LR:X8} SP=0x{Registers.SP:X8} IPSR={Registers.IPSR}");
         var framePtr = Registers.SP;
 
         var needsAlign = (framePtr & 4) != 0;
@@ -227,6 +279,11 @@ public sealed unsafe class CortexM0Plus
         var vectorAddress = vtor + (exceptionNumber * 4);
 
         var targetPc = Bus.ReadWord(vectorAddress);
+        _excTraceCount++;
+        if (_excTraceCount <= 100)
+        {
+            System.Console.Error.WriteLine($"  [exc] exc#{exceptionNumber} VTOR=0x{vtor:X8} vector@0x{vectorAddress:X8}=0x{targetPc:X8} callerPC=0x{(Registers.PC & 0xFFFFFFFEu):X8} cycles={Cycles}");
+        }
         Registers.PC = targetPc & 0xFFFFFFFE;
 
         Cycles += 12; // Exception Entry cost (aprox 12-15 cycles)

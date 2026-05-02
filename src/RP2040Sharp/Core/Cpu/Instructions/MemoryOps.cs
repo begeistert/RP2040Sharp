@@ -89,6 +89,7 @@ public static unsafe class MemoryOps
         var sp = cpu.Registers.SP;
         var finalSp = sp + ((regCount + 1) * 4);
 
+        uint newPc;
         if ((sp >> 28) == BusInterconnect.REGION_SRAM)
         {
             var rawPtr = cpu.Bus.PtrSram + (sp & BusInterconnect.MASK_SRAM);
@@ -100,9 +101,7 @@ public static unsafe class MemoryOps
                 rawPtr += 4;
                 mask &= (mask - 1);
             }
-            var newPc = Unsafe.ReadUnaligned<uint>(rawPtr);
-
-            cpu.Registers.PC = newPc & 0xFFFFFFFE;
+            newPc = Unsafe.ReadUnaligned<uint>(rawPtr);
         }
         else
         {
@@ -113,11 +112,19 @@ public static unsafe class MemoryOps
                 sp += 4;
                 mask &= (mask - 1);
             }
-            var newPc = cpu.Bus.ReadWord(sp);
-            cpu.Registers.PC = newPc & 0xFFFFFFFE;
+            newPc = cpu.Bus.ReadWord(sp);
         }
 
+        // SP must reflect the post-pop value before ExceptionReturn unstacks the
+        // architectural frame, otherwise the frame is read starting at the
+        // EXC_RETURN word itself (corrupting R0..xPSR).
         cpu.Registers.SP = finalSp;
+
+        if (newPc >= 0xFFFFFFF0)
+            cpu.ExceptionReturn(newPc);
+        else
+            cpu.Registers.PC = newPc & 0xFFFFFFFE;
+
         cpu.Cycles += 4 + regCount;
     }
 

@@ -164,7 +164,7 @@ public static class FlowOps
     {
         var rm = (opcode >> 3) & 0xf;
         var target = cpu.Registers[rm];
-        if (target >= 0xFFFFFFF0 && cpu.Registers.IPSR != 0)
+        if (target >= 0xFFFFFFF0)
         {
             cpu.ExceptionReturn(target);
             return;
