@@ -83,10 +83,10 @@ public sealed class ClocksPeripheral : IMemoryMappedDevice
                 ReadClockDomain((a / 0x0C), (a % 0x0C)),
             CLK_REF_CTRL        => _ctrl[4],
             CLK_REF_DIV         => _div[4],
-            CLK_REF_SELECTED    => 1u,   // glitchless mux: clock selected
+            CLK_REF_SELECTED    => 1u << (int)(_ctrl[4] & 0x3u),  // SRC bits [1:0]: ROSC=0, AUX=1, XOSC=2
             CLK_SYS_CTRL        => _ctrl[5],
             CLK_SYS_DIV         => _div[5],
-            CLK_SYS_SELECTED    => 1u,
+            CLK_SYS_SELECTED    => 1u << (int)(_ctrl[5] & 0x1u),  // SRC bit [0]: CLK_REF=0, AUX=1
             CLK_PERI_CTRL       => _ctrl[6],
             CLK_PERI_SELECTED   => 1u,
             CLK_USB_CTRL        => _ctrl[7],

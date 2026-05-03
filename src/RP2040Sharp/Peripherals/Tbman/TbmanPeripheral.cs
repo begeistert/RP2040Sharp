@@ -10,8 +10,8 @@ public sealed class TbmanPeripheral : IMemoryMappedDevice
 {
     private const uint PLATFORM = 0x00;
 
-    // ASIC bit (bit 1) — match SysInfo.PLATFORM for consistency
-    private const uint PLATFORM_ASIC = 0x2;
+    // ASIC bit is bit 0 (0x1); FPGA bit is bit 1 (0x2). Return ASIC only.
+    private const uint PLATFORM_ASIC = 0x1;
 
     public uint Size => 0x1000;
 
