@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using RP2040.TestKit;
 using RP2040.TestKit.Boards;
 
@@ -5,7 +6,7 @@ namespace RP2040Sharp.Demo;
 
 /// <summary>
 /// RP2040Sharp Demo — boots MicroPython on the emulated Raspberry Pi Pico
-/// and drives the REPL over the emulated UART to execute Python snippets.
+/// and drives the REPL over the emulated USB-CDC to execute Python snippets.
 ///
 /// Usage:
 ///   dotnet run --project src/RP2040Sharp.Demo
@@ -13,6 +14,7 @@ namespace RP2040Sharp.Demo;
 internal static class Program
 {
     private const string MicroPythonVersion = "v1.21.0";
+    private const double RP2040_CLK_HZ = 125_000_000.0;
 
     private static async Task<int> Main()
     {
@@ -40,98 +42,85 @@ internal static class Program
         using var pico = new PicoSimulation();
         pico.LoadFlash(flash);
 
-        // Capture BKPT (panic halt) — report the return address so we know the caller
         string? panicInfo = null;
         pico.Cpu.OnBreakpoint = imm8 =>
         {
             var lr = pico.Cpu.Registers.LR & ~1u;
-            var r0 = pico.Cpu.Registers.R0;
-            var ipsr = pico.Cpu.Registers.IPSR;
-            Console.Error.WriteLine($"  [bkpt] BKPT #{imm8}: PC=0x{pico.Cpu.Registers.PC:X8} LR=0x{lr:X8} R0=0x{r0:X8} IPSR={ipsr}");
-            panicInfo ??= $"BKPT #{imm8}: panic called from LR=0x{lr:X8} R0=0x{r0:X8} IPSR={ipsr}";
+            panicInfo ??= $"BKPT #{imm8}: panic at LR=0x{lr:X8} R0=0x{pico.Cpu.Registers.R0:X8}";
         };
-        // Hook into panic() itself to capture who called it
-        pico.Cpu.RegisterNativeHook(0x1003054C, cpu =>
-        {
-            var callerLr = cpu.Registers.LR & ~1u;
-            var msg = cpu.Registers.R0; // panic message pointer (may be null for simple panic)
-            Console.Error.WriteLine($"  [panic] panic() called from LR=0x{callerLr:X8} R0=0x{msg:X8}");
-            // Let execution continue into the real panic code by *not* doing anything here
-            // (but the hook mechanism replaces with BX LR — so we must re-emit a fake "call")
-        });
-        // Hook into hard_assert wrapper to capture its caller
-        pico.Cpu.RegisterNativeHook(0x1003057C, cpu =>
-        {
-            var callerLr = cpu.Registers.LR & ~1u;
-            Console.Error.WriteLine($"  [hard_assert] called from LR=0x{callerLr:X8} R0=0x{cpu.Registers.R0:X8} R1=0x{cpu.Registers.R1:X8} R2=0x{cpu.Registers.R2:X8} R3=0x{cpu.Registers.R3:X8}");
-        });
 
-        Console.Write("[USB-CDC] Tracing boot...");
-        Console.Error.WriteLine($"\n  [trace] Initial PC=0x{pico.Cpu.Registers.PC:X8} SP=0x{pico.Cpu.Registers.SP:X8}");
+        var wallClock = Stopwatch.StartNew();
 
-        // Run in batches until USB-CDC enumerates and produces output, or BootROM is entered
-        var bootRomHit = false;
-        var prevCycles = pico.Cpu.Cycles;
+        Console.Write("[USB-CDC] Waiting for MicroPython REPL...");
         for (var ms = 0; ms < 20_000 && pico.UsbCdc.ByteCount == 0; ms += 100)
         {
             try { pico.RunMilliseconds(100); }
-            catch (Exception ex) {
-                Console.Error.WriteLine($"  [crash] Exception at ms={ms+100}: {ex.GetType().Name}: {ex.Message}");
-                Console.Error.WriteLine($"  [crash] PC=0x{pico.Cpu.Registers.PC:X8} SP=0x{pico.Cpu.Registers.SP:X8} LR=0x{pico.Cpu.Registers.LR:X8}");
-                Console.Error.WriteLine($"  [crash] R0=0x{pico.Cpu.Registers.R0:X8} R1=0x{pico.Cpu.Registers.R1:X8} CDC={pico.UsbCdc.ByteCount}B UART={pico.Uart0.ByteCount}B");
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"\nCrash at sim {ms + 100}ms: {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine($"PC=0x{pico.Cpu.Registers.PC:X8}  LR=0x{pico.Cpu.Registers.LR:X8}");
                 break;
             }
-            var pc = pico.Cpu.Registers.PC;
-            if ((pc >> 28) == 0 && pc > 8 && !bootRomHit)
-            {
-                Console.Error.WriteLine($"  [trace] BootROM entered at PC=0x{pc:X8} after {ms+100}ms sim");
-                bootRomHit = true;
-            }
-            if (pico.UsbCdc.ByteCount > 0)
-                Console.Error.WriteLine($"  [trace] First CDC byte at {ms+100}ms sim (enumerated={pico.UsbCdc.IsConnected})");
-            // Print PC snapshot every simulated second to track progress
-            if ((ms % 1000) == 900)
-                Console.Error.WriteLine($"  [trace] {ms+100}ms: PC=0x{pc:X8} CDC={pico.UsbCdc.ByteCount}B (enum={pico.UsbCdc.IsConnected}) UART={pico.Uart0.ByteCount}B");
         }
 
         var booted = pico.RunUntilOutput(pico.UsbCdc, ">>> ", timeoutMs: 60_000);
         if (!booted)
         {
-            // Print last 10 seconds snapshot
-            for (var s = 0; s < 10; s++)
-            {
-                pico.RunMilliseconds(1000);
-                Console.Error.WriteLine($"  [snap] PC=0x{pico.Cpu.Registers.PC:X8} CDC={pico.UsbCdc.ByteCount}B text='{pico.UsbCdc.Text.Replace("\r","\\r").Replace("\n","\\n")[..Math.Min(100, pico.UsbCdc.Text.Length)]}'");
-            }
-            Console.WriteLine();
-            Console.Error.WriteLine($"  [debug] CDC captured {pico.UsbCdc.ByteCount} bytes hex: {BitConverter.ToString(pico.UsbCdc.Bytes.Take(64).ToArray())}");
-            Console.Error.WriteLine($"  [debug] CDC text: '{pico.UsbCdc.Text.Replace("\r", "\\r").Replace("\n", "\\n")[..Math.Min(500, pico.UsbCdc.Text.Length)]}'");
-            Console.Error.WriteLine($"  [debug] UART captured {pico.Uart0.ByteCount} bytes");
-            Console.Error.WriteLine($"  [debug] CPU cycles executed: {pico.Cpu.Cycles:N0}");
-            Console.Error.WriteLine($"  [debug] CDC enumerated: {pico.UsbCdc.IsConnected}");
-            if (panicInfo is not null)
-                Console.Error.WriteLine($"  [debug] {panicInfo}");
+            var text = pico.UsbCdc.Text.Replace("\r", "\\r").Replace("\n", "\\n");
+            Console.Error.WriteLine($"\nCDC output: '{text[..Math.Min(500, text.Length)]}'");
+            if (panicInfo is not null) Console.Error.WriteLine(panicInfo);
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("ERROR: MicroPython did not produce a REPL prompt within 60 s.");
+            Console.WriteLine("\nERROR: MicroPython did not produce a REPL prompt within 60 s.");
             Console.ResetColor();
             return 1;
         }
-        Console.WriteLine(" ready!");
+
+        var bootCycles = pico.Cpu.Cycles;
+        var bootWallMs = wallClock.Elapsed.TotalMilliseconds;
+        var bootSimMs  = bootCycles / (RP2040_CLK_HZ / 1000.0);
+        Console.WriteLine($" ready!  ({FormatTime(bootWallMs)} wall · {bootSimMs / 1000.0:F2} s simulated)");
         Console.WriteLine(new string('─', 60));
         Console.WriteLine();
 
         // ── 3. REPL demo ──────────────────────────────────────────────────────
-        RunDemo(pico, "1 + 1",                           expectedOutput: "2");
-        RunDemo(pico, "2 ** 10",                         expectedOutput: "1024");
-        RunDemo(pico, "import sys; print(sys.platform)", expectedOutput: "rp2");
-        RunDemo(pico, "print('Hello from RP2040Sharp!')", expectedOutput: "Hello from RP2040Sharp!");
+        RunDemo(pico, "1 + 1",                               expectedOutput: "2");
+        RunDemo(pico, "2 ** 10",                             expectedOutput: "1024");
+        RunDemo(pico, "import sys; print(sys.platform)",     expectedOutput: "rp2");
+        RunDemo(pico, "print('Hello from RP2040Sharp!')",    expectedOutput: "Hello from RP2040Sharp!");
         RunDemo(pico, "import machine; print(machine.freq())", expectedOutput: null);
 
-        Console.WriteLine();
+        // ── 4. Performance report ─────────────────────────────────────────────
+        wallClock.Stop();
+        PrintPerformance(pico.Cpu.Cycles, wallClock.Elapsed);
+
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("Demo complete.");
         Console.ResetColor();
         return 0;
+    }
+
+    private static string FormatTime(double ms) =>
+        ms < 1000 ? $"{ms:F0} ms" : $"{ms / 1000.0:F2} s";
+
+    private static void PrintPerformance(long totalCycles, TimeSpan wallTime)
+    {
+        var wallMs    = wallTime.TotalMilliseconds;
+        var wallSecs  = wallTime.TotalSeconds;
+        var simSecs   = totalCycles / RP2040_CLK_HZ;
+        var mips      = totalCycles / 1_000_000.0 / wallSecs;
+        var speedup   = simSecs / wallSecs;
+
+        Console.WriteLine();
+        Console.WriteLine(new string('─', 60));
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"  Simulated cycles : {totalCycles / 1_000_000.0:F0} M");
+        Console.WriteLine($"  Wall time        : {FormatTime(wallMs)}");
+        Console.WriteLine($"  Emulated time    : {simSecs:F2} s");
+        Console.WriteLine($"  Throughput       : {mips:F0} MIPS");
+        Console.WriteLine($"  Speed vs RP2040  : {speedup:F3}×  (real hardware @ 125 MHz)");
+        Console.ResetColor();
+        Console.WriteLine(new string('─', 60));
+        Console.WriteLine();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -158,11 +147,9 @@ internal static class Program
         }
         else
         {
-            // Just wait for next prompt
             pico.RunUntilOutput(pico.UsbCdc, ">>> ", timeoutMs: 5_000);
         }
 
-        // Print whatever was emitted on CDC since the command was injected
         var output = pico.UsbCdc.Text.Split('\n')
             .Select(l => l.TrimEnd('\r'))
             .Where(l => l.Length > 0 && l != pythonCode && l != ">>> ")
@@ -199,7 +186,6 @@ internal static class Program
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(90) };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("RP2040Sharp-Demo/1.0");
 
-            // Resolve the exact filename (includes build date) from the download page
             var url = await ResolveMicroPythonUrlAsync(http, version);
             if (url is null) return null;
 
@@ -209,7 +195,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"  [debug] {ex.GetType().Name}: {ex.Message}");
+            Console.Error.WriteLine($"Download failed: {ex.GetType().Name}: {ex.Message}");
             if (File.Exists(path)) File.Delete(path);
             return null;
         }
@@ -220,10 +206,9 @@ internal static class Program
         // Firmware is listed at https://micropython.org/download/RPI_PICO/
         // Each entry looks like: /resources/firmware/RPI_PICO-{date}-{version}.uf2
         var page = await http.GetStringAsync("https://micropython.org/download/RPI_PICO/");
-        // Filenames are RPI_PICO-{date}-v{semver}.uf2 — keep the v prefix
         var tag = version.StartsWith('v') ? version : "v" + version;
         const string needle = "/resources/firmware/RPI_PICO-";
-        var search = $"-{tag}.uf2";  // e.g. "-v1.23.0.uf2" (no trailing quote — rel slice excludes it)
+        var search = $"-{tag}.uf2";
 
         var start = page.IndexOf(needle, StringComparison.Ordinal);
         while (start >= 0)
