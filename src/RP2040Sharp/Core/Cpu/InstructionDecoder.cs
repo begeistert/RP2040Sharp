@@ -307,7 +307,7 @@ public sealed unsafe class InstructionDecoder : IDisposable
     {
         // ARMv6-M B1.5.6: executing an UNDEFINED encoding raises HardFault.
         // Do not throw a C# exception — let the handler vector take over.
-        System.Console.Error.WriteLine($"  [undef] Undefined instruction 0x{opcode:X4} at PC=0x{cpu.Registers.PC:X8} LR=0x{cpu.Registers.LR:X8} IPSR={cpu.Registers.IPSR}");
+        System.Console.Error.WriteLine($"Undefined instruction 0x{opcode:X4} at PC=0x{cpu.Registers.PC:X8}");
         cpu.TriggerHardFault();
     }
 

@@ -145,7 +145,6 @@ public sealed class PpbPeripheral : IMemoryMappedDevice, ITickable
             case NVIC_ISER:
                 _cpu.Registers.EnabledInterrupts |= value;
                 _cpu.Registers.InterruptsUpdated = true;
-                System.Console.Error.WriteLine($"  [nvic-iser] ISER |= 0x{value:X8} -> EnabledInterrupts=0x{_cpu.Registers.EnabledInterrupts:X8} PendingInterrupts=0x{_cpu.Registers.PendingInterrupts:X8} PRIMASK={_cpu.Registers.PRIMASK}");
                 OnInterruptEnable?.Invoke();
                 break;
 
@@ -158,7 +157,6 @@ public sealed class PpbPeripheral : IMemoryMappedDevice, ITickable
                 break;
 
             case NVIC_ICPR:
-                System.Console.Error.WriteLine($"  [nvic-icpr] ICPR &= ~0x{value:X8} PendingBefore=0x{_cpu.Registers.PendingInterrupts:X8}");
                 _cpu.Registers.PendingInterrupts &= ~value;
                 break;
 
@@ -179,7 +177,6 @@ public sealed class PpbPeripheral : IMemoryMappedDevice, ITickable
                 break;
 
             case SCB_VTOR:
-                System.Console.Error.WriteLine($"  [vtor] VTOR write: 0x{value:X8} -> 0x{value & 0xFFFFFF00u:X8} (callerPC implied by LR)");
                 _cpu.Registers.VTOR = value & 0xFFFFFF00;
                 break;
 

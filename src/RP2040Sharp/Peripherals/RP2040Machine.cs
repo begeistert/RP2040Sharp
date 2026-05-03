@@ -413,20 +413,17 @@ public sealed class RP2040Machine : IDisposable
         [0x4653] = 0x0250,  // 'SF' = soft_float_table stub
     };
 
-    private static int _romLookupCount = 0;
     private static void RomTableLookupHook(Core.Cpu.CortexM0Plus cpu)
     {
         // r0 = table ptr (uint16_t*), r1 = code  →  r0 = func addr with Thumb bit, or 0
         var code = cpu.Registers.R1 & 0xFFFF;
         if (RomFuncTable.TryGetValue(code, out var addr))
         {
-            if (System.Threading.Interlocked.Increment(ref _romLookupCount) <= 20)
-                System.Console.Error.WriteLine($"  [romtbl] code=0x{code:X4} ('{(char)(code & 0xFF)}{(char)((code >> 8) & 0xFF)}')->0x{addr | 1u:X4} LR=0x{cpu.Registers.LR:X8}");
             cpu.Registers.R0 = addr | 1u;
         }
         else
         {
-            System.Console.Error.WriteLine($"  [romtbl] Unknown ROM code=0x{code:X4} ('{(char)(code & 0xFF)}{(char)((code >> 8) & 0xFF)}') at LR=0x{cpu.Registers.LR:X8} R0=0x{cpu.Registers.R0:X8} R1=0x{cpu.Registers.R1:X8} SP=0x{cpu.Registers.SP:X8} cycles={cpu.Cycles} → returning no-op");
+            System.Console.Error.WriteLine($"Unknown ROM function code=0x{code:X4} ('{(char)(code & 0xFF)}{(char)((code >> 8) & 0xFF)}') at LR=0x{cpu.Registers.LR:X8}");
             cpu.Registers.R0 = 0x0181u;  // BX LR (safe no-op instead of NULL)
         }
     }

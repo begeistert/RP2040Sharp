@@ -37,7 +37,6 @@ public sealed unsafe class CortexM0Plus
     /// returns the CPU automatically performs <c>PC = LR &amp; ~1</c> (same as BX LR).
     /// </summary>
     private Dictionary<uint, Action<CortexM0Plus>>? _nativeHooks;
-    private int _excTraceCount;
 
     public void RegisterNativeHook(uint address, Action<CortexM0Plus> hook)
     {
@@ -144,7 +143,6 @@ public sealed unsafe class CortexM0Plus
                 if (fetchPtr == null)
                 {
                     // PC landed in an un-executable region — raise HardFault per ARMv6-M spec
-                    System.Console.Error.WriteLine($"  [fetch-fault] Fetch fault at PC=0x{Registers.PC:X8} LR=0x{Registers.LR:X8} R0=0x{Registers.R0:X8} R1=0x{Registers.R1:X8} R2=0x{Registers.R2:X8} R3=0x{Registers.R3:X8} SP=0x{Registers.SP:X8}");
                     ExceptionEntry(EXC_HARDFAULT);
                     UpdateFetchCache(Registers.PC);
                     fetchPtr  = _fetchPtr;
@@ -230,7 +228,7 @@ public sealed unsafe class CortexM0Plus
     public void ExceptionEntry(uint exceptionNumber)
     {
         if (exceptionNumber == EXC_HARDFAULT)
-            System.Console.Error.WriteLine($"  [hardfault] HardFault entry: callerPC=0x{Registers.PC:X8} callerLR=0x{Registers.LR:X8} SP=0x{Registers.SP:X8} IPSR={Registers.IPSR}");
+            System.Console.Error.WriteLine($"HardFault: callerPC=0x{Registers.PC:X8} LR=0x{Registers.LR:X8} SP=0x{Registers.SP:X8}");
         var framePtr = Registers.SP;
 
         var needsAlign = (framePtr & 4) != 0;
@@ -279,11 +277,6 @@ public sealed unsafe class CortexM0Plus
         var vectorAddress = vtor + (exceptionNumber * 4);
 
         var targetPc = Bus.ReadWord(vectorAddress);
-        _excTraceCount++;
-        if (_excTraceCount <= 100)
-        {
-            System.Console.Error.WriteLine($"  [exc] exc#{exceptionNumber} VTOR=0x{vtor:X8} vector@0x{vectorAddress:X8}=0x{targetPc:X8} callerPC=0x{(Registers.PC & 0xFFFFFFFEu):X8} cycles={Cycles}");
-        }
         Registers.PC = targetPc & 0xFFFFFFFE;
 
         Cycles += 12; // Exception Entry cost (aprox 12-15 cycles)
@@ -297,8 +290,6 @@ public sealed unsafe class CortexM0Plus
     {
         if (irq is < 0 or > 25) return;
         var bit = 1u << irq;
-        if (irq == 5)
-            System.Console.Error.WriteLine($"  [usb-setirq] SetInterrupt(USB, {pending}) PendingBefore=0x{Registers.PendingInterrupts:X8} PRIMASK={Registers.PRIMASK}");
         if (pending)
             Registers.PendingInterrupts |= bit;
         else
