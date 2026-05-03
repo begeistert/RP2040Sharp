@@ -224,6 +224,18 @@ public sealed class RP2040Machine : IDisposable
         Usb = new UsbPeripheral(Cpu);
         ahb.Register(0x50100000, Usb);
 
+        // Wire PPB's OnInterruptEnable to USB.RecheckInterrupts so that when
+        // pico-sdk's irq_set_enabled does ICPR then ISER, the USB level-triggered
+        // IRQ is re-asserted correctly (see: NVIC_ICPR clears pending bit, but
+        // hardware IRQ line stays asserted — we simulate this via RecheckInterrupts).
+        Ppb.OnInterruptEnable += Usb.RecheckInterrupts;
+
+        // When firmware resets the USBCTRL block (rp2040_usb_init → reset_block/unreset_block),
+        // reset the USB peripheral emulator state so the next CONTROLLER_EN write re-triggers
+        // enumeration (OnUsbEnabled). Bit 24 = USBCTRL in RESETS.RESET.
+        const uint USBCTRL_BIT = 1u << 24;
+        Resets.OnUnreset += released => { if ((released & USBCTRL_BIT) != 0) Usb.Reset(); };
+
         // PIO0 @ 0x50200000 (slot 2), PIO1 @ 0x50300000 (slot 3)
         Pio0 = new PioPeripheral(Cpu, 0);
         Pio1 = new PioPeripheral(Cpu, 1);
@@ -237,7 +249,7 @@ public sealed class RP2040Machine : IDisposable
         Gpio = pins;
 
         // ── Tickable list ─────────────────────────────────────────────────
-        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog];
+        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog, Usb];
 
         // ── DMA DREQ sources ──────────────────────────────────────────────
         // PIO0 TX/RX SM0-3: DREQ 0-3 (TX), 4-7 (RX)

@@ -13,7 +13,7 @@ namespace RP2040.Peripherals.Usb;
 /// and bulk CDC-ACM transfers. Companion host driver lives in <see cref="UsbCdcHost"/>.
 /// Equivalent to rp2040js: src/peripherals/usb.ts (device mode subset).
 /// </summary>
-public sealed class UsbPeripheral : IMemoryMappedDevice
+public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, ITickable
 {
     private const int USB_IRQ = 5;
 
@@ -40,10 +40,14 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
     private const uint INTR_BUFF_STATUS  = 1u << 4;
     private const uint INTR_BUS_RESET    = 1u << 12;
     private const uint INTR_DEV_CONN_DIS = 1u << 13;
+    private const uint INTR_DEV_SUSPEND  = 1u << 14;
+    private const uint INTR_DEV_RESUME   = 1u << 15;
+    private const uint INTR_DEV_SOF      = 1u << 17;
     private const uint INTR_SETUP_REQ    = 1u << 16;
 
     // SIE_STATUS bits (subset)
     private const uint SIE_VBUS_DETECTED = 1u << 0;
+    private const uint SIE_RESUME        = 1u << 11;
     private const uint SIE_CONNECTED     = 1u << 16;
     private const uint SIE_SETUP_REC     = 1u << 17;
     private const uint SIE_BUS_RESET     = 1u << 19;
@@ -85,6 +89,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
 
     private uint _mainCtrl;
     private uint _sofRw;
+    private uint _sofRd;
     private uint _sieCtrl;
     private uint _sieStatus;
     private uint _intEpCtrl;
@@ -124,6 +129,41 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
         _cpu = cpu;
     }
 
+    /// <summary>
+    /// Reset USB peripheral state (called when RESETS.RESET.USBCTRL is cycled).
+    /// Clears all registers and re-arms the controller-enable trigger so that
+    /// the next dcd_init() call fires OnUsbEnabled and restarts enumeration.
+    /// </summary>
+    public void Reset()
+    {
+        System.Console.Error.WriteLine($"  [usb-reset] USB peripheral reset (USBCTRL unreset)");
+        Array.Clear(_dpram);
+        Array.Clear(_addrEndp);
+        _mainCtrl = 0;
+        _sofRw = 0;
+        _sieCtrl = 0;
+        _sieStatus = 0;
+        _intEpCtrl = 0;
+        _buffStatus = 0;
+        _buffCpuShouldHandle = 0;
+        _epAbort = 0;
+        _epAbortDone = 0;
+        _epStallArm = 0;
+        _nakPoll = 0;
+        _epStatusStallNak = 0;
+        _usbMuxing = 0;
+        _usbPwr = 0;
+        _usbphyDirect = 0;
+        _usbphyDirectOverride = 0;
+        _usbphyTrim = 0x04040000u;
+        _intr = 0;
+        _inte = 0;
+        _intf = 0;
+        _controllerEnabled = false;
+        _hostMode = false;
+        _pendingWrites.Clear();
+    }
+
     // ── IMemoryMappedDevice ───────────────────────────────────────────────
 
     public uint ReadWord(uint address)
@@ -133,14 +173,15 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
         if (offset < DPRAM_SIZE)
             return ReadDpramWord(offset);
 
-        var reg = offset - REGS_OFFSET;
+        // Strip atomic-alias bits (12–13) — reads always return the base register value.
+        var reg = (offset & ~0x3000u) - REGS_OFFSET;
         return reg switch
         {
             var r when r < 0x040 => _addrEndp[r >> 2],
 
             R_MAIN_CTRL      => _mainCtrl,
             R_SOF_RW         => _sofRw,
-            R_SOF_RD         => _sofRw,
+            R_SOF_RD         => _sofRd,
             R_SIE_CTRL       => _sieCtrl,
             R_SIE_STATUS     => _sieStatus,
             R_INT_EP_CTRL    => _intEpCtrl,
@@ -191,30 +232,48 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
         if (offset < DPRAM_SIZE)
         {
             WriteDpramWord(offset & ~3u, value);
+            if (offset >= EP0_IN_BUFFER_CONTROL && offset <= EP15_OUT_BUFFER_CONTROL)
+                System.Console.Error.WriteLine($"  [dpram-bc] offset=0x{offset:X3} val=0x{value:X8} avail={(value&0x400)!=0}");
             DpramUpdated(offset & ~3u, value);
             return;
         }
 
+        // Extract and strip atomic-alias type (bits 12–13) from the offset.
+        // UsbPeripheral implements IHandlesAtomicAliases, so the AHB bridge passes the
+        // raw firmware value. We must apply the transform ourselves for R/W registers,
+        // while W1C registers treat `value` as the bitmask of bits to clear regardless
+        // of atomic type (both direct writes and atomic-clear alias use the same mask).
+        var atomicType = (offset >> 12) & 0x3u;
+        offset &= ~0x3000u;  // strip alias bits to get the base register offset
+
         var reg = offset - REGS_OFFSET;
+        System.Console.Error.WriteLine($"  [usb-w] reg=0x{reg:X3} val=0x{value:X8} intr=0x{_intr:X8} inte=0x{_inte:X8} sie=0x{_sieStatus:X8}");
         switch (reg)
         {
             case var r when r < 0x040:
-                _addrEndp[r >> 2] = value & 0x07FF_0000u | (value & 0xFFu);
+                // R/W — apply atomic transform
+                _addrEndp[r >> 2] = ApplyAtomic(_addrEndp[r >> 2], value, atomicType) & (0x07FF_0000u | 0xFFu);
                 break;
 
             case R_MAIN_CTRL:
-                _mainCtrl = value & 0xC0000003u;
-                _hostMode = (value & MAIN_CTRL_HOST_NDEVICE) != 0;
-                if ((value & MAIN_CTRL_CONTROLLER_EN) != 0 && !_controllerEnabled)
                 {
-                    _controllerEnabled = true;
-                    if (!_hostMode) OnUsbEnabled?.Invoke();
+                    var v = ApplyAtomic(_mainCtrl, value, atomicType) & 0xC0000003u;
+                    _mainCtrl = v;
+                    _hostMode = (v & MAIN_CTRL_HOST_NDEVICE) != 0;
+                    if ((v & MAIN_CTRL_CONTROLLER_EN) != 0 && !_controllerEnabled)
+                    {
+                        _controllerEnabled = true;
+                        if (!_hostMode) OnUsbEnabled?.Invoke();
+                    }
                 }
                 break;
-            case R_SOF_RW:         _sofRw    = value & 0x7FFu; break;
-            case R_SIE_CTRL:       _sieCtrl  = value; break;
+            case R_SOF_RW:         _sofRw    = ApplyAtomic(_sofRw, value, atomicType) & 0x7FFu; break;
+            case R_SIE_CTRL:       _sieCtrl  = ApplyAtomic(_sieCtrl, value, atomicType); break;
+
             case R_SIE_STATUS:
                 {
+                    // W1C register: `value` is the raw firmware-written bitmask of bits to clear.
+                    // Both direct writes and atomic-clear alias use the same semantics here.
                     var clearMask = value;
                     if ((clearMask & SIE_BUS_RESET) != 0 && !_hostMode)
                         OnResetReceived?.Invoke();
@@ -222,35 +281,58 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
                     SieStatusUpdated();
                 }
                 break;
-            case R_INT_EP_CTRL:    _intEpCtrl = value; break;
+
+            case R_INT_EP_CTRL:    _intEpCtrl = ApplyAtomic(_intEpCtrl, value, atomicType); break;
+            // W1C registers — value is always the bitmask of bits to clear.
             case R_BUFF_STATUS:    _buffStatus &= ~value; BuffStatusUpdated(); break;
             case R_BUFF_CPU_SHOULD_HANDLE: _buffCpuShouldHandle &= ~value; break;
-            case R_EP_ABORT:       _epAbort   = value; _epAbortDone |= value; break;
-            case R_EP_ABORT_DONE:  _epAbortDone &= ~value; break;
-            case R_EP_STALL_ARM:   _epStallArm  = value; break;
-            case R_NAK_POLL:       _nakPoll     = value; break;
-            case R_EP_STATUS_STALL_NAK: _epStatusStallNak &= ~value; break;
-            case R_USB_MUXING:     _usbMuxing   = value;
-                // pico-sdk hw_enumeration_fix waits for SIE_CONNECTED after rerouting muxing
-                if ((value & 0b0100) != 0 && (value & 0b0001) == 0)
-                    _sieStatus |= SIE_CONNECTED;
-                break;
-            case R_USB_PWR:        _usbPwr      = value;
-                // VBUS detect override
-                if ((value & (1u << 2)) != 0)
+            case R_EP_ABORT:
                 {
-                    if ((value & (1u << 3)) != 0) _sieStatus |= SIE_VBUS_DETECTED;
-                    else                          _sieStatus &= ~SIE_VBUS_DETECTED;
+                    var v = ApplyAtomic(_epAbort, value, atomicType);
+                    _epAbort = v; _epAbortDone |= v;
                 }
                 break;
-            case R_USBPHY_DIRECT:  _usbphyDirect = value; break;
-            case R_USBPHY_DIRECT_OVERRIDE: _usbphyDirectOverride = value; break;
-            case R_USBPHY_TRIM:    _usbphyTrim   = value; break;
-            case R_INTR:           _intr &= ~value; CheckInterrupts(); break;
-            case R_INTE:           _inte = value; CheckInterrupts(); break;
-            case R_INTF:           _intf = value; CheckInterrupts(); break;
+            case R_EP_ABORT_DONE:  _epAbortDone &= ~value; break;  // W1C
+            case R_EP_STALL_ARM:   _epStallArm  = ApplyAtomic(_epStallArm, value, atomicType); break;
+            case R_NAK_POLL:       _nakPoll     = ApplyAtomic(_nakPoll, value, atomicType); break;
+            case R_EP_STATUS_STALL_NAK: _epStatusStallNak &= ~value; break;  // W1C
+            case R_USB_MUXING:
+                {
+                    var v = ApplyAtomic(_usbMuxing, value, atomicType);
+                    _usbMuxing = v;
+                    // pico-sdk hw_enumeration_fix waits for SIE_CONNECTED after rerouting muxing
+                    if ((v & 0b0100) != 0 && (v & 0b0001) == 0)
+                        _sieStatus |= SIE_CONNECTED;
+                }
+                break;
+            case R_USB_PWR:
+                {
+                    var v = ApplyAtomic(_usbPwr, value, atomicType);
+                    _usbPwr = v;
+                    // VBUS detect override
+                    if ((v & (1u << 2)) != 0)
+                    {
+                        if ((v & (1u << 3)) != 0) _sieStatus |= SIE_VBUS_DETECTED;
+                        else                       _sieStatus &= ~SIE_VBUS_DETECTED;
+                    }
+                }
+                break;
+            case R_USBPHY_DIRECT:          _usbphyDirect = ApplyAtomic(_usbphyDirect, value, atomicType); break;
+            case R_USBPHY_DIRECT_OVERRIDE:  _usbphyDirectOverride = ApplyAtomic(_usbphyDirectOverride, value, atomicType); break;
+            case R_USBPHY_TRIM:            _usbphyTrim = ApplyAtomic(_usbphyTrim, value, atomicType); break;
+            case R_INTR:           _intr &= ~value; CheckInterrupts(); break;  // W1C
+            case R_INTE:           _inte = ApplyAtomic(_inte, value, atomicType); CheckInterrupts(); break;
+            case R_INTF:           _intf = ApplyAtomic(_intf, value, atomicType); CheckInterrupts(); break;
         }
     }
+
+    private static uint ApplyAtomic(uint current, uint value, uint atomicType) => atomicType switch
+    {
+        1u => current ^ value,  // XOR
+        2u => current | value,  // SET
+        3u => current & ~value, // CLR
+        _  => value,            // normal write
+    };
 
     public void WriteHalfWord(uint address, ushort value)
     {
@@ -293,6 +375,30 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
     {
         _sieStatus |= SIE_BUS_RESET | SIE_CONNECTED;
         SieStatusUpdated();
+    }
+
+    /// <summary>
+    /// Signal a host-initiated resume to the device. Sets SIE_STATUS.RESUME which maps to
+    /// INTR.DEV_RESUME_FROM_HOST, clearing _usbd_dev.suspended in TinyUSB.
+    /// </summary>
+    public void SignalResume()
+    {
+        System.Console.Error.WriteLine($"  [usb-resume] SignalResume called: sieStatus=0x{_sieStatus:X8} intr_before=0x{_intr:X8} inte=0x{_inte:X8}");
+        _sieStatus |= SIE_RESUME;
+        SieStatusUpdated();
+        System.Console.Error.WriteLine($"  [usb-resume] After SignalResume: sieStatus=0x{_sieStatus:X8} intr_after=0x{_intr:X8}");
+    }
+
+    /// <summary>
+    /// Signal a USB Start-of-Frame. Sets INTR.DEV_SOF directly (not via SIE_STATUS).
+    /// Used to decrement TinyUSB's cdc_connected_flush_delay counter.
+    /// </summary>
+    public void SignalSof(uint frameNumber)
+    {
+        // SOF frame number is in SOF_RD register (R_SOF_RD offset 0x048)
+        _sofRd = frameNumber & 0x7FF;
+        _intr |= INTR_DEV_SOF;
+        CheckInterrupts();
     }
 
     /// <summary>Simulate an isolated SETUP_REC bit assertion (no payload).</summary>
@@ -345,6 +451,14 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
         return result;
     }
 
+    // Pending IN-transfer completions: keyed by BUFF_STATUS bit, queued to preserve ordering
+    // when firmware sends multiple packets in the same CPU batch (e.g. 64-byte + 11-byte for a
+    // 75-byte descriptor). We defer OnEndpointWrite until Tick() delivers after a short delay,
+    // mimicking rp2040js's writeDelayMicroseconds alarm mechanism.
+    private readonly Dictionary<int, Queue<(int endpoint, byte[] buffer, long deliverAt)>> _pendingWrites = new();
+    private const long WRITE_DELAY_CYCLES = 625L;  // ~5 µs at 125 MHz, matching rp2040js default
+    private long _totalCycles;
+
     // ── DPRAM endpoint FSM ───────────────────────────────────────────────
 
     private void DpramUpdated(uint offset, uint value)
@@ -373,8 +487,14 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
             WriteDpramWord(offset, value);
             var buffer = new byte[bufLen];
             _dpram.AsSpan((int)bufferOffset, bufLen).CopyTo(buffer);
+            // Store pending write to be delivered by Tick() after WRITE_DELAY_CYCLES.
+            // This ensures the firmware ISR returns before the host responds with next SETUP.
+            var buffBit = endpoint * 2; // IN = even bit
+            if (!_pendingWrites.TryGetValue(buffBit, out var q))
+                _pendingWrites[buffBit] = q = new Queue<(int, byte[], long)>();
+            q.Enqueue((endpoint, buffer, _totalCycles + WRITE_DELAY_CYCLES));
+            System.Console.Error.WriteLine($"  [ep-arm] EP{endpoint} IN armed: len={bufLen} buffBit={buffBit} deliverAt={_totalCycles + WRITE_DELAY_CYCLES} totalCycles={_totalCycles}");
             IndicateBufferReady(endpoint, isOut: false);
-            OnEndpointWrite?.Invoke(endpoint, buffer);
         }
     }
 
@@ -404,6 +524,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
         SyncIntrBit(SIE_SETUP_REC, INTR_SETUP_REQ);
         SyncIntrBit(SIE_BUS_RESET, INTR_BUS_RESET);
         SyncIntrBit(SIE_CONNECTED, INTR_DEV_CONN_DIS);
+        SyncIntrBit(SIE_RESUME, INTR_DEV_RESUME);
         CheckInterrupts();
     }
 
@@ -431,6 +552,52 @@ public sealed class UsbPeripheral : IMemoryMappedDevice
     private void CheckInterrupts()
     {
         if (_cpu == null) return;
-        _cpu.SetInterrupt(USB_IRQ, ((_intr | _intf) & _inte) != 0);
+        var pending = ((_intr | _intf) & _inte) != 0;
+        System.Console.Error.WriteLine($"  [usb-irq] CheckInterrupts: intr=0x{_intr:X8} intf=0x{_intf:X8} inte=0x{_inte:X8} -> pending={pending} enabled={_cpu.Registers.EnabledInterrupts >> USB_IRQ & 1}");
+        _cpu.SetInterrupt(USB_IRQ, pending);
+    }
+
+    /// <summary>
+    /// Re-check interrupt state (called after NVIC_ICPR cleared the pending bit
+    /// so that level-triggered USB IRQ can re-assert via NVIC_ISER enable).
+    /// </summary>
+    public void RecheckInterrupts() => CheckInterrupts();
+
+    private const long SOF_PERIOD_CYCLES = 125_000L; // 1ms at 125 MHz (USB full-speed SOF rate)
+    private long _lastSofCycles = long.MinValue / 2;
+    private uint _sofFrameCount;
+
+    /// <summary>Advance cycle counter; deliver any pending IN-transfer callbacks whose delay has elapsed.</summary>
+    public void Tick(long deltaCycles)
+    {
+        _totalCycles += deltaCycles;
+
+        // Auto-clear SOF bit after one tick so it doesn't re-trigger indefinitely.
+        _intr &= ~INTR_DEV_SOF;
+
+        // Emit periodic SOF when USB controller is enabled in device mode and SOF interrupt is enabled in INTE.
+        if (_controllerEnabled && !_hostMode && (_inte & INTR_DEV_SOF) != 0)
+        {
+            if (_totalCycles - _lastSofCycles >= SOF_PERIOD_CYCLES)
+            {
+                _lastSofCycles = _totalCycles;
+                _sofFrameCount = (_sofFrameCount + 1) & 0x7FF;
+                SignalSof(_sofFrameCount);
+            }
+        }
+
+        if (_pendingWrites.Count == 0) return;
+        System.Console.Error.WriteLine($"  [usb-tick] Tick: totalCycles={_totalCycles} pendingWrites={_pendingWrites.Values.Sum(q => q.Count)}");
+
+        foreach (var (bit, queue) in _pendingWrites.ToArray())
+        {
+            while (queue.Count > 0 && _totalCycles >= queue.Peek().deliverAt)
+            {
+                var (ep, buf, _) = queue.Dequeue();
+                if (queue.Count == 0) _pendingWrites.Remove(bit);
+                OnEndpointWrite?.Invoke(ep, buf);
+            }
+        }
     }
 }
+

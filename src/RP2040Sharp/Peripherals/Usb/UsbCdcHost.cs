@@ -41,6 +41,7 @@ public sealed class UsbCdcHost
     private readonly Queue<byte> _txFifo = new(TX_FIFO_SIZE);
 
     private bool _initialized;
+    private bool _resumeSignaled;
     private int? _descriptorsSize;
     private readonly List<byte> _descriptors = new();
     private int _inEndpoint = -1;
@@ -79,6 +80,7 @@ public sealed class UsbCdcHost
 
     private void HandleEndpointWrite(int endpoint, byte[] buffer)
     {
+        System.Console.Error.WriteLine($"  [cdc-ep] HandleEndpointWrite(ep={endpoint}, len={buffer.Length}) _descriptorsSize={_descriptorsSize} _initialized={_initialized}");
         if (endpoint == ENDPOINT_ZERO && buffer.Length == 0)
         {
             if (_descriptorsSize == null)
@@ -89,6 +91,12 @@ public sealed class UsbCdcHost
             {
                 CdcSetControlLineState();
                 OnDeviceConnected?.Invoke();
+            }
+            else if (!_resumeSignaled)
+            {
+                // STATUS ACK for SET_CONTROL_LINE_STATE — signal resume so TinyUSB clears _usbd_dev.suspended.
+                _resumeSignaled = true;
+                _usb.SignalResume();
             }
             return;
         }
