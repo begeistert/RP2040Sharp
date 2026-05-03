@@ -16,12 +16,16 @@ public sealed class ResetsPeripheral : IMemoryMappedDevice
 
     // 25 subsystem bits
     private const uint ALL_BITS = 0x01FFFFFF;
+    private const uint USBCTRL_BIT = 1u << 24;
 
     // Start with nothing in reset so RESET_DONE = ALL_BITS from power-on.
     // Firmware reset/unreset sequences will still work correctly because after
     // firmware writes RESET then clears it, RESET_DONE returns that bit set.
     private uint _reset = 0;
     private uint _wdsel;
+
+    /// <summary>Fired when a peripheral is released from reset (bit was set, now cleared).</summary>
+    public Action<uint>? OnUnreset;
 
     public uint Size => 0x1000;
 
@@ -43,7 +47,13 @@ public sealed class ResetsPeripheral : IMemoryMappedDevice
     {
         switch (address)
         {
-            case RESET: _reset = value & ALL_BITS; break;
+            case RESET:
+                var prev = _reset;
+                _reset = value & ALL_BITS;
+                // Fire OnUnreset for any bits that transitioned from set to clear
+                var released = prev & ~_reset;
+                if (released != 0) OnUnreset?.Invoke(released);
+                break;
             case WDSEL: _wdsel = value & ALL_BITS; break;
         }
     }
