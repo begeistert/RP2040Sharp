@@ -10,4 +10,8 @@
     <Optimize>true</Optimize>
     <DebugType>embedded</DebugType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="bootrom_b1.bin" />
+  </ItemGroup>
 </Project>

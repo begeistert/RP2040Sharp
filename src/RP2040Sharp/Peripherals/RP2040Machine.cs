@@ -294,49 +294,45 @@ public sealed class RP2040Machine : IDisposable
 
         image.CopyTo(new Span<byte>(Bus.PtrFlash, image.Length));
 
-        // If no BootROM has been loaded, install the minimal RP2040 BootROM stub that
-        // implements the ROM API functions (rom_table_lookup, memcpy44, memset4) needed
-        // by RP2040 SDK firmware during C-runtime startup.  The reset SP/PC entries are
-        // then patched to point at the firmware's own vector table located in flash.
+        // If no BootROM has been loaded, install the real RP2040 B1 BootROM binary.
+        // The real bootrom implements rom_table_lookup, memcpy44, memset4 and all
+        // bit-manipulation helpers correctly in native Thumb code.
+        // Flash-hardware-accessing functions (connect_internal_flash, flash_exit_xip,
+        // flash_flush_cache, flash_enter_cmd_xip) are patched to BX LR so they return
+        // immediately without touching SSI registers.
+        // flash_range_erase and flash_range_program are intercepted by C# native hooks.
         if (*(uint*)Bus.PtrBootRom == 0 && *(uint*)(Bus.PtrBootRom + 4) == 0)
         {
-            WriteBootRomStub(Bus.PtrBootRom);
+            LoadRealBootRom(Bus.PtrBootRom);
 
             if (TryFindVectorTable(Bus.PtrFlash, (int)image.Length, out var sp, out var resetPc,
                     out var vectorTableOffset))
             {
-                *(uint*)Bus.PtrBootRom       = sp;
-                *(uint*)(Bus.PtrBootRom + 4) = resetPc;
                 // Real BootROM sets VTOR to point at the firmware's own vector table
                 // before branching to the Reset handler.  pico-sdk code checks VTOR
                 // during spinlock initialisation, so this must be done before Reset().
                 Cpu.Registers.VTOR = 0x10000000u + (uint)vectorTableOffset;
             }
 
-            // Register native C# hooks for flash erase/program so that MicroPython's
-            // LittleFS filesystem formatter can actually write to the emulated flash.
-            // Also hook rom_table_lookup (0x0060) to handle ROM function dispatch in C#
-            // so lookup is always correct and we can add debug logging.
-            Cpu.RegisterNativeHook(0x0060, RomTableLookupHook);
-            Cpu.RegisterNativeHook(0x0100, Memcpy44Hook);
-            Cpu.RegisterNativeHook(0x0120, Memset4Hook);
-            Cpu.RegisterNativeHook(0x01C0, Popcount32Hook);
-            Cpu.RegisterNativeHook(0x01D0, Reverse32Hook);
-            Cpu.RegisterNativeHook(0x01E0, Clz32Hook);
-            Cpu.RegisterNativeHook(0x01F0, Ctz32Hook);
-            Cpu.RegisterNativeHook(0x0190, FlashEraseHook);
-            Cpu.RegisterNativeHook(0x01A0, FlashProgramHook);
-            // Protect the ROM API metadata area (0x0010-0x001F) from being executed.
-            // If execution falls through there, something went wrong — log and return via LR.
-            for (uint addr = 0x0010; addr < 0x0020; addr += 2)
-            {
-                var capturedAddr = addr;
-                Cpu.RegisterNativeHook(capturedAddr, static cpu =>
-                    System.Console.Error.WriteLine($"  [romapi-exec] Execution hit ROM API metadata at 0x{cpu.Registers.PC:X8} LR=0x{cpu.Registers.LR:X8} R0=0x{cpu.Registers.R0:X8} cycles={cpu.Cycles}"));
-            }
+            // Register C# hooks only for flash erase/program at their real bootrom
+            // addresses so MicroPython's LittleFS formatter can modify emulated flash.
+            Cpu.RegisterNativeHook(0x237C, FlashEraseHook);
+            Cpu.RegisterNativeHook(0x23C4, FlashProgramHook);
         }
 
         Cpu.Reset();
+
+        // rp2040js-compatible boot: bypass the bootrom reset handler (which tries to
+        // configure SSI/QSPI hardware that is not fully emulated) and start execution
+        // directly at the flash start address 0x10000000, where boot2 lives.
+        // The bootrom is still resident and handles ROM API calls (rom_table_lookup, etc.)
+        // The firmware's own SP comes from the vector table entry we found above.
+        if (TryFindVectorTable(Bus.PtrFlash, (int)image.Length, out var firmwareSp, out _,
+                out _))
+        {
+            Cpu.Registers.SP = firmwareSp;
+        }
+        Cpu.Registers.PC = BusInterconnect.FLASH_START_ADDRESS;
     }
 
     /// <summary>
@@ -501,6 +497,37 @@ public sealed class RP2040Machine : IDisposable
 
     private static void Ctz32Hook(Core.Cpu.CortexM0Plus cpu)
         => cpu.Registers.R0 = (uint)System.Numerics.BitOperations.TrailingZeroCount(cpu.Registers.R0);
+
+    /// <summary>
+    /// Loads the real RP2040 B1 bootrom binary (embedded as a resource) into bootrom
+    /// memory, then patches flash hardware-accessing functions to BX LR so they return
+    /// without touching SSI/QSPI registers that are not fully emulated.
+    /// </summary>
+    private static unsafe void LoadRealBootRom(byte* rom)
+    {
+        // Load binary from embedded resource
+        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+        using var stream = asm.GetManifestResourceStream("RP2040Sharp.bootrom_b1.bin")
+            ?? throw new InvalidOperationException(
+                "Embedded resource 'RP2040Sharp.bootrom_b1.bin' not found. " +
+                "Ensure bootrom_b1.bin is included as an EmbeddedResource in the project.");
+        stream.ReadExactly(new Span<byte>(rom, 16384));
+
+        // Patch flash hardware-accessing bootrom functions to 'BX LR' (0x4770).
+        // These functions talk directly to the SSI/QSPI peripheral, which is not
+        // fully emulated. They are called by MicroPython's LittleFS flash trampoline
+        // (which runs from SRAM) to set up/tear down XIP mode around erase/program ops.
+        // Making them no-ops is safe: our C# hooks handle the actual flash data.
+        //   0x24A0 = connect_internal_flash
+        //   0x23F4 = flash_exit_xip
+        //   0x2360 = flash_flush_cache
+        //   0x2330 = flash_enter_cmd_xip
+        static void PatchBxLr(byte* p, int addr) { p[addr] = 0x70; p[addr + 1] = 0x47; }
+        PatchBxLr(rom, 0x24A0);
+        PatchBxLr(rom, 0x23F4);
+        PatchBxLr(rom, 0x2360);
+        PatchBxLr(rom, 0x2330);
+    }
 
     /// 
     /// The stub implements the ROM API (rom_table_lookup, memcpy44, memset4) using
