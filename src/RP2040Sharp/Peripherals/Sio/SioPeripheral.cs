@@ -150,7 +150,11 @@ public sealed class SioPeripheral : IMemoryMappedDevice
         {
             CPUID        => 0,           // always Core0 in single-core simulation
             GPIO_IN      => _gpioIn,
-            GPIO_HI_IN   => 0,
+            // GPIO_HI_IN: QSPI GPIO inputs. Bit 1 = QSPI_SS_N (active-low flash select / BOOTSEL).
+            // It must read HIGH (1) so the bootrom BOOTSEL check sees "button not pressed" and
+            // proceeds to flash boot instead of USB BOOTSEL mode.
+            // Other data lines (SD0-SD3, bits 2-5) are HIGH at idle; SCLK (bit 0) is LOW.
+            GPIO_HI_IN   => 0b111110u,  // SS_N=1 (bit1), SD0-SD3=1 (bits2-5), SCLK=0 (bit0)
             GPIO_OUT     => _gpioOut,
             GPIO_HI_OUT  => _gpioHiOut,
             GPIO_OE      => _gpioOe,

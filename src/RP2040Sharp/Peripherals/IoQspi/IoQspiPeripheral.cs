@@ -23,7 +23,11 @@ public sealed class IoQspiPeripheral : IMemoryMappedDevice
         var field = address & 7;
         return field switch
         {
-            0 => 0,          // STATUS (read-only, always 0 in stub)
+            // STATUS register: report INFROMPAD (bit 17) and INTOPERI (bit 19) as HIGH
+            // for all QSPI pins. Bit 17 is the critical one: the bootrom reads
+            // GPIO_QSPI_SS_STATUS.INFROMPAD to detect whether the BOOTSEL button is
+            // pressed (active-low). A zero would mean "BOOTSEL held → USB BOOTSEL mode".
+            0 => 0x000A0000u,  // INFROMPAD=1 (bit17), INTOPERI=1 (bit19)
             4 => _ctrl[pin],
             _ => 0,
         };
