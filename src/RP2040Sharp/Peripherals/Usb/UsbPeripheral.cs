@@ -111,6 +111,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
 
     private bool _controllerEnabled;
     private bool _hostMode;
+    private bool _prevSieConnected;
 
     public uint Size => 0x20000u;
 
@@ -123,6 +124,8 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
     public Action<int, byte[]>? OnEndpointWrite;
     /// <summary>Fired when firmware arms an OUT endpoint (host → device); host should call <see cref="EndpointReadDone"/>.</summary>
     public Action<int, int>? OnEndpointRead;
+    /// <summary>Fired on every simulated Start-of-Frame (1 ms intervals when controller enabled in device mode).</summary>
+    public Action<uint>? OnSof;
 
     public UsbPeripheral(CortexM0Plus? cpu = null)
     {
@@ -161,6 +164,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         _intf = 0;
         _controllerEnabled = false;
         _hostMode = false;
+        _prevSieConnected = false;
         _pendingWrites.Clear();
     }
 
@@ -399,6 +403,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         _sofRd = frameNumber & 0x7FF;
         _intr |= INTR_DEV_SOF;
         CheckInterrupts();
+        OnSof?.Invoke(frameNumber);
     }
 
     /// <summary>Simulate an isolated SETUP_REC bit assertion (no payload).</summary>
@@ -523,7 +528,12 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         // Map SIE_STATUS bits to INTR bits (device-mode subset).
         SyncIntrBit(SIE_SETUP_REC, INTR_SETUP_REQ);
         SyncIntrBit(SIE_BUS_RESET, INTR_BUS_RESET);
-        SyncIntrBit(SIE_CONNECTED, INTR_DEV_CONN_DIS);
+        // DEV_CONN_DIS is edge-triggered: pulse INTR only on the 0→1 transition of SIE_CONNECTED.
+        // A level mapping causes the bit to re-assert after every W1C, creating an IRQ storm.
+        var sieConnected = (_sieStatus & SIE_CONNECTED) != 0;
+        if (sieConnected && !_prevSieConnected)
+            _intr |= INTR_DEV_CONN_DIS;
+        _prevSieConnected = sieConnected;
         SyncIntrBit(SIE_RESUME, INTR_DEV_RESUME);
         CheckInterrupts();
     }
@@ -575,8 +585,9 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         // Auto-clear SOF bit after one tick so it doesn't re-trigger indefinitely.
         _intr &= ~INTR_DEV_SOF;
 
-        // Emit periodic SOF when USB controller is enabled in device mode and SOF interrupt is enabled in INTE.
-        if (_controllerEnabled && !_hostMode && (_inte & INTR_DEV_SOF) != 0)
+        // Emit periodic SOF when USB controller is enabled in device mode.
+        // The host generates SOFs unconditionally regardless of whether the device has the SOF interrupt enabled.
+        if (_controllerEnabled && !_hostMode)
         {
             if (_totalCycles - _lastSofCycles >= SOF_PERIOD_CYCLES)
             {
