@@ -35,7 +35,8 @@ public sealed class AhbBridge : IMemoryMappedDevice
         if (device == null) return;
 
         var atomicType = (address >> 12) & 0x3;
-        if (atomicType == 0) { device.WriteWord(address, value); return; }
+        // Devices that handle atomic aliases themselves receive the raw address+value.
+        if (atomicType == 0 || device is IHandlesAtomicAliases) { device.WriteWord(address, value); return; }
 
         var baseAddr = address & ~0x3000u;
         var current = device.ReadWord(baseAddr);
@@ -54,7 +55,7 @@ public sealed class AhbBridge : IMemoryMappedDevice
         if (device == null) return;
 
         var atomicType = (address >> 12) & 0x3;
-        if (atomicType == 0) { device.WriteHalfWord(address, value); return; }
+        if (atomicType == 0 || device is IHandlesAtomicAliases) { device.WriteHalfWord(address, value); return; }
 
         var baseAddr = (address & ~0x3000u) & ~3u;
         var shift = (int)((address & 2) << 3);
@@ -76,7 +77,7 @@ public sealed class AhbBridge : IMemoryMappedDevice
         if (device == null) return;
 
         var atomicType = (address >> 12) & 0x3;
-        if (atomicType == 0) { device.WriteByte(address, value); return; }
+        if (atomicType == 0 || device is IHandlesAtomicAliases) { device.WriteByte(address, value); return; }
 
         var baseAddr = (address & ~0x3000u) & ~3u;
         var shift = (int)((address & 3) << 3);
