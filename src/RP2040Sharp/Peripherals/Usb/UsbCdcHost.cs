@@ -63,6 +63,7 @@ public sealed class UsbCdcHost
         _usb.OnResetReceived  = HandleResetReceived;
         _usb.OnEndpointWrite  = HandleEndpointWrite;
         _usb.OnEndpointRead   = HandleEndpointRead;
+        _usb.OnSof            = HandleSof;
     }
 
     /// <summary>Queue a byte to be delivered to the device on the next bulk-OUT poll.</summary>
@@ -76,7 +77,10 @@ public sealed class UsbCdcHost
     private void HandleUsbEnabled() => _usb.SignalBusReset();
 
     private void HandleResetReceived()
-        => _usb.SendSetupPacket(SetDeviceAddressPacket(1));
+    {
+        _resumeSignaled = false;
+        _usb.SendSetupPacket(SetDeviceAddressPacket(1));
+    }
 
     private void HandleEndpointWrite(int endpoint, byte[] buffer)
     {
@@ -125,6 +129,14 @@ public sealed class UsbCdcHost
 
         if (endpoint == _inEndpoint && buffer.Length > 0)
             OnSerialData?.Invoke(buffer);
+    }
+
+    private void HandleSof(uint frameNumber)
+    {
+        // SOF fires every 1 ms; periodically re-signal resume (every ~128 ms) so TinyUSB
+        // stays awake if it somehow suspended after the initial RESUME handshake.
+        if (_initialized && (frameNumber & 0x7F) == 0)
+            _usb.SignalResume();
     }
 
     private void HandleEndpointRead(int endpoint, int size)
