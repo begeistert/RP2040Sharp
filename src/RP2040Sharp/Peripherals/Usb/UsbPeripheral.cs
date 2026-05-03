@@ -139,7 +139,6 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
     /// </summary>
     public void Reset()
     {
-        System.Console.Error.WriteLine($"  [usb-reset] USB peripheral reset (USBCTRL unreset)");
         Array.Clear(_dpram);
         Array.Clear(_addrEndp);
         _mainCtrl = 0;
@@ -166,6 +165,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         _hostMode = false;
         _prevSieConnected = false;
         _pendingWrites.Clear();
+        _pendingReads.Clear();
     }
 
     // ── IMemoryMappedDevice ───────────────────────────────────────────────
@@ -237,8 +237,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         {
             WriteDpramWord(offset & ~3u, value);
             if (offset >= EP0_IN_BUFFER_CONTROL && offset <= EP15_OUT_BUFFER_CONTROL)
-                System.Console.Error.WriteLine($"  [dpram-bc] offset=0x{offset:X3} val=0x{value:X8} avail={(value&0x400)!=0}");
-            DpramUpdated(offset & ~3u, value);
+                DpramUpdated(offset & ~3u, value);
             return;
         }
 
@@ -251,7 +250,6 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
         offset &= ~0x3000u;  // strip alias bits to get the base register offset
 
         var reg = offset - REGS_OFFSET;
-        System.Console.Error.WriteLine($"  [usb-w] reg=0x{reg:X3} val=0x{value:X8} intr=0x{_intr:X8} inte=0x{_inte:X8} sie=0x{_sieStatus:X8}");
         switch (reg)
         {
             case var r when r < 0x040:
@@ -387,10 +385,8 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
     /// </summary>
     public void SignalResume()
     {
-        System.Console.Error.WriteLine($"  [usb-resume] SignalResume called: sieStatus=0x{_sieStatus:X8} intr_before=0x{_intr:X8} inte=0x{_inte:X8}");
         _sieStatus |= SIE_RESUME;
         SieStatusUpdated();
-        System.Console.Error.WriteLine($"  [usb-resume] After SignalResume: sieStatus=0x{_sieStatus:X8} intr_after=0x{_intr:X8}");
     }
 
     /// <summary>
@@ -425,19 +421,14 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
     /// <summary>Provide data for an OUT endpoint that the firmware previously armed.</summary>
     public void EndpointReadDone(int endpoint, ReadOnlySpan<byte> data)
     {
-        var bufCtrlReg = EP0_OUT_BUFFER_CONTROL + (uint)endpoint * 8;
-        var bufCtrl = ReadDpramWord(bufCtrlReg);
-        var requestedLen = (int)(bufCtrl & USB_BUF_CTRL_LEN_MASK);
-        var newLen = Math.Min(data.Length, requestedLen);
-
-        var bufferOffset = GetEndpointBufferOffset(endpoint, out_: true);
-        data[..newLen].CopyTo(_dpram.AsSpan((int)bufferOffset, newLen));
-
-        bufCtrl |= USB_BUF_CTRL_FULL;
-        bufCtrl = (bufCtrl & ~USB_BUF_CTRL_LEN_MASK) | ((uint)newLen & USB_BUF_CTRL_LEN_MASK);
-        WriteDpramWord(bufCtrlReg, bufCtrl);
-
-        IndicateBufferReady(endpoint, isOut: true);
+        // Defer DPRAM write + IndicateBufferReady to Tick() after READ_DELAY_CYCLES.
+        // Matches rp2040js endpointReadAlarms: without this delay, TinyUSB immediately re-arms
+        // the endpoint from within the BUFF_STATUS ISR, creating a tight loop that eventually
+        // fires BUFF_STATUS with ep->active=false and panics.
+        var buffBit = endpoint * 2 + 1; // OUT = odd bit
+        if (!_pendingReads.TryGetValue(buffBit, out var q))
+            _pendingReads[buffBit] = q = new Queue<(int, byte[], long)>();
+        q.Enqueue((endpoint, data.ToArray(), _totalCycles + READ_DELAY_CYCLES));
     }
 
     /// <summary>Copy <paramref name="data"/> into DPRAM at <paramref name="dpramOffset"/>.</summary>
@@ -462,6 +453,13 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
     // mimicking rp2040js's writeDelayMicroseconds alarm mechanism.
     private readonly Dictionary<int, Queue<(int endpoint, byte[] buffer, long deliverAt)>> _pendingWrites = new();
     private const long WRITE_DELAY_CYCLES = 625L;  // ~5 µs at 125 MHz, matching rp2040js default
+
+    // Pending OUT-transfer completions: deferred to Tick() so IndicateBufferReady fires after
+    // a delay rather than synchronously inside DpramUpdated. Matches rp2040js's readDelayMicroseconds
+    // alarm, which prevents a tight re-arm loop that would cause ep->active=false panics in TinyUSB.
+    private readonly Dictionary<int, Queue<(int endpoint, byte[] buffer, long deliverAt)>> _pendingReads = new();
+    private const long READ_DELAY_CYCLES = 625L;  // ~5 µs at 125 MHz, matching rp2040js default
+
     private long _totalCycles;
 
     // ── DPRAM endpoint FSM ───────────────────────────────────────────────
@@ -498,7 +496,6 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
             if (!_pendingWrites.TryGetValue(buffBit, out var q))
                 _pendingWrites[buffBit] = q = new Queue<(int, byte[], long)>();
             q.Enqueue((endpoint, buffer, _totalCycles + WRITE_DELAY_CYCLES));
-            System.Console.Error.WriteLine($"  [ep-arm] EP{endpoint} IN armed: len={bufLen} buffBit={buffBit} deliverAt={_totalCycles + WRITE_DELAY_CYCLES} totalCycles={_totalCycles}");
             IndicateBufferReady(endpoint, isOut: false);
         }
     }
@@ -563,7 +560,6 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
     {
         if (_cpu == null) return;
         var pending = ((_intr | _intf) & _inte) != 0;
-        System.Console.Error.WriteLine($"  [usb-irq] CheckInterrupts: intr=0x{_intr:X8} intf=0x{_intf:X8} inte=0x{_inte:X8} -> pending={pending} enabled={_cpu.Registers.EnabledInterrupts >> USB_IRQ & 1}");
         _cpu.SetInterrupt(USB_IRQ, pending);
     }
 
@@ -597,8 +593,7 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
             }
         }
 
-        if (_pendingWrites.Count == 0) return;
-        System.Console.Error.WriteLine($"  [usb-tick] Tick: totalCycles={_totalCycles} pendingWrites={_pendingWrites.Values.Sum(q => q.Count)}");
+        if (_pendingWrites.Count == 0 && _pendingReads.Count == 0) return;
 
         foreach (var (bit, queue) in _pendingWrites.ToArray())
         {
@@ -607,6 +602,25 @@ public sealed class UsbPeripheral : IMemoryMappedDevice, IHandlesAtomicAliases, 
                 var (ep, buf, _) = queue.Dequeue();
                 if (queue.Count == 0) _pendingWrites.Remove(bit);
                 OnEndpointWrite?.Invoke(ep, buf);
+            }
+        }
+
+        foreach (var (bit, queue) in _pendingReads.ToArray())
+        {
+            while (queue.Count > 0 && _totalCycles >= queue.Peek().deliverAt)
+            {
+                var (ep, buf, _) = queue.Dequeue();
+                if (queue.Count == 0) _pendingReads.Remove(bit);
+                var bufCtrlReg = EP0_OUT_BUFFER_CONTROL + (uint)ep * 8;
+                var bufCtrl = ReadDpramWord(bufCtrlReg);
+                var requestedLen = (int)(bufCtrl & USB_BUF_CTRL_LEN_MASK);
+                var newLen = Math.Min(buf.Length, requestedLen);
+                var bufferOffset = GetEndpointBufferOffset(ep, out_: true);
+                buf.AsSpan(0, newLen).CopyTo(_dpram.AsSpan((int)bufferOffset, newLen));
+                bufCtrl |= USB_BUF_CTRL_FULL;
+                bufCtrl = (bufCtrl & ~USB_BUF_CTRL_LEN_MASK) | ((uint)newLen & USB_BUF_CTRL_LEN_MASK);
+                WriteDpramWord(bufCtrlReg, bufCtrl);
+                IndicateBufferReady(ep, isOut: true);
             }
         }
     }

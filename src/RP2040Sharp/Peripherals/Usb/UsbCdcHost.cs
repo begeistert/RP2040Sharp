@@ -84,7 +84,6 @@ public sealed class UsbCdcHost
 
     private void HandleEndpointWrite(int endpoint, byte[] buffer)
     {
-        System.Console.Error.WriteLine($"  [cdc-ep] HandleEndpointWrite(ep={endpoint}, len={buffer.Length}) _descriptorsSize={_descriptorsSize} _initialized={_initialized}");
         if (endpoint == ENDPOINT_ZERO && buffer.Length == 0)
         {
             if (_descriptorsSize == null)
@@ -95,6 +94,9 @@ public sealed class UsbCdcHost
             {
                 CdcSetControlLineState();
                 OnDeviceConnected?.Invoke();
+                // Trigger MicroPython REPL prompt (mirrors rp2040js micropython-run.ts onDeviceConnected)
+                SendSerialByte((byte)'\r');
+                SendSerialByte((byte)'\n');
             }
             else if (!_resumeSignaled)
             {
@@ -158,8 +160,9 @@ public sealed class UsbCdcHost
 
     private void CdcSetControlLineState(ushort value = CDC_DTR | CDC_RTS, ushort interfaceNumber = 0)
     {
+        // bmRequestType = 0x21: HostToDevice | Class | Interface (not Device)
         _usb.SendSetupPacket(CreateSetupPacket(
-            DataDirection.HostToDevice, SetupType.Class, SetupRecipient.Device,
+            DataDirection.HostToDevice, SetupType.Class, SetupRecipient.Interface,
             CDC_REQUEST_SET_CONTROL_LINE_STATE, value, interfaceNumber, 0));
         _initialized = true;
     }
