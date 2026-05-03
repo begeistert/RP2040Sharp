@@ -297,6 +297,8 @@ public sealed unsafe class CortexM0Plus
     {
         if (irq is < 0 or > 25) return;
         var bit = 1u << irq;
+        if (irq == 5)
+            System.Console.Error.WriteLine($"  [usb-setirq] SetInterrupt(USB, {pending}) PendingBefore=0x{Registers.PendingInterrupts:X8} PRIMASK={Registers.PRIMASK}");
         if (pending)
             Registers.PendingInterrupts |= bit;
         else
@@ -416,5 +418,14 @@ public sealed unsafe class CortexM0Plus
         Registers.PC = retPC & 0xFFFFFFFE;
 
         Cycles += 10;
+        // After returning from an ISR, re-check interrupts so that a still-pending
+        // higher-priority IRQ (e.g. USB after SysTick) fires immediately, AND signal
+        // that an event was registered so the next WFE consumes it instead of sleeping.
+        // Without `EventRegistered = true`, pico-sdk WFE-loops that expect to be woken
+        // by the very IRQ we just serviced will deadlock — the alarm fires once, the
+        // handler runs, but the WFE that follows sleeps forever waiting for an event
+        // that already happened. rp2040js cortex-m0-core.ts:339-341 sets both flags.
+        Registers.InterruptsUpdated = true;
+        Registers.EventRegistered = true;
     }
 }
