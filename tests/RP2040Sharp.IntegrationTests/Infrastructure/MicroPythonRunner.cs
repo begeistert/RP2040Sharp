@@ -25,6 +25,7 @@ public sealed class MicroPythonRunner : IAsyncDisposable
     private readonly PicoSimulation _sim;
 
     public UartProbe Uart => _sim.Uart0;
+    public UsbCdcProbe UsbCdc => _sim.UsbCdc;
     public PicoSimulation Simulation => _sim;
 
     private MicroPythonRunner(PicoSimulation sim)
@@ -53,11 +54,23 @@ public sealed class MicroPythonRunner : IAsyncDisposable
     // ── REPL helpers ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Run the simulation until the MicroPython REPL prompt (<c>&gt;&gt;&gt; </c>) appears on UART,
-    /// or until <paramref name="timeoutMs"/> elapses.
+    /// Run the simulation until the MicroPython REPL prompt (<c>&gt;&gt;&gt; </c>) appears on UART
+    /// or USB-CDC, or until <paramref name="timeoutMs"/> elapses.
     /// </summary>
-    public bool WaitForPrompt(double timeoutMs = 15_000) =>
-        _sim.RunUntilOutput(Uart, ">>> ", timeoutMs);
+    public bool WaitForPrompt(double timeoutMs = 15_000)
+    {
+        const double batchMs = 100.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs)
+        {
+            _sim.RunMilliseconds(batchMs);
+            if (Uart.Text.Contains(">>> ", StringComparison.Ordinal)
+                || UsbCdc.Text.Contains(">>> ", StringComparison.Ordinal))
+                return true;
+            elapsed += batchMs;
+        }
+        return false;
+    }
 
     /// <summary>
     /// Inject a line of Python code into the REPL (appends <c>\r\n</c>).

@@ -19,6 +19,23 @@ public sealed class MicroPythonBootTests
         Environment.GetEnvironmentVariable("SKIP_INTEGRATION_TESTS") == "1";
 
     [Theory]
+    [InlineData("v1.21.0")]
+    public async Task MicroPython_UsbCdcEnumerates(string version)
+    {
+        if (ShouldSkip) return;
+
+        await using var runner = await MicroPythonRunner.CreateAsync(version);
+        if (runner is null) return;
+
+        // Run in 100ms batches so each Tick() delivers one pending USB IN transfer
+        for (var i = 0; i < 20 && !runner.UsbCdc.IsConnected; i++)
+            runner.Simulation.RunMilliseconds(100);
+
+        runner.UsbCdc.IsConnected.Should().BeTrue(
+            $"USB CDC should complete enumeration within 2 seconds of simulated time");
+    }
+
+    [Theory]
     [InlineData("v1.19.1")]
     [InlineData("v1.20.0")]
     [InlineData("v1.21.0")]
@@ -48,7 +65,8 @@ public sealed class MicroPythonBootTests
 
         runner.WaitForPrompt();
 
-        runner.Uart.Text.Should()
+        var allOutput = runner.Uart.Text + runner.UsbCdc.Text;
+        allOutput.Should()
             .Contain("MicroPython", "the version banner should appear during boot");
     }
 

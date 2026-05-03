@@ -65,13 +65,6 @@ internal static class Program
             var callerLr = cpu.Registers.LR & ~1u;
             Console.Error.WriteLine($"  [hard_assert] called from LR=0x{callerLr:X8} R0=0x{cpu.Registers.R0:X8} R1=0x{cpu.Registers.R1:X8} R2=0x{cpu.Registers.R2:X8} R3=0x{cpu.Registers.R3:X8}");
         });
-        // Trace exc#19 handler (0x1002DDB8) first 5 times
-        int excHandlerCount = 0;
-        pico.Cpu.RegisterNativeHook(0x1002DDB8, cpu =>
-        {
-            if (++excHandlerCount <= 5)
-                Console.Error.WriteLine($"  [exc19-handler] exc#19 entry: LR=0x{cpu.Registers.LR:X8} SP=0x{cpu.Registers.SP:X8} R0=0x{cpu.Registers.R0:X8} R1=0x{cpu.Registers.R1:X8} cycles={cpu.Cycles}");
-        });
 
         Console.Write("[USB-CDC] Tracing boot...");
         Console.Error.WriteLine($"\n  [trace] Initial PC=0x{pico.Cpu.Registers.PC:X8} SP=0x{pico.Cpu.Registers.SP:X8}");
