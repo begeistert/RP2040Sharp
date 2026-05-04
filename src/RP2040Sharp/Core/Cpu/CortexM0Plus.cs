@@ -11,6 +11,9 @@ public sealed unsafe class CortexM0Plus
     public Registers Registers;
     public long Cycles;
 
+    /// <summary>0 = Core0, 1 = Core1. Used by SIO to return the correct CPUID and route FIFOs.</summary>
+    public int CoreId { get; set; }
+
     private readonly InstructionDecoder _decoder;
 
     private byte* _fetchPtr;
@@ -127,8 +130,17 @@ public sealed unsafe class CortexM0Plus
             // never fires → WFE never returns.
             if (Registers.Waiting)
             {
-                Cycles += (uint)(instructions + 1);
-                return;
+                // SEV from another core (or FIFO-write) sets EventRegistered; wake WFE.
+                if (Registers.EventRegistered)
+                {
+                    Registers.Waiting = false;
+                    Registers.EventRegistered = false;
+                }
+                else
+                {
+                    Cycles += (uint)(instructions + 1);
+                    return;
+                }
             }
 
             var pc = Registers.PC;

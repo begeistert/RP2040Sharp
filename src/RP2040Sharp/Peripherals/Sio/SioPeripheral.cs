@@ -79,6 +79,13 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     private const uint SPINLOCK_END  = 0x17C;
 
     private readonly CortexM0Plus _cpu;
+    private CortexM0Plus? _cpu1;  // Core1 CPU; set by RP2040Machine after construction
+
+    /// <summary>
+    /// Returns the ID of the core currently performing the bus access (0 or 1).
+    /// Set by RP2040Machine before each CPU's Run() call.
+    /// </summary>
+    public Func<int>? GetActiveCoreId;
 
     // GPIO state
     private uint _gpioOut;
@@ -97,17 +104,20 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     // Spinlocks
     private uint _spinLocks;
 
-    // Multicore FIFO — FIFO_ST bits: VLD[0]=RX not empty, RDY[1]=TX not full, WOF[2], ROE[3]
+    // Multicore FIFO — two one-directional queues
+    //   _fifo01: Core0 → Core1   (Core0 writes here, Core1 reads here)
+    //   _fifo10: Core1 → Core0   (Core1 writes here, Core0 reads here)
+    // FIFO_ST bits: VLD[0]=RX not empty, RDY[1]=TX not full, WOF[2], ROE[3]
     private const int FIFO_DEPTH = 8;
     private const uint FIFO_ST_VLD = 1u;        // RX has data
     private const uint FIFO_ST_RDY = 1u << 1;   // TX has space
     private const uint FIFO_ST_WOF = 1u << 2;   // write-overflow (TX write when full)
     private const uint FIFO_ST_ROE = 1u << 3;   // read-underflow (RX read when empty)
 
-    private readonly Queue<uint> _fifoTx = new(FIFO_DEPTH);  // Core0→Core1
-    private readonly Queue<uint> _fifoRx = new(FIFO_DEPTH);  // Core1→Core0 (injectable)
-    private bool _fifoWof;
-    private bool _fifoRoe;
+    private readonly Queue<uint> _fifo01 = new(FIFO_DEPTH);  // Core0→Core1
+    private readonly Queue<uint> _fifo10 = new(FIFO_DEPTH);  // Core1→Core0
+    private bool _wof0, _roe0;  // Core0's WOF/ROE flags
+    private bool _wof1, _roe1;  // Core1's WOF/ROE flags
 
     // Interpolators
     private InterpState _interp0;
@@ -139,6 +149,9 @@ public sealed class SioPeripheral : IMemoryMappedDevice
         _cpu = cpu;
     }
 
+    /// <summary>Register Core1's CPU so FIFO writes can signal it.</summary>
+    public void SetCpu1(CortexM0Plus cpu1) => _cpu1 = cpu1;
+
     // ── IMemoryMappedDevice — reads ──────────────────────────────────
 
     public uint ReadWord(uint address)
@@ -157,7 +170,7 @@ public sealed class SioPeripheral : IMemoryMappedDevice
 
         return address switch
         {
-            CPUID        => 0,           // always Core0 in single-core simulation
+            CPUID        => (uint)(GetActiveCoreId?.Invoke() ?? 0),
             GPIO_IN      => _gpioIn,
             // GPIO_HI_IN: QSPI GPIO inputs. Bit 1 = QSPI_SS_N (active-low flash select / BOOTSEL).
             // It must read HIGH (1) so the bootrom BOOTSEL check sees "button not pressed" and
@@ -175,12 +188,8 @@ public sealed class SioPeripheral : IMemoryMappedDevice
             DIV_QUOTIENT  => _divQuotient,
             DIV_REMAINDER => _divRemainder,
             DIV_CSR       => _divCsr,
-            FIFO_ST  =>
-                (_fifoRx.Count > 0 ? FIFO_ST_VLD : 0u)
-              | (_fifoTx.Count < FIFO_DEPTH ? FIFO_ST_RDY : 0u)
-              | (_fifoWof ? FIFO_ST_WOF : 0u)
-              | (_fifoRoe ? FIFO_ST_ROE : 0u),
-            FIFO_RD  => ReadFifoRx(),
+            FIFO_ST  => BuildFifoStatus(GetActiveCoreId?.Invoke() ?? 0),
+            FIFO_RD  => ReadFifoForCore(GetActiveCoreId?.Invoke() ?? 0),
             SPINLOCK_ST   => _spinLocks,
             _ => 0,
         };
@@ -237,16 +246,51 @@ public sealed class SioPeripheral : IMemoryMappedDevice
             case GPIO_HI_OE_XOR:   _gpioHiOe ^=  value; break;
 
             case FIFO_WR:
-                if (_fifoTx.Count < FIFO_DEPTH)
-                    _fifoTx.Enqueue(value);
+            {
+                var coreId = GetActiveCoreId?.Invoke() ?? 0;
+                if (coreId == 0)
+                {
+                    // Core0 sends to Core1
+                    if (_fifo01.Count < FIFO_DEPTH)
+                    {
+                        _fifo01.Enqueue(value);
+                        if (_cpu1 != null)
+                        {
+                            _cpu1.SetInterrupt(16, true);           // SIO_IRQ_PROC1 on Core1
+                            _cpu1.Registers.EventRegistered = true; // wake WFE
+                        }
+                    }
+                    else _wof0 = true;
+                }
                 else
-                    _fifoWof = true;
+                {
+                    // Core1 sends to Core0
+                    if (_fifo10.Count < FIFO_DEPTH)
+                    {
+                        _fifo10.Enqueue(value);
+                        _cpu.SetInterrupt(15, true);           // SIO_IRQ_PROC0 on Core0
+                        _cpu.Registers.EventRegistered = true; // wake WFE
+                    }
+                    else _wof1 = true;
+                }
                 break;
+            }
             case FIFO_ST:
-                // Write clears WOF and ROE (write 1 to clear)
-                if ((value & FIFO_ST_WOF) != 0) _fifoWof = false;
-                if ((value & FIFO_ST_ROE) != 0) _fifoRoe = false;
+            {
+                // Write 1 to clear WOF and ROE
+                var coreId = GetActiveCoreId?.Invoke() ?? 0;
+                if (coreId == 0)
+                {
+                    if ((value & FIFO_ST_WOF) != 0) _wof0 = false;
+                    if ((value & FIFO_ST_ROE) != 0) _roe0 = false;
+                }
+                else
+                {
+                    if ((value & FIFO_ST_WOF) != 0) _wof1 = false;
+                    if ((value & FIFO_ST_ROE) != 0) _roe1 = false;
+                }
                 break;
+            }
 
             case DIV_UDIVIDEND:
                 _divUdividend = value;
@@ -492,30 +536,61 @@ public sealed class SioPeripheral : IMemoryMappedDevice
 
     // ── FIFO helpers ──────────────────────────────────────────────────
 
-    private uint ReadFifoRx()
+    private uint BuildFifoStatus(int coreId)
     {
-        if (_fifoRx.TryDequeue(out var v)) return v;
-        _fifoRoe = true;
-        return 0;
+        if (coreId == 0)
+        {
+            // Core0: RX = fifo10 (Core1→Core0), TX = fifo01 (Core0→Core1)
+            return (_fifo10.Count > 0 ? FIFO_ST_VLD : 0u)
+                 | (_fifo01.Count < FIFO_DEPTH ? FIFO_ST_RDY : 0u)
+                 | (_wof0 ? FIFO_ST_WOF : 0u)
+                 | (_roe0 ? FIFO_ST_ROE : 0u);
+        }
+        else
+        {
+            // Core1: RX = fifo01 (Core0→Core1), TX = fifo10 (Core1→Core0)
+            return (_fifo01.Count > 0 ? FIFO_ST_VLD : 0u)
+                 | (_fifo10.Count < FIFO_DEPTH ? FIFO_ST_RDY : 0u)
+                 | (_wof1 ? FIFO_ST_WOF : 0u)
+                 | (_roe1 ? FIFO_ST_ROE : 0u);
+        }
     }
 
+    private uint ReadFifoForCore(int coreId)
+    {
+        if (coreId == 0)
+        {
+            if (_fifo10.TryDequeue(out var v)) return v;
+            _roe0 = true;
+            return 0;
+        }
+        else
+        {
+            if (_fifo01.TryDequeue(out var v)) return v;
+            _roe1 = true;
+            return 0;
+        }
+    }
+
+    private uint ReadFifoRx() => ReadFifoForCore(0);  // legacy alias for Core0
+
     /// <summary>
-    /// Push a value into the RX FIFO as if Core1 sent it.
+    /// Push a value into Core0's RX FIFO as if Core1 sent it.
     /// Used by tests and simulated multicore scenarios.
     /// </summary>
     public void InjectFifoRx(uint value)
     {
-        if (_fifoRx.Count < FIFO_DEPTH)
+        if (_fifo10.Count < FIFO_DEPTH)
         {
-            _fifoRx.Enqueue(value);
-            _cpu.SetInterrupt(15, true);   // SIO_IRQ_PROC0: notify core 0 data is available
+            _fifo10.Enqueue(value);
+            _cpu.SetInterrupt(15, true);   // SIO_IRQ_PROC0: notify Core0 data is available
         }
     }
 
     /// <summary>
     /// Drain the TX FIFO (values written by Core0 and "sent" to Core1).
     /// </summary>
-    public bool TryDequeueTx(out uint value) => _fifoTx.TryDequeue(out value);
+    public bool TryDequeueTx(out uint value) => _fifo01.TryDequeue(out value);
 
     // ── Spinlocks ─────────────────────────────────────────────────────
 
