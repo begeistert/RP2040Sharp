@@ -178,8 +178,15 @@ public sealed class PwmPeripheral : IMemoryMappedDevice, ITickable
                     if ((value & CSR_PH_ADV) != 0 && _ctr[s] < _top[s]) _ctr[s]++;
                     if ((value & CSR_PH_RET) != 0 && _ctr[s] > 0)       _ctr[s]--;
                     _csr[s] = value & ~(CSR_PH_ADV | CSR_PH_RET | CSR_PH_STALLED);
-                    if ((value & CSR_EN) != 0) _enable |= 1u << s;
-                    else                       _enable &= ~(1u << s);
+                    if ((value & CSR_EN) != 0)
+                    {
+                        _enable |= 1u << s;
+                        // When first enabling in phase-correct mode with counter at 0,
+                        // start counting UP to prevent a spurious wrap-interrupt at t=0.
+                        if ((value & CSR_PH_CORRECT) != 0 && _ctr[s] == 0)
+                            _phaseDir[s] = true;
+                    }
+                    else _enable &= ~(1u << s);
                     break;
                 case OFF_DIV: _div[s] = value & 0xFFF; break;
                 case OFF_CTR: _ctr[s] = value & 0xFFFF; break;
