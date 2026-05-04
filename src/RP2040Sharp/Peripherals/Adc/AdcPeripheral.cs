@@ -7,8 +7,9 @@ namespace RP2040.Peripherals.Adc;
 /// RP2040 ADC peripheral (base 0x4004C000).
 /// 4 external channels (GPIO26-29) + 1 internal temperature sensor.
 /// Conversion results are provided via injectable callbacks for simulation.
+/// START_MANY (free-running) mode is driven via ITickable.
 /// </summary>
-public sealed class AdcPeripheral : IMemoryMappedDevice
+public sealed class AdcPeripheral : IMemoryMappedDevice, ITickable
 {
     private const uint ADC_CS     = 0x000;  // Control / Status
     private const uint ADC_RESULT = 0x004;  // Conversion result (12-bit, read-only)
@@ -35,6 +36,7 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
     private readonly Queue<ushort> _adcFifo = new(FIFO_DEPTH);
     private bool _fifoUnder;  // underflow (read when empty)
     private bool _fifoOver;   // overflow (write when full)
+    private long _tickAccum;  // accumulated CPU cycles for free-running mode
 
     /// <summary>
     /// Optional per-channel value provider. Return a 12-bit value (0-4095).
@@ -46,6 +48,33 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
     public bool HasFifoData => _adcFifo.Count > 0;
 
     public uint Size => 0x100;
+
+    // ── ITickable (START_MANY free-running mode) ──────────────────────────
+
+    public void Tick(long deltaCycles)
+    {
+        if ((_cs & (1u << 3)) == 0) return;  // START_MANY not set
+
+        // ADC clock = 48 MHz; CPU clock = 125 MHz; each conversion takes 96 ADC clocks.
+        // ADC_DIV: INT[27:8] + FRAC[7:0] (integer and fractional divisor of ADC clock).
+        var divInt  = (long)((_div >> 8) & 0xFFFFF);
+        var divFrac = (long)(_div & 0xFF);
+        if (divInt == 0) divInt = 1;
+
+        // cycles_per_conversion = (divInt + divFrac/256) * 96 * (CPU_HZ / ADC_HZ)
+        //   = (divInt*256 + divFrac) * 96 * 125 / (256 * 48)
+        const long num = 96L * 125;
+        const long den = 256L * 48;
+        var cyclesPerConv = (divInt * 256 + divFrac) * num / den;
+        if (cyclesPerConv < 1) cyclesPerConv = 1;
+
+        _tickAccum += deltaCycles;
+        while (_tickAccum >= cyclesPerConv)
+        {
+            _tickAccum -= cyclesPerConv;
+            PerformConversion();
+        }
+    }
 
     public AdcPeripheral(CortexM0Plus cpu)
     {
@@ -143,6 +172,10 @@ public sealed class AdcPeripheral : IMemoryMappedDevice
                 if ((_fcs & (1u << 1)) != 0) sample >>= 4;  // SHIFT
                 _adcFifo.Enqueue(sample);
             }
+
+            // Fire ADC_IRQ_FIFO (IRQ 22) when FIFO level meets threshold
+            if (BuildIntr() != 0 && (_inte & 1) != 0)
+                _cpu.SetInterrupt(22, true);
         }
     }
 
