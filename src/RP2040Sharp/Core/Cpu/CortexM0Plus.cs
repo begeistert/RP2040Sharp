@@ -37,11 +37,14 @@ public sealed unsafe class CortexM0Plus
     /// returns the CPU automatically performs <c>PC = LR &amp; ~1</c> (same as BX LR).
     /// </summary>
     private Dictionary<uint, Action<CortexM0Plus>>? _nativeHooks;
+    private uint _nativeHookMax;
 
     public void RegisterNativeHook(uint address, Action<CortexM0Plus> hook)
     {
         _nativeHooks ??= new Dictionary<uint, Action<CortexM0Plus>>();
-        _nativeHooks[address & ~1u] = hook;
+        address &= ~1u;
+        _nativeHooks[address] = hook;
+        if (address > _nativeHookMax) _nativeHookMax = address;
     }
 
     public CortexM0Plus(BusInterconnect bus)
@@ -153,10 +156,8 @@ public sealed unsafe class CortexM0Plus
             }
 
             // ULTRA-FAST FETCH
-            // Check for native hooks (BootROM or Flash regions) before normal dispatch.
-            if ((regionId == BusInterconnect.REGION_BOOTROM || regionId == BusInterconnect.REGION_FLASH)
-                && _nativeHooks != null
-                && _nativeHooks.TryGetValue(pc, out var nativeHook))
+            // Check for native hooks — only possible in BootROM (pc < 0x23C5 after LoadFlash).
+            if (_nativeHooks != null && pc <= _nativeHookMax && _nativeHooks.TryGetValue(pc, out var nativeHook))
             {
                 var pcBeforeHook = Registers.PC; // equals pc (not yet advanced; advance is only in normal dispatch)
                 nativeHook(this);
