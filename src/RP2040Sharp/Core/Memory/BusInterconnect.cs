@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
 
 namespace RP2040.Core.Memory;
 
@@ -22,15 +21,6 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public readonly byte* PtrFlash;
     public readonly byte* PtrBootRom;
 
-#if BROWSER
-    // WASM: NativeMemory not available; use pinned managed arrays instead
-    private readonly byte*[] _pageTable = new byte*[16];
-    private readonly uint[]  _maskTable = new uint[16];
-#else
-    private readonly byte** _pageTable;
-    private readonly uint*  _maskTable;
-#endif
-
     private readonly IMemoryMappedDevice[] _memoryMap = new IMemoryMappedDevice[16];
 
     // SSI peripheral lives inside the Flash region (0x18000000) — handled as a sub-device
@@ -49,11 +39,6 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         FlashSize = flashSizeBytes;
         MaskFlash = flashSizeBytes - 1;
 
-#if !BROWSER
-        _pageTable = (byte**)NativeMemory.AllocZeroed(16, (nuint)sizeof(byte*));
-        _maskTable = (uint*)NativeMemory.AllocZeroed(16, sizeof(uint));
-#endif
-
         _sram = new RandomAccessMemory(512 * 1024);
         _flash = new RandomAccessMemory((int)flashSizeBytes);
         _bootRom = new RandomAccessMemory(16 * 1024);
@@ -61,15 +46,6 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
         PtrSram = _sram.BasePtr;
         PtrFlash = _flash.BasePtr;
         PtrBootRom = _bootRom.BasePtr;
-
-        _pageTable[REGION_BOOTROM] = PtrBootRom;
-        _maskTable[REGION_BOOTROM] = MASK_BOOTROM;
-
-        _pageTable[REGION_FLASH] = PtrFlash;
-        _maskTable[REGION_FLASH] = MaskFlash;
-
-        _pageTable[REGION_SRAM] = PtrSram;
-        _maskTable[REGION_SRAM] = MASK_SRAM;
 
         MapDevice((int)REGION_BOOTROM, _bootRom);
         MapDevice((int)REGION_FLASH, _flash);
@@ -94,37 +70,51 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
     public byte ReadByte(uint address)
     {
         var region = address >> 28;
-        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
-            return _ssiDevice.ReadByte(address - SSI_BASE_ADDRESS);
-
-        var basePtr = _pageTable[region];
-        return basePtr != null ? basePtr[address & _maskTable[region]] : ReadByteDispatch(address);
+        if (region == REGION_SRAM)
+            return PtrSram[address & MASK_SRAM];
+        if (region == REGION_FLASH)
+        {
+            if (_ssiDevice != null && address >= SSI_BASE_ADDRESS)
+                return _ssiDevice.ReadByte(address - SSI_BASE_ADDRESS);
+            return PtrFlash[address & MaskFlash];
+        }
+        if (region == REGION_BOOTROM)
+            return PtrBootRom[address & MASK_BOOTROM];
+        return ReadByteDispatch(address);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ushort ReadHalfWord(uint address)
     {
         var region = address >> 28;
-        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
-            return _ssiDevice.ReadHalfWord(address - SSI_BASE_ADDRESS);
-
-        var basePtr = _pageTable[region];
-        return basePtr != null
-            ? Unsafe.ReadUnaligned<ushort>(basePtr + (address & _maskTable[region]))
-            : ReadHalfWordDispatch(address);
+        if (region == REGION_SRAM)
+            return Unsafe.ReadUnaligned<ushort>(PtrSram + (address & MASK_SRAM));
+        if (region == REGION_FLASH)
+        {
+            if (_ssiDevice != null && address >= SSI_BASE_ADDRESS)
+                return _ssiDevice.ReadHalfWord(address - SSI_BASE_ADDRESS);
+            return Unsafe.ReadUnaligned<ushort>(PtrFlash + (address & MaskFlash));
+        }
+        if (region == REGION_BOOTROM)
+            return Unsafe.ReadUnaligned<ushort>(PtrBootRom + (address & MASK_BOOTROM));
+        return ReadHalfWordDispatch(address);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public uint ReadWord(uint address)
     {
         var region = address >> 28;
-        if (_ssiDevice != null && region == REGION_FLASH && address >= SSI_BASE_ADDRESS)
-            return _ssiDevice.ReadWord(address - SSI_BASE_ADDRESS);
-
-        var basePtr = _pageTable[region];
-        return basePtr != null
-            ? Unsafe.ReadUnaligned<uint>(basePtr + (address & _maskTable[region]))
-            : ReadWordDispatch(address);
+        if (region == REGION_SRAM)
+            return Unsafe.ReadUnaligned<uint>(PtrSram + (address & MASK_SRAM));
+        if (region == REGION_FLASH)
+        {
+            if (_ssiDevice != null && address >= SSI_BASE_ADDRESS)
+                return _ssiDevice.ReadWord(address - SSI_BASE_ADDRESS);
+            return Unsafe.ReadUnaligned<uint>(PtrFlash + (address & MaskFlash));
+        }
+        if (region == REGION_BOOTROM)
+            return Unsafe.ReadUnaligned<uint>(PtrBootRom + (address & MASK_BOOTROM));
+        return ReadWordDispatch(address);
     }
 
     // --- SLOW PATH DISPATCHERS ---
@@ -222,13 +212,6 @@ public unsafe class BusInterconnect : IMemoryBus, IDisposable
             _flash?.Dispose();
             _bootRom?.Dispose();
         }
-
-#if !BROWSER
-        if (_pageTable != null)
-            NativeMemory.Free(_pageTable);
-        if (_maskTable != null)
-            NativeMemory.Free(_maskTable);
-#endif
 
         _disposed = true;
     }
