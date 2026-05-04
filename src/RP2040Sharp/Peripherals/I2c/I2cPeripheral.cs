@@ -179,6 +179,11 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
             case IC_TX_TL:            _txTl             = value & 0xFF; break;
             case IC_ENABLE:
                 _enable = value & 3;
+                // TX_EMPTY (bit 4): TX FIFO is at or below IC_TX_TL threshold.
+                // In simulation TX is always drained immediately, so set it when enabled.
+                if (IsEnabled) _rawIntr |= 1u << 4;
+                else           _rawIntr &= ~(1u << 4);
+                CheckInterrupts();
                 break;
             case IC_SDA_HOLD:         _sdaHold          = value & 0xFFFFFF; break;
             case IC_SLV_DATA_NACK_ONLY: _slvDataNackOnly = value & 1; break;
@@ -227,6 +232,9 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         else
         {
             OnWrite?.Invoke(addr, (byte)(value & 0xFF));
+            // TX FIFO is always drained instantly in simulation
+            _rawIntr |= 1u << 4;  // TX_EMPTY
+            CheckInterrupts();
         }
 
         // Signal STOP_DET when STOP bit set
