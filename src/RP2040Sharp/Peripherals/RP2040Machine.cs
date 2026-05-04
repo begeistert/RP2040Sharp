@@ -347,6 +347,85 @@ public sealed class RP2040Machine : IDisposable
         Cpu.Registers.PC = BusInterconnect.FLASH_START_ADDRESS;
     }
 
+    // UF2 format constants (https://github.com/microsoft/uf2)
+    private const uint Uf2MagicStart0 = 0x0A324655u; // "UF2\n"
+    private const uint Uf2MagicStart1 = 0x9E5D5157u;
+    private const uint Uf2MagicEnd    = 0x0AB16F30u;
+    private const int  Uf2BlockSize   = 512;
+    private const uint FlashBase      = BusInterconnect.FLASH_START_ADDRESS;
+
+    /// <summary>
+    /// Parses a UF2 firmware file and loads its payload into Flash via <see cref="LoadFlash"/>.
+    /// Only blocks targeting the RP2040 flash region (≥ 0x10000000) are copied; blocks with
+    /// the "not main flash" flag (bit 0) are skipped.
+    /// </summary>
+    /// <param name="uf2">Raw UF2 file bytes.</param>
+    /// <exception cref="ArgumentException">Data is not a valid UF2 size.</exception>
+    /// <exception cref="InvalidDataException">No valid data blocks or target address below flash base.</exception>
+    public void LoadUf2(ReadOnlySpan<byte> uf2) => LoadFlash(Uf2ToFlash(uf2));
+
+    /// <summary>
+    /// Parses a UF2 file into a flat binary flash image starting at offset 0 (relative to 0x10000000).
+    /// Erased bytes (not covered by any UF2 block) are set to 0xFF.
+    /// Returns <c>null</c> if the data is not a valid UF2 file (wrong magic or invalid block structure).
+    /// </summary>
+    /// <param name="uf2">Raw UF2 file bytes.</param>
+    public static byte[]? Uf2ToFlash(ReadOnlySpan<byte> uf2)
+    {
+        if (uf2.IsEmpty || uf2.Length < Uf2BlockSize || uf2.Length % Uf2BlockSize != 0)
+            return null;
+
+        int blockCount = uf2.Length / Uf2BlockSize;
+        uint flashMin = uint.MaxValue;
+        uint flashMax = 0;
+
+        // First pass: validate blocks and find address range.
+        for (int b = 0; b < blockCount; b++)
+        {
+            int off = b * Uf2BlockSize;
+            uint magic0 = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[off..]);
+            uint magic1 = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 4)..]);
+            uint magicE  = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 508)..]);
+            if (magic0 != Uf2MagicStart0 || magic1 != Uf2MagicStart1 || magicE != Uf2MagicEnd)
+                return null;
+
+            uint flags       = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 8)..]);
+            if ((flags & 0x00000001u) != 0) continue; // not main flash — skip
+
+            uint targetAddr  = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 12)..]);
+            uint payloadSize = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 16)..]);
+            if (payloadSize == 0 || payloadSize > 476)
+                return null;
+
+            if (targetAddr < flashMin) flashMin = targetAddr;
+            uint end = targetAddr + payloadSize;
+            if (end > flashMax) flashMax = end;
+        }
+
+        if (flashMin == uint.MaxValue || flashMax <= flashMin)
+            return null;
+        if (flashMin < FlashBase)
+            return null;
+
+        // Allocate a flash image from FlashBase, initialized to 0xFF (erased flash).
+        var image = new byte[flashMax - FlashBase];
+        image.AsSpan().Fill(0xFF);
+
+        // Second pass: copy payloads.
+        for (int b = 0; b < blockCount; b++)
+        {
+            int off = b * Uf2BlockSize;
+            uint flags       = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 8)..]);
+            if ((flags & 0x00000001u) != 0) continue;
+
+            uint targetAddr  = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 12)..]);
+            uint payloadSize = System.Runtime.InteropServices.MemoryMarshal.Read<uint>(uf2[(off + 16)..]);
+            uf2.Slice(off + 32, (int)payloadSize).CopyTo(image.AsSpan((int)(targetAddr - FlashBase)));
+        }
+
+        return image;
+    }
+
     /// <summary>
     /// Scans the flash image for an ARM Cortex-M vector table by looking for a word
     /// whose upper byte places it in SRAM (0x20xxxxxx) followed by a Thumb-mode pointer
