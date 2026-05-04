@@ -125,6 +125,15 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     public uint GpioOe  => _gpioOe;
     public uint GpioOut => _gpioOut;
 
+    public void SetGpioExternalIn(int pin, bool high)
+    {
+        if (high) _gpioIn |=  (1u << pin);
+        else      _gpioIn &= ~(1u << pin);
+    }
+
+    public bool GetGpioOutputEnable(int pin) => (_gpioOe  & (1u << pin)) != 0;
+    public bool GetGpioOut(int pin)           => (_gpioOut & (1u << pin)) != 0;
+
     public SioPeripheral(CortexM0Plus cpu)
     {
         _cpu = cpu;
