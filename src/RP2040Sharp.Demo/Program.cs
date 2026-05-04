@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using RP2040.Peripherals;
 using RP2040.TestKit;
 using RP2040.TestKit.Boards;
 
@@ -83,6 +84,8 @@ internal static class Program
         Console.WriteLine();
 
         // ── 3. REPL demo ──────────────────────────────────────────────────────
+        var replStartCycles = pico.Cpu.Cycles;
+        var replStartWall   = wallClock.Elapsed;
         RunDemo(pico, "1 + 1",                               expectedOutput: "2");
         RunDemo(pico, "2 ** 10",                             expectedOutput: "1024");
         RunDemo(pico, "import sys; print(sys.platform)",     expectedOutput: "rp2");
@@ -90,8 +93,16 @@ internal static class Program
         RunDemo(pico, "import machine; print(machine.freq())", expectedOutput: null);
 
         // ── 4. Performance report ─────────────────────────────────────────────
+        var replCycles = pico.Cpu.Cycles - replStartCycles;
+        var replWallMs = (wallClock.Elapsed - replStartWall).TotalMilliseconds;
         wallClock.Stop();
-        PrintPerformance(pico.Cpu.Cycles, wallClock.Elapsed);
+
+        Console.WriteLine();
+        Console.Write("Running micro-benchmark (tight Flash loop)...");
+        var (benchMin, benchMax, benchAvg) = RunMicroBenchmark();
+        Console.WriteLine($" done  ({benchAvg:F0} MIPS avg)");
+
+        PrintPerformance(bootCycles, bootWallMs, replCycles, replWallMs, benchMin, benchMax, benchAvg);
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("Demo complete.");
@@ -102,22 +113,33 @@ internal static class Program
     private static string FormatTime(double ms) =>
         ms < 1000 ? $"{ms:F0} ms" : $"{ms / 1000.0:F2} s";
 
-    private static void PrintPerformance(long totalCycles, TimeSpan wallTime)
+    private static void PrintPerformance(
+        long bootCycles, double bootWallMs,
+        long replCycles, double replWallMs,
+        double benchMin, double benchMax, double benchAvg)
     {
-        var wallMs    = wallTime.TotalMilliseconds;
-        var wallSecs  = wallTime.TotalSeconds;
-        var simSecs   = totalCycles / RP2040_CLK_HZ;
-        var mips      = totalCycles / 1_000_000.0 / wallSecs;
-        var speedup   = simSecs / wallSecs;
+        var bootMips     = bootCycles / 1_000_000.0 / (bootWallMs / 1000.0);
+        var replMips     = replCycles > 0 ? replCycles / 1_000_000.0 / (replWallMs / 1000.0) : 0;
+        var totalCycles  = bootCycles + replCycles;
+        var totalWallMs  = bootWallMs + replWallMs;
+        var totalWallSec = totalWallMs / 1000.0;
+        var simSecs      = totalCycles / RP2040_CLK_HZ;
+        var totalMips    = totalCycles / 1_000_000.0 / totalWallSec;
+        var speedup      = simSecs / totalWallSec;
 
-        Console.WriteLine();
         Console.WriteLine(new string('─', 60));
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"  Simulated cycles : {totalCycles / 1_000_000.0:F0} M");
-        Console.WriteLine($"  Wall time        : {FormatTime(wallMs)}");
-        Console.WriteLine($"  Emulated time    : {simSecs:F2} s");
-        Console.WriteLine($"  Throughput       : {mips:F0} MIPS");
-        Console.WriteLine($"  Speed vs RP2040  : {speedup:F3}×  (real hardware @ 125 MHz)");
+        Console.WriteLine("  Phase breakdown:");
+        Console.WriteLine($"    Boot : {bootCycles / 1_000_000.0,6:F0} M cycles  {FormatTime(bootWallMs),-10}  {bootMips,6:F0} MIPS");
+        Console.WriteLine($"    REPL : {replCycles / 1_000_000.0,6:F0} M cycles  {FormatTime(replWallMs),-10}  {replMips,6:F0} MIPS");
+        Console.WriteLine();
+        Console.WriteLine($"  Total simulated : {totalCycles / 1_000_000.0:F0} M cycles  /  {simSecs:F2} s emulated");
+        Console.WriteLine($"  Total wall time : {FormatTime(totalWallMs)}");
+        Console.WriteLine($"  Overall MIPS    : {totalMips:F0}");
+        Console.WriteLine($"  Speed vs RP2040 : {speedup:F3}×  (real hardware @ 125 MHz)");
+        Console.WriteLine();
+        Console.WriteLine("  Micro-benchmark (tight arithmetic loop, Flash):");
+        Console.WriteLine($"    min {benchMin:F0}  ·  avg {benchAvg:F0}  ·  max {benchMax:F0} MIPS");
         Console.ResetColor();
         Console.WriteLine(new string('─', 60));
         Console.WriteLine();
@@ -266,4 +288,38 @@ internal static class Program
 
     private static uint ReadU32(byte[] b, int o) =>
         (uint)(b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24));
+
+    private static (double min, double max, double avg) RunMicroBenchmark()
+    {
+        const int Rounds = 5;
+        const int InstructionsPerRound = 10_000_000;
+
+        // Tight loop: movs r0,#0 | movs r1,#1 | 4×adds r0,r0,r1 | b -14
+        // No stack, no I/O — pure instruction dispatch throughput.
+        // PC starts at 0x10000000 (LoadFlash forces this), branch target 0x10000002.
+        ReadOnlySpan<byte> code = [
+            0x00, 0x20,  // movs r0, #0
+            0x01, 0x21,  // movs r1, #1        ← branch target (0x10000002)
+            0x40, 0x18, 0x40, 0x18,             // adds r0, r0, r1 (×2)
+            0x40, 0x18, 0x40, 0x18,             // adds r0, r0, r1 (×2)
+            0xF9, 0xE7,  // b -14 → 0x10000002
+        ];
+
+        var firmware = new byte[16];
+        code.CopyTo(firmware);
+
+        using var machine = new RP2040Machine();
+        machine.LoadFlash(firmware);
+
+        var results = new double[Rounds];
+        for (var i = 0; i < Rounds; i++)
+        {
+            var sw = Stopwatch.StartNew();
+            machine.Cpu.Run(InstructionsPerRound);
+            sw.Stop();
+            results[i] = InstructionsPerRound / 1_000_000.0 / sw.Elapsed.TotalSeconds;
+        }
+
+        return (results.Min(), results.Max(), results.Average());
+    }
 }
