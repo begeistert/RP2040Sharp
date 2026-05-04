@@ -32,7 +32,8 @@ internal static class Program
         Console.WriteLine("OK");
 
         Console.Write("Parsing UF2... ");
-        var flash = Uf2ToFlash(await File.ReadAllBytesAsync(uf2Path));
+        var flash = RP2040Machine.Uf2ToFlash(await File.ReadAllBytesAsync(uf2Path))
+            ?? throw new InvalidDataException("Not a valid UF2 file.");
         Console.WriteLine($"OK ({flash.Length / 1024} KB)");
 
         // ── 2. Boot ───────────────────────────────────────────────────────────
@@ -244,50 +245,6 @@ internal static class Program
         }
         return null;
     }
-
-    // ── UF2 parser ────────────────────────────────────────────────────────────
-
-    private const uint UF2MagicStart0 = 0x0A324655;
-    private const uint UF2MagicStart1 = 0x9E5D5157;
-    private const uint FlashBase      = 0x10000000;
-
-    private static byte[] Uf2ToFlash(byte[] uf2)
-    {
-        var blocks = uf2.Length / 512;
-        uint minAddr = uint.MaxValue, maxAddr = 0;
-
-        for (var i = 0; i < blocks; i++)
-        {
-            var off = i * 512;
-            if (ReadU32(uf2, off) != UF2MagicStart0 || ReadU32(uf2, off + 4) != UF2MagicStart1) continue;
-            var addr = ReadU32(uf2, off + 12);
-            var size = ReadU32(uf2, off + 16);
-            if (size == 0 || size > 256) continue;
-            if (addr < minAddr) minAddr = addr;
-            if (addr + size > maxAddr) maxAddr = addr + size;
-        }
-
-        if (minAddr == uint.MaxValue) throw new InvalidDataException("No valid UF2 blocks.");
-        if (minAddr < FlashBase) throw new InvalidDataException($"UF2 target 0x{minAddr:X8} below flash base.");
-
-        var image = new byte[maxAddr - FlashBase];
-        Array.Fill(image, (byte)0xFF);
-
-        for (var i = 0; i < blocks; i++)
-        {
-            var off = i * 512;
-            if (ReadU32(uf2, off) != UF2MagicStart0 || ReadU32(uf2, off + 4) != UF2MagicStart1) continue;
-            var addr = ReadU32(uf2, off + 12);
-            var size = ReadU32(uf2, off + 16);
-            if (size == 0 || size > 256) continue;
-            Buffer.BlockCopy(uf2, off + 32, image, (int)(addr - FlashBase), (int)size);
-        }
-
-        return image;
-    }
-
-    private static uint ReadU32(byte[] b, int o) =>
-        (uint)(b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24));
 
     private static (double min, double max, double avg) RunMicroBenchmark()
     {
