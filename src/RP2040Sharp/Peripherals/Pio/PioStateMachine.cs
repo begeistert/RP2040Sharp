@@ -33,6 +33,7 @@ internal sealed class PioStateMachine
     internal long FracAccum;     // for sub-cycle fractional clock divisor
     internal uint? ForcedInstr;  // immediate instruction via INSTR write
     internal int DelayCounter;   // instruction delay cycles remaining
+    public int SmIndex;          // index of this SM within its PIO block (0-3); set by PioPeripheral
 
     // ── GPIO state (driven by this SM) ───────────────────────────────
     public uint GpioPins;    // current SET/OUT output value

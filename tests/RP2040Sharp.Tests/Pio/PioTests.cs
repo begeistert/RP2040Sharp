@@ -88,6 +88,10 @@ public abstract class PioTests
     private static ushort EncodeMov(uint dst, uint op, uint src)
         => (ushort)(0b101_00000_00_00000 | ((dst & 0x7) << 5) | ((op & 0x3) << 3) | (src & 0x7));
 
+    // IN instruction: 010 SRC COUNT  (count=0 means 32)
+    private static ushort EncodeIn(uint src, uint count)
+        => (ushort)(0b010_00000_000_00000 | ((src & 0x7) << 5) | (count & 0x1F));
+
     public class SetPins
     {
         // SET PINS destination = 0b000 = PINS
@@ -447,6 +451,195 @@ public abstract class PioTests
 
             // Pins 2 and 3 (sidesetBase=2, 2 pins) should both be high
             (capturedPins & (3u << 2)).Should().Be(3u << 2, "pins 2 and 3 driven high");
+        }
+    }
+
+    // ── Bug-fix regression tests ─────────────────────────────────────────
+
+    public class JmpOsre
+    {
+        // JMP condition 7 = !OSRE: jump when OSR is NOT empty (OsrCount > 0)
+
+        [Fact]
+        public void JMP_OSRE_falls_through_when_OSR_empty()
+        {
+            using var f = new Fixture();
+            // OSR is empty (OsrCount=0, default) — JMP !OSRE should NOT be taken
+            // Program slot 0 = JMP !OSRE 0 (target=0), wrap_top=31 so SM advances normally
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, EncodeJmp(7, 0));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, 31u << 12);
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(1);
+
+            // OSR is empty → condition false → fall through → PC = 1
+            f.Pio.ReadWord(Fixture.SM0_ADDR).Should().Be(1u,
+                "JMP !OSRE must NOT jump when OsrCount=0 (OSR empty)");
+        }
+
+        [Fact]
+        public void JMP_OSRE_jumps_when_OSR_has_data()
+        {
+            using var f = new Fixture();
+            // Pre-load TXF0 so PULL can fill the OSR
+            f.Pio.WriteWord(Fixture.TXF0, 0xAABBCCDDu);
+
+            // Program: [0] PULL, [1] JMP !OSRE 1 (loop while OSR non-empty)
+            f.Pio.WriteWord(Fixture.INSTR_MEM0 + 0, EncodePull(block: true));
+            f.Pio.WriteWord(Fixture.INSTR_MEM0 + 4, EncodeJmp(7, 1));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, 31u << 12);
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(2);  // tick 1: PULL (OsrCount→32); tick 2: JMP !OSRE 1
+
+            // OSR has 32 bits → condition true → jump back to 1
+            f.Pio.ReadWord(Fixture.SM0_ADDR).Should().Be(1u,
+                "JMP !OSRE must jump when OsrCount=32 (OSR full)");
+        }
+    }
+
+    public class ShiftBits32
+    {
+        // When bitCount encodes 0 → 32. C# shift operators are mod-32, so
+        // explicit checks are required for the 32-bit case.
+
+        [Fact]
+        public void OUT_PINS_32_right_shift_outputs_all_OSR_bits()
+        {
+            using var f = new Fixture();
+            uint capturedPins = 0;
+            f.Pio.WriteGpioPins = (v, _) => capturedPins = v;
+
+            // OSR shift right (SHIFTCTRL bit 19)
+            f.Pio.WriteWord(Fixture.SM0_SHIFTCTRL, 1u << 19);
+            f.Pio.WriteWord(Fixture.TXF0, 0xCAFEBABEu);
+
+            // Program: [0] PULL, [1] OUT PINS 32 (count=0 encodes 32)
+            f.Pio.WriteWord(Fixture.INSTR_MEM0 + 0, EncodePull(block: true));
+            f.Pio.WriteWord(Fixture.INSTR_MEM0 + 4, EncodeOut(0, 0));  // OUT PINS, 32
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, 1u << 12);  // wrap_top=1
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(2);  // PULL then OUT PINS 32
+
+            capturedPins.Should().Be(0xCAFEBABEu,
+                "OUT PINS with bitCount=32 right-shift must output all 32 OSR bits");
+        }
+
+        [Fact]
+        public void OUT_PINS_32_left_shift_clears_OSR_afterwards()
+        {
+            // With left-shift OUT 32, the OSR must become 0 after the operation.
+            // The bug was sm.OSR <<= 32 which is a no-op in C# (mod-32 shift).
+            // We observe this indirectly: after OUT 32, autopull refills from TXF.
+            using var f = new Fixture();
+            uint capturedFirst = 0, capturedSecond = 0;
+            var callCount = 0;
+            f.Pio.WriteGpioPins = (v, _) =>
+            {
+                if (callCount++ == 0) capturedFirst = v;
+                else capturedSecond = v;
+            };
+
+            // Two distinct values in TX FIFO
+            f.Pio.WriteWord(Fixture.TXF0, 0x11111111u);
+            f.Pio.WriteWord(Fixture.TXF0, 0x22222222u);
+
+            // OSR shift left (default), autopull enabled at threshold 32 (=0)
+            // SHIFTCTRL: bit 17 = autopull, bits [29:25] = threshold (0 → 32)
+            f.Pio.WriteWord(Fixture.SM0_SHIFTCTRL, 1u << 17);
+
+            // Program: [0] OUT PINS 32 (autopull refills from TXF), loops at 0
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, EncodeOut(0, 0));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, 0u);   // wrap at 0
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            // Pre-load OSR by writing PULL via forced INSTR before enabling SM
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+            // Force-load first value into OSR
+            f.Pio.WriteWord(Fixture.SM0_INSTR, EncodePull(block: false));
+            f.Tick(1);  // execute forced PULL
+
+            // Now tick OUT PINS 32 twice — autopull should pull the second value after first OUT
+            f.Tick(1);  // OUT PINS 32 (first value), autopull loads second
+            f.Tick(1);  // OUT PINS 32 (second value)
+
+            capturedFirst.Should().Be(0x11111111u, "first OUT PINS 32 outputs first TXF value");
+            capturedSecond.Should().Be(0x22222222u,
+                "second OUT PINS 32 must output second value — OSR must be 0 after OUT 32 for autopull to trigger");
+        }
+
+        [Fact]
+        public void IN_PINS_32_left_shift_captures_full_gpio_value()
+        {
+            // With left-shift IN 32, ISR must become exactly the GPIO value.
+            // The bug was: ISR = (ISR << 32) | (data & 0) — left shift mod-32 = no-op,
+            // mask of (1u<<32)-1 = 0 in C#, so ISR was unchanged instead of replaced.
+            using var f = new Fixture();
+            const uint gpioValue = 0xDEADF00Du;
+            f.Pio.ReadGpioIn = () => gpioValue;
+
+            // Autopush at threshold=32 (bit 16 = enable, bits[24:20]=0 → threshold 32)
+            f.Pio.WriteWord(Fixture.SM0_SHIFTCTRL, 1u << 16);
+
+            // Program: [0] IN PINS 32 — autopush fires immediately at threshold 32
+            f.Pio.WriteWord(Fixture.INSTR_MEM0, EncodeIn(0, 0));  // IN PINS, 32
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, 0u);            // wrap at 0
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            f.Tick(1);  // IN PINS 32 → autopush enqueues ISR into RX FIFO
+
+            var rxValue = f.Pio.ReadWord(Fixture.RXF0);
+            rxValue.Should().Be(gpioValue,
+                "IN PINS with bitCount=32 left-shift must store all 32 GPIO bits in ISR");
+        }
+    }
+
+    public class PushNoblockClearsIsr
+    {
+        [Fact]
+        public void PUSH_NOBLOCK_clears_ISR_when_RX_FIFO_full()
+        {
+            // When RX FIFO is full, PUSH NOBLOCK should discard the data AND clear ISR.
+            // We observe ISR cleared by: after the NOBLOCK PUSH, doing another IN and autopush —
+            // if ISR was cleared, IsrCount restarts from 0.
+            using var f = new Fixture();
+
+            // Fill RX FIFO to capacity (4 entries for normal mode)
+            for (uint i = 0; i < 4; i++)
+                f.Pio.InjectRxData(0, i);
+
+            // Program: [0] PUSH NOBLOCK  [1] JMP 0  (loop)
+            // Autopush enabled so we can observe ISR state via subsequent pushes
+            f.Pio.WriteWord(Fixture.INSTR_MEM0 + 0, EncodePush(block: false));
+            f.Pio.WriteWord(Fixture.INSTR_MEM0 + 4, EncodeJmp(0, 0));
+            f.Pio.WriteWord(Fixture.SM0_EXECCTRL, 1u << 12);  // wrap_top=1
+            f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
+            f.Pio.WriteWord(Fixture.CTRL, 1u);
+
+            // Force-load a known ISR value before PUSH executes
+            f.Pio.WriteWord(Fixture.SM0_INSTR, EncodeMov(6 /*ISR*/, 1 /*invert*/, 3 /*NULL*/));
+            f.Tick(1);  // execute MOV ISR, ~NULL → ISR = 0xFFFFFFFF, IsrCount doesn't change here
+
+            // Execute PUSH NOBLOCK with full FIFO — ISR should be cleared
+            f.Tick(1);
+
+            // Now drain the RX FIFO so it has space
+            for (var i = 0; i < 4; i++) f.Pio.ReadWord(Fixture.RXF0);
+
+            // Force an IN PINS 1 to shift 1 bit into ISR — if ISR was cleared (IsrCount=0),
+            // this sets IsrCount=1. Then PUSH NOBLOCK with not-full FIFO should push IsrCount bits.
+            // We can't read IsrCount directly, but we can check the FSTAT RX-empty flag.
+            // Simpler: force PUSH and check that RX FIFO received 0 (ISR was 0 after clear).
+            f.Pio.WriteWord(Fixture.SM0_INSTR, EncodePush(block: false));
+            f.Tick(1);
+
+            var pushed = f.Pio.ReadWord(Fixture.RXF0);
+            pushed.Should().Be(0u, "ISR should have been cleared to 0 by the preceding PUSH NOBLOCK");
         }
     }
 }

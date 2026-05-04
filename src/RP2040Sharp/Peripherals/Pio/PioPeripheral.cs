@@ -85,6 +85,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         for (var i = 0; i < SM_COUNT; i++)
         {
             _sm[i] = new PioStateMachine();
+            _sm[i].SmIndex = i;
             // Default wrap: top=31, bottom=0
             _sm[i].ExecCtrl = (31u << 12);
         }
@@ -503,8 +504,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             3 => sm.Y == 0,                         // !Y
             4 => sm.Y-- != 0,                       // Y--
             5 => sm.X != sm.Y,                      // X!=Y
-            6 => (sm.GpioPins & (1u << (int)sm.JmpPin)) != 0,  // PIN
-            7 => sm.OsrCount < 32,                  // !OSRE
+            6 => ((ReadGpioIn?.Invoke() ?? sm.GpioPins) >> (int)sm.JmpPin & 1) != 0,  // PIN (input, not output)
+            7 => sm.OsrCount > 0,                   // !OSRE: jump when OSR is not empty
             _ => false,
         };
         if (taken)
@@ -524,17 +525,22 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         var source   = (instr >> 5) & 3;
         var index    = (uint)(instr & 0x1F);
 
+        // For IRQ source: bit 4 of index is the REL flag — same computation as ExecIrq
+        var irqFlagIdx = (index & 0x10) != 0
+            ? (int)((index & 0xC) | (((index & 3) + (uint)sm.SmIndex) & 3))
+            : (int)(index & 0x7);
+
         bool condition = source switch
         {
             0 => (((ReadGpioIn?.Invoke() ?? sm.GpioPins) >> (int)index) & 1) == polarity,  // GPIO (absolute)
             1 => (((ReadGpioIn?.Invoke() ?? sm.GpioPins) >> (int)((index + sm.InBase) & 0x1F)) & 1) == polarity,  // PIN relative to IN_BASE
-            2 => ((_irq >> (int)(index & 7)) & 1) == polarity,   // IRQ flag
+            2 => ((_irq >> irqFlagIdx) & 1) == polarity,   // IRQ flag
             _ => true,
         };
 
         sm.Stalled = !condition;
         if (condition && source == 2 && polarity == 1)
-            _irq &= ~(1u << (int)(index & 7));  // clear IRQ on successful WAIT IRQ
+            _irq &= ~(1u << irqFlagIdx);  // clear IRQ on successful WAIT IRQ
     }
 
     // IN: bits [7:5]=source, [4:0]=bit count (0=32)
@@ -557,11 +563,13 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         if (sm.IsrShiftRight)
         {
-            sm.ISR = (sm.ISR >> bitCount) | (data << (32 - bitCount));
+            // When bitCount=32: C# shift is mod-32 (>>32 = >>0 = no-op), so handle explicitly
+            sm.ISR = bitCount == 32 ? data : (sm.ISR >> bitCount) | (data << (32 - bitCount));
         }
         else
         {
-            sm.ISR = (sm.ISR << bitCount) | (data & ((1u << bitCount) - 1));
+            // When bitCount=32: (1u<<32)-1 = 0 in C# (mod-32 shift), so handle explicitly
+            sm.ISR = bitCount == 32 ? data : (sm.ISR << bitCount) | (data & ((1u << bitCount) - 1));
         }
         sm.IsrCount += (uint)bitCount;
 
@@ -579,13 +587,15 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         uint data;
         if (sm.OsrShiftRight)
         {
-            data = sm.OSR & ((1u << bitCount) - 1);
-            sm.OSR >>= bitCount;
+            // When bitCount=32: (1u<<32)-1 = 0 and >>=32 is no-op in C# (mod-32 shift)
+            data   = bitCount == 32 ? sm.OSR : (sm.OSR & ((1u << bitCount) - 1));
+            sm.OSR = bitCount == 32 ? 0u     : (sm.OSR >> bitCount);
         }
         else
         {
-            data = sm.OSR >> (32 - bitCount);
-            sm.OSR <<= bitCount;
+            // When bitCount=32: <<32 is no-op in C# (mod-32 shift)
+            data   = sm.OSR >> (32 - bitCount);  // bitCount=32 → >>0 = full OSR ✓
+            sm.OSR = bitCount == 32 ? 0u : (sm.OSR << bitCount);
         }
         unchecked { sm.OsrCount -= (uint)bitCount; }
 
@@ -639,6 +649,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         if (sm.RxFifo.Count >= sm.RxDepth)
         {
             sm.Stalled = block;
+            // NOBLOCK: data is discarded but ISR must still be cleared (datasheet §3.5.4.2)
+            if (!block) { sm.ISR = 0; sm.IsrCount = 0; }
             return;
         }
         sm.RxFifo.Enqueue(sm.ISR);
@@ -733,7 +745,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         var index   = (uint)(instr & 0x1F);
         var rel     = (index & 0x10) != 0;
         // If REL: bits[3:2] unchanged, bits[1:0] = (index + smIdx) mod 4
-        var flagIdx = rel ? (int)((index & 0x1C) | (((index & 3) + (uint)smIdx) & 3))
+        // REL flag is bit 4 of index; must NOT be included in the computed flag index
+        var flagIdx = rel ? (int)((index & 0xC) | (((index & 3) + (uint)smIdx) & 3))
                          : (int)(index & 0x7);
 
         if (doClear)
