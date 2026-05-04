@@ -10,8 +10,6 @@ public sealed unsafe class InstructionDecoder : IDisposable
 {
     public static InstructionDecoder Instance { get; } = new InstructionDecoder();
 
-    private readonly InstructionHandler[] _lookupTable = new InstructionHandler[65536];
-    private GCHandle _pinnedHandle;
     private readonly InstructionHandler* _fastTablePtr;
 
     bool _disposed;
@@ -25,14 +23,10 @@ public sealed unsafe class InstructionDecoder : IDisposable
 
     public InstructionDecoder()
     {
-        _pinnedHandle = GCHandle.Alloc(_lookupTable, GCHandleType.Pinned);
-        _fastTablePtr = (InstructionHandler*)_pinnedHandle.AddrOfPinnedObject();
+        _fastTablePtr = (InstructionHandler*)NativeMemory.AllocZeroed(65536, (nuint)sizeof(InstructionHandler));
 
         InstructionHandler undefinedPtr = &HandleUndefined;
-        fixed (InstructionHandler* ptrToArr = _lookupTable)
-        {
-            new Span<nuint>(ptrToArr, _lookupTable.Length).Fill((nuint)undefinedPtr);
-        }
+        new Span<nuint>(_fastTablePtr, 65536).Fill((nuint)undefinedPtr);
 
         ReadOnlySpan<OpcodeRule> rules =
         [
@@ -325,10 +319,7 @@ public sealed unsafe class InstructionDecoder : IDisposable
         if (_disposed)
             return;
 
-        if (_pinnedHandle.IsAllocated)
-        {
-            _pinnedHandle.Free();
-        }
+        NativeMemory.Free(_fastTablePtr);
 
         _disposed = true;
     }
