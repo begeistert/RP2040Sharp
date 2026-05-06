@@ -10,8 +10,6 @@ public sealed unsafe class CortexM0Plus
     public readonly BusInterconnect Bus;
     public Registers Registers;
     public long Cycles;
-    /// <summary>Count of instructions actually dispatched (excludes WFI/WFE sleep credits).</summary>
-    public long DispatchedInstructions;
 
     /// <summary>0 = Core0, 1 = Core1. Used by SIO to return the correct CPUID and route FIFOs.</summary>
     public int CoreId { get; set; }
@@ -72,7 +70,6 @@ public sealed unsafe class CortexM0Plus
         Registers.V = false;
 
         Cycles = 0;
-        DispatchedInstructions = 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -191,7 +188,6 @@ public sealed unsafe class CortexM0Plus
                 fetchMask = _fetchMask;
                 regionId  = _currentRegionId;
                 Cycles++;
-                DispatchedInstructions++;
                 continue;
             }
 
@@ -201,7 +197,6 @@ public sealed unsafe class CortexM0Plus
             Registers.PC = pc + 2;
 
             Cycles++;
-            DispatchedInstructions++;
 
             // DISPATCH
             decoder.Dispatch(opcode, this);
