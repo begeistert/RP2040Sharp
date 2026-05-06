@@ -767,8 +767,10 @@ public sealed class RP2040Machine : IDisposable
         image.CopyTo(new Span<byte>(Bus.PtrBootRom, image.Length));
     }
 
-    /// <summary>Total instructions executed by Core 0 since reset.</summary>
+    /// <summary>Total cycles elapsed on Core 0 since reset (includes WFI/WFE sleep credits).</summary>
     public long InstructionCount => Cpu.Cycles;
+    /// <summary>Instructions actually dispatched on Core 0 since reset (excludes WFI/WFE sleep credits).</summary>
+    public long DispatchedInstructions => Cpu.DispatchedInstructions;
 
     /// <summary>
     /// Run the CPU for approximately <paramref name="instructions"/> instructions,
