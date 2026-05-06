@@ -48,13 +48,10 @@ public sealed class RP2040Machine : IDisposable
 
     // ── Core ────────────────────────────────────────────────────────────
     public BusInterconnect Bus { get; }
-    public CortexM0Plus    Cpu { get; }    public CortexM0Plus    Cpu1 { get; }   // Second core — starts in bootrom wait-loop
+    public CortexM0Plus    Cpu { get; }
 
-    /// <summary>Which core is currently executing (0 or 1). Set by Run() before each CPU slice.</summary>
-    public int ActiveCoreId { get; set; }
     // ── System peripherals ──────────────────────────────────────────────
-    public PpbPeripheral      Ppb      { get; }  // Core0 PPB
-    public PpbPeripheral      Ppb1     { get; }  // Core1 PPB
+    public PpbPeripheral      Ppb      { get; }
     public SioPeripheral      Sio      { get; }
     public SysInfoPeripheral  SysInfo  { get; }
     public SysCfgPeripheral   SysCfg   { get; }
@@ -97,17 +94,15 @@ public sealed class RP2040Machine : IDisposable
     public RP2040Machine(uint flashSize = 2 * 1024 * 1024)
     {
         Bus = new BusInterconnect(flashSize);
-        Cpu = new CortexM0Plus(Bus) { CoreId = 0 };
-        Cpu1 = new CortexM0Plus(Bus) { CoreId = 1 };
+        Cpu = new CortexM0Plus(Bus);
 
-        // ── PPB (0xE) — each core has its own NVIC/SysTick/SCB (§2.4) ──────────
+        // ── PPB (0xE) ────────────────────────────────────────────────────
         Ppb = new PpbPeripheral(Cpu);
-        Ppb1 = new PpbPeripheral(Cpu1);
-        Bus.MapDevice(0xE, new CoreAwarePpbRouter(this));
+        Bus.MapDevice(0xE, Ppb);
 
         // ── SIO (0xD) ────────────────────────────────────────────────────
-        Sio = new SioPeripheral(Cpu);        Sio.SetCpu1(Cpu1);
-        Sio.GetActiveCoreId = () => ActiveCoreId;        Bus.MapDevice(0xD, Sio);
+        Sio = new SioPeripheral(Cpu);
+        Bus.MapDevice(0xD, Sio);
 
         // ── APB bridge (0x4) ─────────────────────────────────────────────
         var apb = new ApbBridge();
@@ -234,7 +229,6 @@ public sealed class RP2040Machine : IDisposable
         // IRQ is re-asserted correctly (see: NVIC_ICPR clears pending bit, but
         // hardware IRQ line stays asserted — we simulate this via RecheckInterrupts).
         Ppb.OnInterruptEnable += Usb.RecheckInterrupts;
-        Ppb1.OnInterruptEnable += Usb.RecheckInterrupts;
 
         // When firmware resets the USBCTRL block (rp2040_usb_init → reset_block/unreset_block),
         // reset the USB peripheral emulator state so the next CONTROLLER_EN write re-triggers
@@ -255,7 +249,7 @@ public sealed class RP2040Machine : IDisposable
         Gpio = pins;
 
         // ── Tickable list ─────────────────────────────────────────────────
-        _tickables = [Ppb, Ppb1, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog, Usb, Adc];
+        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog, Usb];
 
         // ── DMA DREQ sources ──────────────────────────────────────────────
         // PIO0 TX/RX SM0-3: DREQ 0-3 (TX), 4-7 (RX)
@@ -351,13 +345,6 @@ public sealed class RP2040Machine : IDisposable
             Cpu.Registers.SP = firmwareSp;
         }
         Cpu.Registers.PC = BusInterconnect.FLASH_START_ADDRESS;
-
-        // Core1 starts at the bootrom reset handler. The real RP2040 B1 bootrom
-        // checks SIO.CPUID on reset: Core1 (CPUID=1) skips flash boot and enters
-        // the multicore wait-loop, polling FIFO for the 6-word launch sequence
-        // (0, 0, 1, VTOR, SP, PC) sent by pico-sdk's multicore_launch_core1().
-        Cpu1.Registers.SP = Bus.ReadWord(0x00000000);
-        Cpu1.Registers.PC = Bus.ReadWord(0x00000004) & 0xFFFFFFFE;
     }
 
     // UF2 format constants (https://github.com/microsoft/uf2)
@@ -780,21 +767,18 @@ public sealed class RP2040Machine : IDisposable
         image.CopyTo(new Span<byte>(Bus.PtrBootRom, image.Length));
     }
 
+    /// <summary>Total instructions executed by Core 0 since reset.</summary>
+    public long InstructionCount => Cpu.Cycles;
+
     /// <summary>
     /// Run the CPU for approximately <paramref name="instructions"/> instructions,
     /// then tick all time-aware peripherals.
-    /// Core1 is run after Core0; both share the same bus and memory.
     /// </summary>
     public void Run(int instructions)
     {
-        ActiveCoreId = 0;
         var before = Cpu.Cycles;
         Cpu.Run(instructions);
         var delta = Cpu.Cycles - before;
-
-        ActiveCoreId = 1;
-        Cpu1.Run(instructions);
-        ActiveCoreId = 0;
 
         foreach (var t in _tickables)
             t.Tick(delta);
@@ -804,23 +788,4 @@ public sealed class RP2040Machine : IDisposable
     public void Reset() => Cpu.Reset();
 
     public void Dispose() => Bus.Dispose();
-
-    // ── Internal helpers ────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Routes PPB (0xE) accesses to Core0's or Core1's PPB based on the
-    /// currently-executing core (tracked by <see cref="ActiveCoreId"/>).
-    /// This gives each core its own independent NVIC, SysTick, SCB, and VTOR.
-    /// </summary>
-    private sealed class CoreAwarePpbRouter(RP2040Machine machine) : IMemoryMappedDevice
-    {
-        public uint Size => 0x1000;
-        private PpbPeripheral Active => machine.ActiveCoreId == 0 ? machine.Ppb : machine.Ppb1;
-        public uint  ReadWord    (uint a)         => Active.ReadWord(a);
-        public ushort ReadHalfWord(uint a)         => Active.ReadHalfWord(a);
-        public byte  ReadByte    (uint a)         => Active.ReadByte(a);
-        public void  WriteWord   (uint a, uint v)  => Active.WriteWord(a, v);
-        public void  WriteHalfWord(uint a, ushort v) => Active.WriteHalfWord(a, v);
-        public void  WriteByte   (uint a, byte v)  => Active.WriteByte(a, v);
-    }
 }
