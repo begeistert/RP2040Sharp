@@ -319,6 +319,20 @@ public sealed unsafe class CortexM0Plus
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool CheckForInterrupts()
     {
+        // Per ARMv6-M spec, WFI wakes when any pending+enabled exception exists,
+        // even if PRIMASK=1 prevents it from being taken.  The common firmware
+        // pattern is: disable_irq → check_work → WFI → enable_irq.  Without this
+        // wake-only behaviour the CPU would sleep forever with PRIMASK=1.
+        if (Registers.Waiting)
+        {
+            var wakeIrq = (Registers.PendingInterrupts & Registers.EnabledInterrupts) != 0
+                          || Registers.PendingNMI
+                          || Registers.PendingSystick
+                          || Registers.PendingPendSV;
+            if (wakeIrq)
+                Registers.Waiting = false;
+        }
+
         if (Registers.PRIMASK != 0 && !Registers.PendingNMI)
             return false;
 
