@@ -96,11 +96,13 @@ public static class ArithmeticOps
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddHighToSp(ushort opcode, CortexM0Plus cpu)
     {
+        // ARMv6-M §A6.7.2: ADD (SP plus register) — writes the raw sum to SP.
+        // The architecture does NOT mandate alignment for this encoding; only
+        // explicit stack operations (MSR SP, PUSH, POP) must be word-aligned.
         var rm = (opcode >> 3) & 0xF;
         var valRm = cpu.Registers[rm];
 
-        ref var sp = ref cpu.Registers.SP;
-        sp = (sp + valRm) & 0xFFFFFFFC;
+        cpu.Registers.SP += valRm;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

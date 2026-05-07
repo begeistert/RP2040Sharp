@@ -285,13 +285,16 @@ public static class BitOps
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void MovToSp(ushort opcode, CortexM0Plus cpu)
     {
+        // ARMv6-M §A6.7.75: MOV (register) to SP — writes the raw register value.
+        // The architecture does NOT force word-alignment on this write; only the
+        // processor behavior on subsequent stack accesses is affected by misalignment.
         var rm = (opcode >> 3) & 0xF;
         ref var sp = ref cpu.Registers.SP;
 
         var valRm = cpu.Registers[rm];
         valRm += (uint)((rm + 1) >> 4) << 1;
 
-        sp = valRm & 0xFFFFFFFC;
+        sp = valRm;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
