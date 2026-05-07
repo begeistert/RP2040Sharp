@@ -39,7 +39,10 @@ public sealed class MicroPythonUartTests
 
         runner.WaitForPrompt().Should().BeTrue();
 
-        runner.Execute("for i in range(3): print('line', i)");
+        // for-loop is a compound statement in MicroPython REPL; ExecuteCompound
+        // sends the statement, waits for "... " continuation, then sends a blank
+        // line to execute it, and waits for the next ">>> " prompt.
+        runner.ExecuteCompound("for i in range(3): print('line', i)");
         var found = runner.WaitForOutput(text =>
             text.Contains("line 0") && text.Contains("line 1") && text.Contains("line 2"));
 

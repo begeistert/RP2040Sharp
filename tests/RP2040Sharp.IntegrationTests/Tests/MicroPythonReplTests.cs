@@ -67,8 +67,10 @@ public sealed class MicroPythonReplTests
 
         runner.WaitForPrompt().Should().BeTrue();
 
-        runner.Execute("def greet(name): return 'Hi ' + name");
-        runner.WaitForPrompt();  // consume the continuation prompt
+        // def is a compound statement in MicroPython REPL; ExecuteCompound sends
+        // the def line, waits for "... " continuation, then sends a blank line to
+        // complete the definition and waits for the next ">>> " prompt.
+        runner.ExecuteCompound("def greet(name): return 'Hi ' + name");
 
         var found = runner.ExecuteAndWait("print(greet('world'))", "Hi world");
         found.Should().BeTrue("user-defined function should be callable from REPL");
