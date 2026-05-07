@@ -126,7 +126,8 @@ public class RP2040TestSimulation : IDisposable
         // frequently enough for interrupt-driven wakeups (e.g. sleep_ms via WFE) to work.
         // Batch ≈ 500 000 cycles (~4 ms at 125 MHz) gives ms-level timer accuracy while
         // reducing bookkeeping overhead 10× vs the former 50 K batch — a measurable speedup
-        // for multi-second simulations such as MicroPython boot (≈60 simulated seconds).
+        // for multi-second simulations such as MicroPython boot (which simulates ~60 simulated
+        // seconds of RP2040 execution, completed in wall-clock seconds on a modern host).
         const int BatchSize = 500_000;
         while (cycles > 0)
         {

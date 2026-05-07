@@ -42,6 +42,14 @@ public sealed unsafe class CortexM0Plus
     public Action<byte>? OnBreakpoint;
 
     /// <summary>
+    /// Called when the CPU enters the ARMv6-M lockup state (§B1.5.13).
+    /// Parameters are the faulting PC and SP at the time of lockup.
+    /// When <c>null</c>, the default handler writes a diagnostic message to
+    /// <see cref="System.Console.Error"/>.
+    /// </summary>
+    public Action<uint, uint>? OnLockup;
+
+    /// <summary>
     /// Native hooks: when the PC equals a registered address (Thumb bit stripped), the
     /// corresponding delegate is called instead of fetching/executing an instruction.
     /// The delegate is responsible for updating registers as needed.  After the delegate
@@ -263,9 +271,12 @@ public sealed unsafe class CortexM0Plus
             if (Registers.IPSR == EXC_HARDFAULT || Registers.IPSR == EXC_NMI)
             {
                 IsLockedUp = true;
-                System.Console.Error.WriteLine(
-                    $"CPU LOCKUP: HardFault in handler mode (IPSR={Registers.IPSR}) " +
-                    $"callerPC=0x{Registers.PC:X8} SP=0x{Registers.SP:X8}");
+                if (OnLockup is not null)
+                    OnLockup(Registers.PC, Registers.SP);
+                else
+                    System.Console.Error.WriteLine(
+                        $"CPU LOCKUP: HardFault in handler mode (IPSR={Registers.IPSR}) " +
+                        $"callerPC=0x{Registers.PC:X8} SP=0x{Registers.SP:X8}");
                 return;
             }
             System.Console.Error.WriteLine($"HardFault: callerPC=0x{Registers.PC:X8} LR=0x{Registers.LR:X8} SP=0x{Registers.SP:X8}");
