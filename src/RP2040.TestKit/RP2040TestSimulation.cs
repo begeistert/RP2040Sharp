@@ -25,7 +25,9 @@ public class RP2040TestSimulation : IDisposable
     protected readonly RP2040Machine Machine;
 
     /// <summary>Direct CPU access for low-level assertions.</summary>
-    public RP2040.Core.Cpu.CortexM0Plus Cpu => Machine.Cpu;
+    public RP2040.Core.Cpu.CortexM0Plus Cpu  => Machine.Cpu;
+    /// <summary>Core 1 CPU (only executing after firmware launches it via SIO FIFO).</summary>
+    public RP2040.Core.Cpu.CortexM0Plus Cpu1 => Machine.Cpu1;
 
     /// <summary>
     /// Direct access to the RP2040 machine for advanced probe scenarios
@@ -51,7 +53,8 @@ public class RP2040TestSimulation : IDisposable
         Machine = new RP2040Machine();
         // Install a capturing breakpoint handler so BKPT does not escalate to HardFault.
         // This is the correct ARMv6-M behaviour when a debugger/monitor is attached.
-        Machine.Cpu.OnBreakpoint = imm8 => _breakpointHits.Add(imm8);
+        Machine.Cpu.OnBreakpoint  = imm8 => _breakpointHits.Add(imm8);
+        Machine.Cpu1.OnBreakpoint = imm8 => _breakpointHits.Add(imm8);
     }
 
     /// <summary>Create a new simulation instance.</summary>

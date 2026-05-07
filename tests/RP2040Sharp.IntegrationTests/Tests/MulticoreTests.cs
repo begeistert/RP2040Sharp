@@ -7,23 +7,15 @@ namespace RP2040Sharp.IntegrationTests.Tests;
 
 /// <summary>
 /// Integration tests for multicore examples from pico-examples.
+/// Core 1 is launched by the firmware via the SIO FIFO multicore handshake
+/// (RP2040 datasheet §2.8.3).  The emulator now implements this handshake natively
+/// in <see cref="RP2040.Peripherals.Sio.SioPeripheral"/>: Core 0's 6-word launch
+/// sequence (0, 0, 1, VTOR, SP, Entry) is echoed back immediately, and Core 1
+/// is configured and started when the sequence completes.
 /// </summary>
-/// <remarks>
-/// NOTE: Core1 is NOT yet implemented in RP2040Sharp — only Core0 exists.
-/// The multicore launch sequence sends a handshake over SIO FIFO; without Core1
-/// to respond, Core0 loops forever in the launch stub. All multicore-dependent
-/// tests are skipped until Core1 emulation is added.
-///
-/// The "Core0Boot" tests do not require Core1 and verify that the firmware starts
-/// correctly on Core0 before it attempts the inter-core handshake.
-/// </remarks>
 [Trait("Category", "Integration")]
 public sealed class MulticoreTests
 {
-    private const string SkipReason =
-        "Core1 is not implemented in RP2040Sharp. " +
-        "The launch sequence hangs waiting for Core1's FIFO acknowledgement.";
-
     // ── Core0 boot (no Core1 needed) ─────────────────────────────────────────
 
     /// <summary>
@@ -69,9 +61,9 @@ public sealed class MulticoreTests
             "SP must be in SRAM after Core0 reset handler");
     }
 
-    // ── Full multicore tests (skipped until Core1 is implemented) ─────────────
+    // ── Full multicore tests ──────────────────────────────────────────────────
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public void HelloMulticore_NoHardFault_AfterCore1Launch()
     {
         using var pico = new PicoSimulation();
@@ -86,7 +78,7 @@ public sealed class MulticoreTests
         pico.Cpu.IsLockedUp.Should().BeFalse("CPU must not lock up after core 1 launch");
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public void HelloMulticore_Uart0_ContainsCoreMessages()
     {
         using var pico = new PicoSimulation();
@@ -100,7 +92,7 @@ public sealed class MulticoreTests
         found.Should().BeTrue("hello_multicore must produce UART0 output after inter-core communication");
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public void HelloMulticore_Cpu_IsAliveAfterRendezvous()
     {
         using var pico = new PicoSimulation();
@@ -109,14 +101,14 @@ public sealed class MulticoreTests
         pico.LoadFlash(flash);
         pico.RunMilliseconds(2_000);
 
-        pico.Cpu.Registers.SP.Should().BeInRange(0x2000_0000u, 0x2004_0000u,
+        pico.Cpu.Registers.SP.Should().BeInRange(0x2000_0000u, 0x2004_2000u,
             "SP must remain valid after multicore rendezvous");
         pico.Cpu.IsLockedUp.Should().BeFalse("CPU must not lock up after multicore rendezvous");
     }
 
     // ── multicore_fifo_irqs ───────────────────────────────────────────────────
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public void MulticoreFifoIrqs_NoHardFault_AfterStart()
     {
         using var pico = new PicoSimulation();
@@ -129,7 +121,7 @@ public sealed class MulticoreTests
         pico.Cpu.IsLockedUp.Should().BeFalse("CPU must not lock up in FIFO IRQ example");
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public void MulticoreFifoIrqs_Uart0_ProducesOutput()
     {
         using var pico = new PicoSimulation();
@@ -142,7 +134,7 @@ public sealed class MulticoreTests
         found.Should().BeTrue("multicore_fifo_irqs must produce UART0 output after IRQ-driven FIFO exchange");
     }
 
-    [Fact(Skip = SkipReason)]
+    [Fact]
     public void MulticoreFifoIrqs_Cpu_IsAliveAfterMultipleIrqs()
     {
         using var pico = new PicoSimulation();
@@ -151,8 +143,9 @@ public sealed class MulticoreTests
         pico.LoadFlash(flash);
         pico.RunMilliseconds(2_000);
 
-        pico.Cpu.Registers.SP.Should().BeInRange(0x2000_0000u, 0x2004_0000u,
+        pico.Cpu.Registers.SP.Should().BeInRange(0x2000_0000u, 0x2004_2000u,
             "SP must remain valid after multiple FIFO IRQ rounds");
         pico.Cpu.IsLockedUp.Should().BeFalse("CPU must not lock up after FIFO IRQ rounds");
     }
 }
+

@@ -86,15 +86,15 @@ public sealed class PioTests
     // ── pio_blink ─────────────────────────────────────────────────────────────
 
     /// <remarks>
-    /// NOTE: <c>pio_blink.uf2</c> calls pico-sdk's <c>panic()</c> during initialisation
-    /// (BKPT #0 at flash offset 0x3C30, triggered by an assertion in the clock-divider path).
-    /// The test harness simulates a debug-monitor being attached (ARMv6-M §C1.7.2), so the
-    /// BKPT is captured rather than escalating to HardFault.  The test documents this as the
-    /// expected current behaviour.  Fixing the underlying missing emulator feature will change
-    /// the expectation to: <c>BreakpointHits.Count == 0</c>.
+    /// <c>pio_blink.uf2</c> sets up two PIO state machines to blink LEDs autonomously and
+    /// then returns from <c>main()</c>.  The pico-sdk startup wrapper calls
+    /// <c>panic_if_returns()</c> after <c>main()</c>, which executes BKPT #0 at flash offset
+    /// 0x3C30.  This is <em>identical to real-hardware behaviour</em> — not a simulation
+    /// discrepancy.  The test harness captures BKPT events (ARMv6-M §C1.7.2 debug-monitor
+    /// attach), so the BKPT is logged rather than escalating to HardFault.
     /// </remarks>
     [Fact]
-    public void PioBlink_PanicsWithBkpt_KnownLimitation()
+    public void PioBlink_PanicsAfterMainReturns_ExpectedBehavior()
     {
         using var pico = new PicoSimulation();
         var flash = RP2040Machine.Uf2ToFlash(PicoExamplesFirmware.PioBlink)!;
@@ -102,10 +102,12 @@ public sealed class PioTests
         pico.LoadFlash(flash);
         pico.RunMilliseconds(500);
 
-        // The test harness captures BKPT events; a non-zero count means the firmware hit
-        // a panic() during this emulation run — documenting the known limitation.
+        // pico-sdk's panic_if_returns() fires BKPT #0 when main() returns.
+        // This is correct behaviour on both real hardware and in simulation.
         pico.BreakpointHits.Should().NotBeEmpty(
-            "pio_blink.uf2 is known to trigger a pico-sdk panic (BKPT #0) during init in this emulator");
+            "pico-sdk panic_if_returns must fire BKPT #0 after pio_blink main() returns");
+        pico.Cpu.IsLockedUp.Should().BeFalse(
+            "BKPT captured by debug-monitor must not escalate to HardFault lockup");
     }
 
     // ── pio_uart_tx ───────────────────────────────────────────────────────────

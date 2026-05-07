@@ -119,6 +119,22 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     private bool _wof0, _roe0;  // Core0's WOF/ROE flags
     private bool _wof1, _roe1;  // Core1's WOF/ROE flags
 
+    // Multicore launch handshake state (RP2040 datasheet §2.8.3)
+    // Core0 sends the 6-word sequence: 0, 0, 1, VTOR, SP, Entry.
+    // Before Core1 is running we echo each word back so Core0's blocking
+    // pop returns immediately, and we configure + launch Core1 on the 6th word.
+    private int _launchSeqPos;
+    private uint _launchVtor;
+    private uint _launchSp;
+    private uint _launchEntry;
+
+    /// <summary>
+    /// Fired when Core0 completes the multicore launch sequence (RP2040 §2.8.3).
+    /// Parameters: (vtor, sp, entry).  RP2040Machine sets this callback to configure
+    /// and start Core1.
+    /// </summary>
+    public Action<uint, uint, uint>? OnLaunchCore1;
+
     // Interpolators
     private InterpState _interp0;
     private InterpState _interp1;
@@ -250,17 +266,23 @@ public sealed class SioPeripheral : IMemoryMappedDevice
                 var coreId = GetActiveCoreId?.Invoke() ?? 0;
                 if (coreId == 0)
                 {
-                    // Core0 sends to Core1
-                    if (_fifo01.Count < FIFO_DEPTH)
+                    if (_cpu1 == null)
                     {
-                        _fifo01.Enqueue(value);
-                        if (_cpu1 != null)
+                        // Core1 not yet running: handle the RP2040 §2.8.3 launch handshake
+                        // natively by echoing each word back so Core0's pop returns immediately.
+                        HandleLaunchHandshake(value);
+                    }
+                    else
+                    {
+                        // Core0 sends to Core1 (normal FIFO operation after Core1 is live)
+                        if (_fifo01.Count < FIFO_DEPTH)
                         {
+                            _fifo01.Enqueue(value);
                             _cpu1.SetInterrupt(16, true);           // SIO_IRQ_PROC1 on Core1
                             _cpu1.Registers.EventRegistered = true; // wake WFE
                         }
+                        else _wof0 = true;
                     }
-                    else _wof0 = true;
                 }
                 else
                 {
@@ -531,6 +553,59 @@ public sealed class SioPeripheral : IMemoryMappedDevice
                 _divQuotient  = _divUdividend / _divUdivisor;
                 _divRemainder = _divUdividend % _divUdivisor;
             }
+        }
+    }
+
+    // ── Multicore launch handshake ────────────────────────────────────
+
+    /// <summary>
+    /// Processes one word of the RP2040 §2.8.3 multicore launch sequence sent by Core0
+    /// while Core1 is not yet running.  Each word is echoed back into Core0's RX FIFO
+    /// so Core0's blocking pop returns immediately.  When all 6 words of the sequence
+    /// (0, 0, 1, VTOR, SP, Entry) have been received, <see cref="OnLaunchCore1"/> is
+    /// invoked and the sequence position is reset to allow re-launch if needed.
+    /// </summary>
+    private void HandleLaunchHandshake(uint value)
+    {
+        // Validate sequence position (§2.8.3: 0, 0, 1, VTOR, SP, Entry).
+        // A mismatch at positions 0–2 resets the counter (Core0 may be retrying).
+        bool valid = _launchSeqPos switch
+        {
+            0 or 1 => value == 0,
+            2      => value == 1,
+            _      => true,     // VTOR, SP, Entry are arbitrary addresses
+        };
+
+        if (!valid)
+        {
+            // Mismatch: Core0 is retrying, restart from position 0.
+            _launchSeqPos = 0;
+            // If the new value is 0 it matches position 0; process it.
+            if (value != 0) return;
+        }
+
+        // Store payload words for positions 3–5.
+        switch (_launchSeqPos)
+        {
+            case 3: _launchVtor  = value; break;
+            case 4: _launchSp    = value; break;
+            case 5: _launchEntry = value; break;
+        }
+
+        // Echo value back to Core0's RX FIFO (simulates Core1's response).
+        if (_fifo10.Count < FIFO_DEPTH)
+        {
+            _fifo10.Enqueue(value);
+            _cpu.SetInterrupt(15, true);           // SIO_IRQ_PROC0 on Core0
+            _cpu.Registers.EventRegistered = true; // wake Core0's WFE
+        }
+
+        _launchSeqPos++;
+
+        if (_launchSeqPos == 6)
+        {
+            _launchSeqPos = 0; // reset for potential re-launch
+            OnLaunchCore1?.Invoke(_launchVtor, _launchSp, _launchEntry);
         }
     }
 

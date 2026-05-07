@@ -48,10 +48,16 @@ public sealed class RP2040Machine : IDisposable
 
     // ── Core ────────────────────────────────────────────────────────────
     public BusInterconnect Bus { get; }
+    /// <summary>Core 0 (the primary CPU).</summary>
     public CortexM0Plus    Cpu { get; }
+    /// <summary>Core 1 (launched by multicore handshake via SIO FIFO).</summary>
+    public CortexM0Plus    Cpu1 { get; }
 
     // ── System peripherals ──────────────────────────────────────────────
+    /// <summary>Private Peripheral Bus for Core 0.</summary>
     public PpbPeripheral      Ppb      { get; }
+    /// <summary>Private Peripheral Bus for Core 1.</summary>
+    public PpbPeripheral      Ppb1     { get; }
     public SioPeripheral      Sio      { get; }
     public SysInfoPeripheral  SysInfo  { get; }
     public SysCfgPeripheral   SysCfg   { get; }
@@ -90,18 +96,27 @@ public sealed class RP2040Machine : IDisposable
     public IReadOnlyList<GpioPin> Gpio { get; }
 
     private readonly ITickable[] _tickables;
+    private bool _core1Launched;
+    private int  _activeCoreId;   // 0 = Core0, 1 = Core1 (set before each Run slice)
 
     public RP2040Machine(uint flashSize = 2 * 1024 * 1024)
     {
         Bus = new BusInterconnect(flashSize);
-        Cpu = new CortexM0Plus(Bus);
+        Cpu  = new CortexM0Plus(Bus) { CoreId = 0 };
+        Cpu1 = new CortexM0Plus(Bus) { CoreId = 1 };
 
         // ── PPB (0xE) ────────────────────────────────────────────────────
-        Ppb = new PpbPeripheral(Cpu);
-        Bus.MapDevice(0xE, Ppb);
+        Ppb  = new PpbPeripheral(Cpu);
+        Ppb1 = new PpbPeripheral(Cpu1);
+        // Route PPB accesses to the correct per-core PPB based on the active core.
+        var ppbRouter = new PerCorePpbRouter(Ppb, Ppb1, () => _activeCoreId);
+        Bus.MapDevice(0xE, ppbRouter);
 
         // ── SIO (0xD) ────────────────────────────────────────────────────
         Sio = new SioPeripheral(Cpu);
+        Sio.GetActiveCoreId = () => _activeCoreId;
+        Sio.SetCpu1(Cpu1);
+        Sio.OnLaunchCore1 = LaunchCore1;
         Bus.MapDevice(0xD, Sio);
 
         // ── APB bridge (0x4) ─────────────────────────────────────────────
@@ -249,7 +264,7 @@ public sealed class RP2040Machine : IDisposable
         Gpio = pins;
 
         // ── Tickable list ─────────────────────────────────────────────────
-        _tickables = [Ppb, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog, Usb];
+        _tickables = [ppbRouter, Timer, Pwm, Pio0, Pio1, Rtc, Watchdog, Usb];
 
         // ── DMA DREQ sources ──────────────────────────────────────────────
         // PIO0 TX/RX SM0-3: DREQ 0-3 (TX), 4-7 (RX)
@@ -771,21 +786,99 @@ public sealed class RP2040Machine : IDisposable
     public long InstructionCount => Cpu.Cycles;
 
     /// <summary>
-    /// Run the CPU for approximately <paramref name="instructions"/> instructions,
+    /// Run both cores for approximately <paramref name="instructions"/> instructions each,
     /// then tick all time-aware peripherals.
+    /// Core 0 always runs; Core 1 only runs after it has been launched by the firmware
+    /// via the SIO FIFO multicore handshake (RP2040 datasheet §2.8.3).
     /// </summary>
     public void Run(int instructions)
     {
+        // ── Core 0 ────────────────────────────────────────────────────
+        _activeCoreId = 0;
         var before = Cpu.Cycles;
         Cpu.Run(instructions);
         var delta = Cpu.Cycles - before;
+
+        // ── Core 1 (if launched) ───────────────────────────────────────
+        if (_core1Launched)
+        {
+            _activeCoreId = 1;
+            Cpu1.Run(instructions);
+            _activeCoreId = 0;
+        }
 
         foreach (var t in _tickables)
             t.Tick(delta);
     }
 
-    /// <summary>Reset the CPU.</summary>
-    public void Reset() => Cpu.Reset();
+    /// <summary>Reset Core 0. Core 1 is also reset and its launched state is cleared.</summary>
+    public void Reset()
+    {
+        _core1Launched = false;
+        _activeCoreId  = 0;
+        Cpu.Reset();
+        Cpu1.Reset();
+    }
 
     public void Dispose() => Bus.Dispose();
+
+    // ── Multicore launch ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Called by <see cref="SioPeripheral"/> when Core 0 completes the RP2040 §2.8.3
+    /// multicore launch handshake.  Configures Core 1's registers (VTOR, SP, PC) and
+    /// marks it as runnable so subsequent <see cref="Run"/> calls execute it.
+    /// </summary>
+    private void LaunchCore1(uint vtor, uint sp, uint entry)
+    {
+        // Reset clears the lockup flag (handles re-launch of a previously faulted core).
+        Cpu1.Reset();
+        Cpu1.Registers.VTOR = vtor;
+        Cpu1.Registers.SP   = sp;
+        Cpu1.Registers.PC   = entry & 0xFFFFFFFEu; // strip Thumb bit
+        // The Run() loop will auto-update the fetch cache on the first instruction.
+        _core1Launched = true;
+    }
+
+    // ── Per-core PPB router ───────────────────────────────────────────
+
+    /// <summary>
+    /// Routes PPB (0xE000xxxx) bus accesses to Core 0's or Core 1's
+    /// <see cref="PpbPeripheral"/> based on the currently-active core ID.
+    /// Each core has its own private NVIC, SysTick and SCB in the real RP2040.
+    /// </summary>
+    private sealed class PerCorePpbRouter : IMemoryMappedDevice, ITickable
+    {
+        private readonly PpbPeripheral _ppb0;
+        private readonly PpbPeripheral _ppb1;
+        private readonly Func<int>     _getActiveCoreId;
+
+        public PerCorePpbRouter(PpbPeripheral ppb0, PpbPeripheral ppb1,
+                                Func<int> getActiveCoreId)
+        {
+            _ppb0 = ppb0;
+            _ppb1 = ppb1;
+            _getActiveCoreId = getActiveCoreId;
+        }
+
+        private PpbPeripheral Active =>
+            _getActiveCoreId() == 1 ? _ppb1 : _ppb0;
+
+        public uint Size => 0x10000000;  // covers the full 0xE region
+
+        public uint   ReadWord(uint address)              => Active.ReadWord(address);
+        public ushort ReadHalfWord(uint address)          => Active.ReadHalfWord(address);
+        public byte   ReadByte(uint address)              => Active.ReadByte(address);
+        public void   WriteWord(uint address, uint value) => Active.WriteWord(address, value);
+        public void   WriteHalfWord(uint address, ushort value) =>
+            Active.WriteHalfWord(address, value);
+        public void   WriteByte(uint address, byte value) => Active.WriteByte(address, value);
+
+        /// <summary>Tick both PPBs (SysTick, etc.) by the same delta cycles.</summary>
+        public void Tick(long deltaCycles)
+        {
+            _ppb0.Tick(deltaCycles);
+            _ppb1.Tick(deltaCycles);
+        }
+    }
 }
