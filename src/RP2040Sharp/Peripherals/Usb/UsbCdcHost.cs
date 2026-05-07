@@ -55,6 +55,7 @@ public sealed class UsbCdcHost
     public bool IsConnected => _initialized;
     public int InEndpoint  => _inEndpoint;
     public int OutEndpoint => _outEndpoint;
+    public int TxFifoCount => _txFifo.Count;
 
     public UsbCdcHost(UsbPeripheral usb)
     {

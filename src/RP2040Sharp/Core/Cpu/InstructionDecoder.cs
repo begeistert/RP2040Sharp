@@ -6,6 +6,7 @@ using unsafe InstructionHandler = delegate* managed<ushort, RP2040.Core.Cpu.Cort
 
 namespace RP2040.Core.Cpu;
 
+// If I make this static make sure it is not disposable
 public sealed unsafe class InstructionDecoder : IDisposable
 {
     public static InstructionDecoder Instance { get; } = new InstructionDecoder();
@@ -312,6 +313,7 @@ public sealed unsafe class InstructionDecoder : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // Implement the virtual dispose for explicit dispose, it is a good practice to ensure resources are released
     [ExcludeFromCodeCoverage]
     private void Dispose(bool disposing)
     {
