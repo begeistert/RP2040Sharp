@@ -212,6 +212,11 @@ public sealed class RP2040Machine : IDisposable
         Ssi = new SsiPeripheral();
         Bus.RegisterSsi(Ssi);
 
+        // Wire the SSI flash command engine to the flash memory and to the IO_QSPI
+        // SS pin so CS assert/deassert signals from flash_cs_force() reach the SSI.
+        unsafe { Ssi.AttachFlash(Bus.PtrFlash, Bus.FlashSize); }
+        IoQspi.AttachSsi(Ssi);
+
         // ── AHB bridge (0x5): DMA + PIO ──────────────────────────────────
         var ahb = new AhbBridge();
         Bus.MapDevice(5, ahb);
