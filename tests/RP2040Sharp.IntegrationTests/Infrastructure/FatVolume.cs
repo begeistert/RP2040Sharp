@@ -116,8 +116,8 @@ internal sealed class FatVolume
         _rootDirStart = _fatStart + _numFats * _sectorsPerFat;
         var rootDirSectors = (_rootEntryCount * DIR_ENTRY_SIZE + SECTOR_SIZE - 1) / SECTOR_SIZE;
         _dataStart   = _rootDirStart + rootDirSectors;
-        var totalSectors = _totalSectors16 != 0 ? _totalSectors16 : Le32(vbr, 32);
-        _dataClusterCount = (totalSectors - _dataStart) / _sectorsPerCluster;
+        var totalSectors = (uint)(_totalSectors16 != 0 ? _totalSectors16 : (int)Le32(vbr, 32));
+        _dataClusterCount = (int)((totalSectors - (uint)_dataStart) / (uint)_sectorsPerCluster);
         _isFat12 = _dataClusterCount < 4085;
         IsValid = true;
         return true;
@@ -360,6 +360,6 @@ internal sealed class FatVolume
         return b + e;
     }
 
-    private static int Le16(byte[] b, int o) => b[o] | (b[o + 1] << 8);
-    private static int Le32(byte[] b, int o) => b[o] | (b[o+1] << 8) | (b[o+2] << 16) | (b[o+3] << 24);
+    private static int  Le16(byte[] b, int o) => b[o] | (b[o + 1] << 8);
+    private static uint Le32(byte[] b, int o) => (uint)b[o] | ((uint)b[o+1] << 8) | ((uint)b[o+2] << 16) | ((uint)b[o+3] << 24);
 }

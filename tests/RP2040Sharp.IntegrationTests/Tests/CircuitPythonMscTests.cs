@@ -96,8 +96,9 @@ public sealed class CircuitPythonMscTests
         }
 
         sector0.Should().NotBeNull("READ(10) of LBA 0 must complete");
-        sector0![510].Should().Be(0x55, "FAT boot sector signature byte 510 must be 0x55");
-        sector0![511].Should().Be(0xAA, "FAT boot sector signature byte 511 must be 0xAA");
+        var vbr = sector0!;
+        vbr[510].Should().Be(0x55, "FAT boot sector signature byte 510 must be 0x55");
+        vbr[511].Should().Be(0xAA, "FAT boot sector signature byte 511 must be 0xAA");
     }
 
     // ── File write via MSC ────────────────────────────────────────────────────

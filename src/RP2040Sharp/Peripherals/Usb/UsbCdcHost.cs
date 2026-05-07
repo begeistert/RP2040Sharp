@@ -250,6 +250,9 @@ public sealed class UsbCdcHost
                     case MSC_CLASS when isBulk:
                         if (isIn) mscInEp  = epNum; else mscOutEp  = epNum; break;
                     case HID_CLASS when isIntr:
+                        // Only the first IN and first OUT HID interrupt endpoint are tracked.
+                        // Composite HID devices with multiple endpoints (e.g. separate keyboard
+                        // and mouse IN endpoints) will have additional endpoints ignored.
                         if (isIn && hidInEp  < 0) hidInEp  = epNum;
                         else if (!isIn && hidOutEp < 0) hidOutEp = epNum;
                         break;
