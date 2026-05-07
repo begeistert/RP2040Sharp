@@ -21,6 +21,13 @@ public sealed class GpioPin
     /// <summary>Pin is configured as output (SIO GPIO_OE bit is set).</summary>
     public bool IsOutput => (_sio.GpioOe & (1u << _pinIndex)) != 0;
 
+    /// <summary>
+    /// Pin is assigned to a PIO state machine (FUNCSEL = 6 for PIO0 or 7 for PIO1).
+    /// PIO-driven pins are configured via IO_BANK0 FUNCSEL, not SIO GPIO_OE, so
+    /// <see cref="IsOutput"/> is <c>false</c> for PIO pins even when the SM drives them.
+    /// </summary>
+    public bool IsPioOutput => _ioBank0 is not null && (_ioBank0.GetFuncSel(_pinIndex) is 6 or 7);
+
     /// <summary>Current output level driven by software (SIO GPIO_OUT).</summary>
     public bool OutputValue => (_sio.GpioOut & (1u << _pinIndex)) != 0;
 

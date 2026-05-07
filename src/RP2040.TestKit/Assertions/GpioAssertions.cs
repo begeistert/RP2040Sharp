@@ -42,6 +42,20 @@ public sealed class GpioAssertions : ReferenceTypeAssertions<GpioPin, GpioAssert
         return new AndConstraint<GpioAssertions>(this);
     }
 
+    /// <summary>
+    /// Assert that the pin is assigned to a PIO state machine (FUNCSEL = 6 or 7).
+    /// Use this for pins configured via <c>pio_gpio_init()</c>, which sets IO_BANK0 FUNCSEL
+    /// rather than SIO GPIO_OE (which <see cref="BeOutput"/> checks).
+    /// </summary>
+    public AndConstraint<GpioAssertions> BePioOutput(
+        string because = "", params object[] becauseArgs)
+    {
+        _chain.BecauseOf(because, becauseArgs)
+            .ForCondition(Subject.IsPioOutput)
+            .FailWith("Expected GPIO pin to be assigned to a PIO state machine (FUNCSEL=6 or 7){reason}, but it was not.");
+        return new AndConstraint<GpioAssertions>(this);
+    }
+
     public AndConstraint<GpioAssertions> BeInput(
         string because = "", params object[] becauseArgs)
     {

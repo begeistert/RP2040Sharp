@@ -35,9 +35,23 @@ public class RP2040TestSimulation : IDisposable
 
     private uint _clkHz = RP2040Machine.CLK_HZ;
 
+    /// <summary>
+    /// Sequence of BKPT immediate values recorded during execution.
+    /// The test harness sets <see cref="RP2040.Core.Cpu.CortexM0Plus.OnBreakpoint"/> to capture
+    /// these rather than allowing BKPT to escalate to HardFault — this simulates the
+    /// ARMv6-M §C1.7.2 behaviour when a debug monitor IS attached (as in a real test environment).
+    /// Firmware panics (pico-sdk <c>panic()</c> uses <c>BKPT #0</c>) are therefore observable
+    /// via <see cref="BreakpointHits"/> without halting the simulation.
+    /// </summary>
+    public IReadOnlyList<byte> BreakpointHits => _breakpointHits;
+    private readonly List<byte> _breakpointHits = new();
+
     protected RP2040TestSimulation()
     {
         Machine = new RP2040Machine();
+        // Install a capturing breakpoint handler so BKPT does not escalate to HardFault.
+        // This is the correct ARMv6-M behaviour when a debugger/monitor is attached.
+        Machine.Cpu.OnBreakpoint = imm8 => _breakpointHits.Add(imm8);
     }
 
     /// <summary>Create a new simulation instance.</summary>
@@ -170,6 +184,7 @@ public class RP2040TestSimulation : IDisposable
     /// <summary>Reset the CPU to its initial state.</summary>
     public RP2040TestSimulation Reset()
     {
+        _breakpointHits.Clear();
         Machine.Reset();
         return this;
     }

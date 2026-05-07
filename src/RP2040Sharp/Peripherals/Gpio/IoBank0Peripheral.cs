@@ -49,6 +49,16 @@ public sealed class IoBank0Peripheral : IMemoryMappedDevice
     private readonly uint[] _proc1Inte = new uint[4];
     private readonly uint[] _proc1Intf = new uint[4];
 
+    /// <summary>
+    /// Returns the FUNCSEL value [4:0] for <paramref name="pin"/>.
+    /// Key values: 5 = SIO, 6 = PIO0, 7 = PIO1, 31 = NULL (hi-Z / default).
+    /// </summary>
+    public uint GetFuncSel(int pin)
+    {
+        if ((uint)pin >= GPIO_COUNT) return 31u;
+        return _ctrl[pin] & FUNCSEL_MASK;
+    }
+
     public uint Size => 0x160;
 
     public IoBank0Peripheral(SioPeripheral sio, CortexM0Plus? cpu = null)

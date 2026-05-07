@@ -14,6 +14,14 @@ public sealed unsafe class CortexM0Plus
     /// <summary>0 = Core0, 1 = Core1. Used by SIO to return the correct CPUID and route FIFOs.</summary>
     public int CoreId { get; set; }
 
+    /// <summary>
+    /// True when the CPU has entered the ARMv6-M lockup state (§B1.5.13).
+    /// Lockup occurs when a HardFault is triggered while already executing in the HardFault handler
+    /// (or NMI handler), because the hardware cannot escalate further.  Once locked up, no more
+    /// instructions execute and the CPU effectively halts.
+    /// </summary>
+    public bool IsLockedUp { get; private set; }
+
     private readonly InstructionDecoder _decoder;
 
     private byte* _fetchPtr;
@@ -59,6 +67,7 @@ public sealed unsafe class CortexM0Plus
 
     public void Reset()
     {
+        IsLockedUp = false;
         Registers.SP = Bus.ReadWord(0x00000000);
         Registers.PC = Bus.ReadWord(0x00000004) & 0xFFFFFFFE;  // strip Thumb bit, same as ExceptionEntry
 
@@ -108,6 +117,9 @@ public sealed unsafe class CortexM0Plus
 
         while (instructions-- > 0)
         {
+            // ARMv6-M §B1.5.13 Lockup: CPU halts when HardFault fires in HardFault/NMI handler.
+            if (IsLockedUp) return;
+
             // Interrupt check — predictable branch (nearly always not taken)
             if (Registers.InterruptsUpdated)
             {
@@ -159,6 +171,7 @@ public sealed unsafe class CortexM0Plus
                 {
                     // PC landed in an un-executable region — raise HardFault per ARMv6-M spec
                     ExceptionEntry(EXC_HARDFAULT);
+                    if (IsLockedUp) return;
                     UpdateFetchCache(Registers.PC);
                     fetchPtr  = _fetchPtr;
                     fetchMask = _fetchMask;
@@ -241,7 +254,22 @@ public sealed unsafe class CortexM0Plus
     public void ExceptionEntry(uint exceptionNumber)
     {
         if (exceptionNumber == EXC_HARDFAULT)
+        {
+            // ARMv6-M §B1.5.13: a HardFault that occurs while executing the HardFault handler
+            // (or NMI handler) cannot escalate further — the processor enters Lockup.
+            // In lockup the CPU stops fetching instructions and drives the bus with a defined
+            // repeating pattern.  We model this by setting IsLockedUp and returning early so
+            // the Run() loop stops executing instructions.
+            if (Registers.IPSR == EXC_HARDFAULT || Registers.IPSR == EXC_NMI)
+            {
+                IsLockedUp = true;
+                System.Console.Error.WriteLine(
+                    $"CPU LOCKUP: HardFault in handler mode (IPSR={Registers.IPSR}) " +
+                    $"callerPC=0x{Registers.PC:X8} SP=0x{Registers.SP:X8}");
+                return;
+            }
             System.Console.Error.WriteLine($"HardFault: callerPC=0x{Registers.PC:X8} LR=0x{Registers.LR:X8} SP=0x{Registers.SP:X8}");
+        }
         var framePtr = Registers.SP;
 
         var needsAlign = (framePtr & 4) != 0;
