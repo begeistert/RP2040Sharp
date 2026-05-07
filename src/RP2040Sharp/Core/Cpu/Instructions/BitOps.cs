@@ -148,10 +148,23 @@ public static class BitOps
             return;
         }
 
-        var extended = (ulong)valRdn << shift;
-        var result = shift >= 32 ? 0 : (uint)extended;
-
-        var calcCarry = (extended & 0x1_0000_0000) != 0;
+        // ARMv6-M §A2.2.1: for LSL, if shift ≥ 33 the result and carry are both 0.
+        // C# ulong shifts are masked to mod-64, so shifts of 33–63 behave correctly
+        // via the (ulong)valRdn << shift expression. However shifts ≥ 64 would wrap
+        // back and produce wrong results; guard against that explicitly.
+        uint result;
+        bool calcCarry;
+        if (shift >= 33)
+        {
+            result = 0;
+            calcCarry = false;
+        }
+        else
+        {
+            var extended = (ulong)valRdn << shift;
+            result = (uint)extended;
+            calcCarry = (extended & 0x1_0000_0000UL) != 0;
+        }
 
         ptrRdn = result;
 

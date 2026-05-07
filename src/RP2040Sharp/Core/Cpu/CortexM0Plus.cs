@@ -399,6 +399,7 @@ public sealed unsafe class CortexM0Plus
 
         if (returnToThread)
         {
+            // ARMv6-M §B1.5.8: when returning to Thread mode, IPSR becomes 0.
             Registers.IPSR = 0;
 
             if (usePsp)
@@ -428,6 +429,11 @@ public sealed unsafe class CortexM0Plus
         Registers.Z = (xpsr & 0x40000000) != 0;
         Registers.C = (xpsr & 0x20000000) != 0;
         Registers.V = (xpsr & 0x10000000) != 0;
+
+        // ARMv6-M §B1.5.8: when returning to Handler mode (nested interrupt),
+        // IPSR must be restored from the stacked xPSR (bits [5:0] = exception number).
+        if (!returnToThread)
+            Registers.IPSR = xpsr & 0x3Fu;
 
         var alignAdjust = (xpsr & (1 << 9)) != 0;
         var stackFree = 0x20u + (alignAdjust ? 4u : 0u);

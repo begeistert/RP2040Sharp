@@ -167,9 +167,10 @@ public abstract class PioTests
             f.LoadAndRun(instr);
             f.Tick(3);
 
-            // When stalled, FDEBUG TXSTALL bit should be set for SM0 (bit 0)
+            // RP2040 TRM §3.7: FDEBUG TXSTALL bits are at [27:24] (one bit per SM).
+            // SM0 TXSTALL = bit 24.
             var fdebug = f.Pio.ReadWord(Fixture.FDEBUG);
-            (fdebug & 1u).Should().Be(1u, "TXSTALL bit 0 should be set when SM stalls on blocking PULL");
+            ((fdebug >> 24) & 1u).Should().Be(1u, "TXSTALL bit 24 should be set when SM stalls on blocking PULL");
         }
 
         [Fact]
@@ -181,9 +182,9 @@ public abstract class PioTests
 
             var instr = EncodePull(block: true);
             f.LoadAndRun(instr);
-            f.Tick(2);
+            f.Tick(1);  // one tick is enough to confirm the PULL succeeded (no stall)
 
-            // SM should advance past PULL (no stall)
+            // TXSTALL (bit 24) must NOT be set when data was available.
             var fdebug = f.Pio.ReadWord(Fixture.FDEBUG);
             (fdebug & (1u << 24)).Should().Be(0u, "TXSTALL should NOT be set when data was available");
         }
@@ -559,13 +560,14 @@ public abstract class PioTests
             // Pre-load OSR by writing PULL via forced INSTR before enabling SM
             f.Pio.WriteWord(Fixture.SM0_CLKDIV, 1u << 16);
             f.Pio.WriteWord(Fixture.CTRL, 1u);
-            // Force-load first value into OSR
+            // Writing SM0_INSTR executes the instruction immediately (per TRM §3.4.5 and rp2040js
+            // reference). PULL runs at write time and loads the first TXF value into OSR.
             f.Pio.WriteWord(Fixture.SM0_INSTR, EncodePull(block: false));
-            f.Tick(1);  // execute forced PULL
+            // No extra tick needed for the PULL — it already ran during the register write.
 
-            // Now tick OUT PINS 32 twice — autopull should pull the second value after first OUT
-            f.Tick(1);  // OUT PINS 32 (first value), autopull loads second
-            f.Tick(1);  // OUT PINS 32 (second value)
+            // Tick OUT PINS 32 twice — autopull should reload OSR from TXF after each OUT.
+            f.Tick(1);  // OUT PINS 32 (first value = 0x11111111), autopull loads second
+            f.Tick(1);  // OUT PINS 32 (second value = 0x22222222)
 
             capturedFirst.Should().Be(0x11111111u, "first OUT PINS 32 outputs first TXF value");
             capturedSecond.Should().Be(0x22222222u,

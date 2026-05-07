@@ -135,7 +135,15 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         if (off >= REG_RXF_BASE && off < REG_RXF_BASE + SM_COUNT * 4)
         {
             var smIdx = (int)((off - REG_RXF_BASE) / 4);
-            return _sm[smIdx].RxFifo.TryDequeue(out var v) ? v : 0;
+            var sm = _sm[smIdx];
+            if (!sm.RxFifo.TryDequeue(out var v)) return 0;
+            // Clear RXSTALL for this SM now that RX FIFO has space
+            _fdebug &= ~(1u << smIdx);
+            // Wake a SM that was stalled waiting for space in the RX FIFO (PUSH block / autopush).
+            // rp2040js: readFIFO() → checkWait().
+            if (sm.Stalled)
+                CheckSmWait(sm, smIdx);
+            return v;
         }
 
         return off switch
@@ -185,9 +193,19 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             var smIdx = (int)((off - REG_TXF_BASE) / 4);
             var sm = _sm[smIdx];
             if (sm.TxFifo.Count < sm.TxDepth)
+            {
                 sm.TxFifo.Enqueue(value);
+                // Clear TXSTALL for this SM now that TX FIFO has data
+                _fdebug &= ~(1u << (24 + smIdx));
+                // Wake a SM that was stalled waiting for data in the TX FIFO (PULL block / autopull).
+                // rp2040js: writeFIFO() → checkWait().
+                if (sm.Stalled)
+                    CheckSmWait(sm, smIdx);
+            }
             else
+            {
                 _fdebug |= 1u << (8 + smIdx);  // TXOVER bits [11:8]
+            }
             return;
         }
 
@@ -195,12 +213,12 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         {
             case REG_CTRL:      WriteCtrl(value); break;
             case REG_FDEBUG:    _fdebug &= ~value; break;  // write 1 to clear
-            case REG_IRQ:       _irq &= ~value; break;       // write 1 to clear
-            case REG_IRQ_FORCE: _irq |= value & 0xFF; break;
-            case REG_IRQ0_INTE: _irq0Inte = value & 0xFFF; break;
-            case REG_IRQ0_INTF: _irq0Intf = value & 0xFFF; break;
-            case REG_IRQ1_INTE: _irq1Inte = value & 0xFFF; break;
-            case REG_IRQ1_INTF: _irq1Intf = value & 0xFFF; break;
+            case REG_IRQ:       _irq &= ~value; IrqUpdated(); break;       // write 1 to clear
+            case REG_IRQ_FORCE: _irq |= value & 0xFF; IrqUpdated(); break;
+            case REG_IRQ0_INTE: _irq0Inte = value & 0xFFF; CheckInterrupts(); break;
+            case REG_IRQ0_INTF: _irq0Intf = value & 0xFFF; CheckInterrupts(); break;
+            case REG_IRQ1_INTE: _irq1Inte = value & 0xFFF; CheckInterrupts(); break;
+            case REG_IRQ1_INTF: _irq1Intf = value & 0xFFF; CheckInterrupts(); break;
         }
     }
 
@@ -236,7 +254,64 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             sm.RxFifo.Enqueue(value);
     }
 
-    // ── Private: Ctrl ────────────────────────────────────────────────
+    // ── Private: stall wake-up ───────────────────────────────────────
+
+    /// <summary>
+    /// Re-evaluate the stall condition for a SM that was blocked on a FIFO or IRQ wait.
+    /// Mirrors rp2040js <c>StateMachine.checkWait()</c>: the SM may immediately unstall and
+    /// advance its PC if the blocking condition has been resolved.
+    /// Called after TXF writes (may unblock PULL-stalled SM) and RXF reads (may unblock PUSH-stalled SM).
+    /// </summary>
+    private void CheckSmWait(PioStateMachine sm, int smIdx)
+    {
+        // Try to complete a blocked PULL (SM was stalled because TX FIFO was empty).
+        if (sm.TxFifo.Count > 0)
+        {
+            sm.OSR = sm.TxFifo.Dequeue();
+            sm.OsrCount = 32;
+            sm.Stalled = false;
+            AdvanceSmPc(sm);
+        }
+        // Try to complete a blocked PUSH (SM was stalled because RX FIFO was full).
+        else if (sm.RxFifo.Count < sm.RxDepth && sm.IsrCount >= (uint)sm.AutopushThreshold)
+        {
+            sm.RxFifo.Enqueue(sm.ISR);
+            sm.ISR = 0; sm.IsrCount = 0;
+            sm.Stalled = false;
+            AdvanceSmPc(sm);
+        }
+    }
+
+    /// <summary>
+    /// Re-check IRQ flag waits across all SMs after an IRQ flag change.
+    /// Called after IRQ register writes. Mirrors rp2040js <c>RPPIO.irqUpdated()</c>.
+    /// </summary>
+    private void IrqUpdated()
+    {
+        for (var i = 0; i < SM_COUNT; i++)
+        {
+            var sm = _sm[i];
+            if (!sm.Stalled) continue;
+            // Check if this SM is stalled waiting for an IRQ flag to clear (IRQ WAIT instruction).
+            // The exact IRQ index being waited on is not stored separately; we re-evaluate by
+            // rescanning. In practice, very few SMs stall on IRQ simultaneously.
+            // A simple approach: let the next Tick() re-evaluate, which is safe because IRQ waits
+            // re-check every cycle. For immediate wake (matching rp2040js), we would need to store
+            // the wait type and index in PioStateMachine — deferred for a future improvement.
+        }
+        CheckInterrupts();
+    }
+
+    private void AdvanceSmPc(PioStateMachine sm)
+    {
+        if (!sm.PcJumped)
+        {
+            sm.PC++;
+            if (sm.PC > sm.WrapTop)
+                sm.PC = sm.WrapBottom;
+        }
+        sm.PcJumped = false;
+    }
 
     private uint BuildCtrl()
     {
@@ -253,14 +328,18 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         for (var i = 0; i < SM_COUNT; i++)
             _sm[i].Enabled = (value & (1u << i)) != 0;
 
-        // Bits [7:4]: SM_RESTART — reset PC and shift state
+        // Bits [7:4]: SM_RESTART — reset PC and shift state.
+        // rp2040js restart(): inputShiftCount=0, outputShiftCount=32 (full), waiting=false.
+        // TRM §3.7: RESTART clears ISR/ISR-count and OSR-count to "full" state.
         for (var i = 0; i < SM_COUNT; i++)
             if ((value & (1u << (4 + i))) != 0)
             {
                 _sm[i].PC = _sm[i].WrapBottom;
                 _sm[i].ISR = 0; _sm[i].IsrCount = 0;
-                _sm[i].OSR = 0; _sm[i].OsrCount = 0;
+                _sm[i].OSR = 0; _sm[i].OsrCount = 32;  // 32 = "full" — autopull won't stall immediately
                 _sm[i].Stalled = false;
+                // Clear EXEC_STALLED status in EXECCTRL (bit 31)
+                _sm[i].ExecCtrl &= 0x7FFFFFFFu;
             }
 
         // Bits [11:8]: CLKDIV_RESTART — reset fractional accumulator
@@ -273,15 +352,16 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
     private uint BuildFstat()
     {
-        // Bit layout from datasheet: [3:0]=TXFULL, [11:8]=TXEMPTY, [19:16]=RXFULL, [27:24]=RXEMPTY
+        // RP2040 TRM §3.7 / rp2040js reference:
+        // [27:24] = TXEMPTY (per SM), [19:16] = TXFULL, [11:8] = RXEMPTY, [3:0] = RXFULL
         uint result = 0;
         for (var i = 0; i < SM_COUNT; i++)
         {
             var sm = _sm[i];
-            if (sm.TxFifo.Count >= sm.TxDepth) result |= 1u << i;         // TX full [3:0]
-            if (sm.TxFifo.Count == 0)           result |= 1u << (8  + i);  // TX empty [11:8]
-            if (sm.RxFifo.Count >= sm.RxDepth) result |= 1u << (16 + i);  // RX full [19:16]
-            if (sm.RxFifo.Count == 0)           result |= 1u << (24 + i);  // RX empty [27:24]
+            if (sm.RxFifo.Count >= sm.RxDepth) result |= 1u << i;          // RX full [3:0]
+            if (sm.RxFifo.Count == 0)           result |= 1u << (8  + i);  // RX empty [11:8]
+            if (sm.TxFifo.Count >= sm.TxDepth)  result |= 1u << (16 + i);  // TX full [19:16]
+            if (sm.TxFifo.Count == 0)           result |= 1u << (24 + i);  // TX empty [27:24]
         }
         return result;
     }
@@ -338,6 +418,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         return reg switch
         {
             SM_OFF_CLKDIV    => sm.ClkDiv,
+            // EXECCTRL bit 31 (EXEC_STALLED) is hardware read-only status; preserve it.
             SM_OFF_EXECCTRL  => sm.ExecCtrl,
             SM_OFF_SHIFTCTRL => sm.ShiftCtrl,
             SM_OFF_ADDR      => sm.PC,
@@ -355,10 +436,22 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         switch (reg)
         {
             case SM_OFF_CLKDIV:    sm.ClkDiv    = value; break;
-            case SM_OFF_EXECCTRL:  sm.ExecCtrl  = value; break;
+            // EXECCTRL bit 31 (EXEC_STALLED) is read-only hardware status;
+            // writes must preserve it (rp2040js: execCtrl = (value & 0x7FFFFFFF) | (execCtrl & 0x80000000)).
+            case SM_OFF_EXECCTRL:  sm.ExecCtrl  = (value & 0x7FFFFFFFu) | (sm.ExecCtrl & 0x80000000u); break;
             case SM_OFF_SHIFTCTRL: sm.ShiftCtrl = value; break;
             case SM_OFF_ADDR:      break; // read-only
-            case SM_OFF_INSTR:     sm.ForcedInstr = (ushort)value; break;  // immediate execute
+            case SM_OFF_INSTR:
+                // SM_INSTR must execute the instruction immediately (rp2040js: executeInstruction(value)),
+                // not defer it. Immediate execution is required for correct PC updates visible on the next
+                // SM_ADDR read (e.g. firmware writing a JMP and then reading SM_ADDR).
+                ExecuteInstr(sm, (ushort)value, (int)((value >> 13) & 7));
+                // Reflect stall in EXECCTRL bit 31 (EXEC_STALLED) per TRM §3.7.
+                if (sm.Stalled)
+                    sm.ExecCtrl |= 0x80000000u;
+                else
+                    sm.ExecCtrl &= 0x7FFFFFFFu;
+                break;
             case SM_OFF_PINCTRL:   sm.PinCtrl   = value; break;
         }
     }
@@ -374,17 +467,8 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             return;
         }
 
-        ushort instr;
-        if (sm.ForcedInstr.HasValue)
-        {
-            instr = (ushort)sm.ForcedInstr.Value;
-            sm.ForcedInstr = null;
-        }
-        else
-        {
-            if (sm.PC >= INSTR_COUNT) sm.PC = (uint)(sm.WrapBottom & 0x1F);
-            instr = _instrMem[sm.PC];
-        }
+        if (sm.PC >= INSTR_COUNT) sm.PC = (uint)(sm.WrapBottom & 0x1F);
+        var instr = _instrMem[sm.PC];
 
         var opcode = (instr >> 13) & 0x7;
 
@@ -392,13 +476,16 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
 
         ExecuteInstr(sm, instr, opcode);
 
-        // Update FDEBUG stall bits (sticky — cleared by writing 1 to FDEBUG)
+        // Update FDEBUG stall bits (sticky — cleared by writing 1 to FDEBUG).
+        // RP2040 TRM §3.7 / rp2040js reference bit layout:
+        //   [27:24] = TXSTALL (SM stalled waiting to read from empty TX FIFO / autopull)
+        //   [3:0]   = RXSTALL (SM stalled waiting to write to full RX FIFO / autopush)
         if (sm.Stalled && opcode == OP_PUSH_PULL)
         {
             if ((instr & 0x80) != 0)
-                _fdebug |= 1u << smIdx;          // TXSTALL bits [3:0]
+                _fdebug |= 1u << (24 + smIdx);  // TXSTALL bits [27:24]
             else
-                _fdebug |= 1u << (24 + smIdx);   // RXSTALL bits [27:24]
+                _fdebug |= 1u << smIdx;          // RXSTALL bits [3:0]
         }
 
         // Sideset, delay, and PC advance only on completing cycle (not on stall)
@@ -730,8 +817,14 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             case 2: sm.Y = data; break;
             case 4: ExecuteInstr(sm, (ushort)data, (int)((data >> 13) & 7)); return;  // EXEC
             case 5: sm.PC = data & 0x1F; sm.PcJumped = true; sm.Stalled = false; return;  // PC
-            case 6: sm.ISR = data; sm.IsrCount = 32; break;
-            case 7: sm.OSR = data; sm.OsrCount = 32; break;
+            case 6:
+                // MOV ISR: rp2040js §setMovDestination / TRM §3.4.3 —
+                // "The ISR shift count is set to 0 (empty)."
+                sm.ISR = data; sm.IsrCount = 0; break;
+            case 7:
+                // MOV OSR: rp2040js §setMovDestination / TRM §3.4.3 —
+                // "The OSR shift count is set to 0 (full, i.e. 32 bits remain)."
+                sm.OSR = data; sm.OsrCount = 32; break;
         }
         sm.Stalled = false;
     }

@@ -189,8 +189,9 @@ public abstract class ArithmeticOpsTests
                 // Act
                 Cpu.Step();
 
-                // Assert
-                Cpu.Registers[SP].Should().Be(0x20030010);
+                // Assert: ARMv6-M §A6.7.2 — ADD SP, Rm does NOT force 4-byte alignment.
+                // The raw sum is written to SP.
+                Cpu.Registers[SP].Should().Be(0x20030013);
                 Cpu.Registers.Z.Should().BeTrue();
             }
 

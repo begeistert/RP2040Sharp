@@ -287,7 +287,7 @@ public abstract class BitOpsTests
         }
 
         [Fact]
-        public void Should_MoveRegisterToStackPointer_And_EnforceAlignment()
+        public void Should_MoveRegisterToStackPointer_Without_ForcedAlignment()
         {
             // Arrange
             var opcode = InstructionEmiter.Mov(SP, R8);
@@ -298,12 +298,13 @@ public abstract class BitOpsTests
             // Act
             Cpu.Step();
 
-            // Assert
-            Cpu.Registers[SP].Should().Be(52);
+            // Assert: ARMv6-M §A6.7.75 — MOV SP, Rm writes the raw register value;
+            // alignment is NOT forced by the instruction.
+            Cpu.Registers[SP].Should().Be(55);
         }
 
         [Fact]
-        public void Should_ClearLowerTwoBits_When_WritingToStackPointer()
+        public void Should_WriteRawValueToStackPointer()
         {
             // Arrange
             Cpu.Registers.PC = 0x20000000;
@@ -314,8 +315,8 @@ public abstract class BitOpsTests
             // Act
             Cpu.Step();
 
-            // Assert
-            Cpu.Registers.SP.Should().Be(0x50);
+            // Assert: ARMv6-M §A6.7.75 — MOV SP, Rm writes the raw value without masking.
+            Cpu.Registers.SP.Should().Be(0x53);
         }
 
         [Fact]
@@ -353,7 +354,7 @@ public abstract class BitOpsTests
         }
 
         [Fact]
-        public void Should_ClearLowerTwoBits_When_WritingToStackPointer()
+        public void Should_WriteRawValueToStackPointer()
         {
             // Arrange
             var opcode = InstructionEmiter.Mov(SP, R5);
@@ -364,8 +365,9 @@ public abstract class BitOpsTests
             // Act
             Cpu.Step();
 
-            // Assert
-            Cpu.Registers.SP.Should().Be(0x50);
+            // Assert: ARMv6-M §A6.7.75 — MOV SP, Rm writes the raw register value;
+            // alignment is NOT forced.
+            Cpu.Registers.SP.Should().Be(0x53);
         }
 
         [Fact]

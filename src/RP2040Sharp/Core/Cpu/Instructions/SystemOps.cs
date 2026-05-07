@@ -203,14 +203,25 @@ public static class SystemOps
 
     // ================================================================
     // BKPT — mask=0xFF00, pattern=0xBE00
-    // Calls the configurable breakpoint handler on the CPU
+    // ARMv6-M §C1.7.2: if a debug monitor is configured (OnBreakpoint handler is set),
+    // invoke it and continue.  Otherwise, the processor raises a HardFault, as if no
+    // debug monitor is present — matching real hardware behaviour where a BKPT without
+    // a connected debugger faults the core.
     // ================================================================
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Bkpt(ushort opcode, CortexM0Plus cpu)
     {
         var imm8 = (byte)(opcode & 0xFF);
-        cpu.OnBreakpoint?.Invoke(imm8);
+        if (cpu.OnBreakpoint != null)
+        {
+            cpu.OnBreakpoint.Invoke(imm8);
+        }
+        else
+        {
+            // No debugger attached — escalate to HardFault per ARMv6-M §C1.7.2.
+            cpu.TriggerHardFault();
+        }
     }
 
     // ================================================================

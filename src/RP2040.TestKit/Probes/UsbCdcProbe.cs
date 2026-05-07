@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text;
 using RP2040.Peripherals.Usb;
 
@@ -16,7 +17,15 @@ public sealed class UsbCdcProbe
 
     public IReadOnlyList<byte> Bytes => _bytes;
     public int ByteCount => _bytes.Count;
-    public string Text => _textCache ??= Encoding.Latin1.GetString(_bytes.ToArray());
+
+    /// <summary>
+    /// All captured output as a Latin-1 string.
+    /// Decodes directly from the list's backing buffer via <see cref="CollectionsMarshal.AsSpan{T}"/>
+    /// to avoid the O(n²) allocation that <c>_bytes.ToArray()</c> would cause on every cache miss
+    /// during high-throughput CDC streams (e.g. MicroPython boot).
+    /// </summary>
+    public string Text => _textCache ??= Encoding.Latin1.GetString(CollectionsMarshal.AsSpan(_bytes));
+
     public IReadOnlyList<string> Lines
         => _linesCache ??= Text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
 

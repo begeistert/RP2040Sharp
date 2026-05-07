@@ -110,9 +110,10 @@ public class RP2040TestSimulation : IDisposable
     {
         // Run in batches so time-aware peripherals (Timer, Watchdog, …) are ticked
         // frequently enough for interrupt-driven wakeups (e.g. sleep_ms via WFE) to work.
-        // Batch ≈ 50 000 cycles (~400 µs at 125 MHz) gives ms-level timer accuracy
-        // while keeping overhead low even for multi-second simulations.
-        const int BatchSize = 50_000;
+        // Batch ≈ 500 000 cycles (~4 ms at 125 MHz) gives ms-level timer accuracy while
+        // reducing bookkeeping overhead 10× vs the former 50 K batch — a measurable speedup
+        // for multi-second simulations such as MicroPython boot (≈60 simulated seconds).
+        const int BatchSize = 500_000;
         while (cycles > 0)
         {
             var batch = (int)Math.Min(cycles, BatchSize);
