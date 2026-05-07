@@ -108,8 +108,17 @@ public class RP2040TestSimulation : IDisposable
     /// <summary>Execute for approximately <paramref name="cycles"/> CPU cycles.</summary>
     public RP2040TestSimulation RunCycles(long cycles)
     {
-        // Approximate: assume ~1 cycle/instruction average
-        Machine.Run((int)Math.Min(cycles, int.MaxValue));
+        // Run in batches so time-aware peripherals (Timer, Watchdog, …) are ticked
+        // frequently enough for interrupt-driven wakeups (e.g. sleep_ms via WFE) to work.
+        // Batch ≈ 50 000 cycles (~400 µs at 125 MHz) gives ms-level timer accuracy
+        // while keeping overhead low even for multi-second simulations.
+        const int BatchSize = 50_000;
+        while (cycles > 0)
+        {
+            var batch = (int)Math.Min(cycles, BatchSize);
+            Machine.Run(batch);
+            cycles -= batch;
+        }
         return this;
     }
 
@@ -218,6 +227,20 @@ public static class UsbCdcProbeRunExtensions
             sim.RunMilliseconds(batchMs);
             if (cdc.Text.Contains(expectedText, StringComparison.Ordinal))
                 return true;
+            elapsed += batchMs;
+        }
+        return false;
+    }
+
+    /// <summary>Run the simulation until <paramref name="predicate"/> over the CDC text returns true.</summary>
+    public static bool RunUntilOutput(this RP2040TestSimulation sim, UsbCdcProbe cdc, Func<string, bool> predicate, double timeoutMs = 10_000)
+    {
+        const double batchMs = 100.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs)
+        {
+            sim.RunMilliseconds(batchMs);
+            if (predicate(cdc.Text)) return true;
             elapsed += batchMs;
         }
         return false;
