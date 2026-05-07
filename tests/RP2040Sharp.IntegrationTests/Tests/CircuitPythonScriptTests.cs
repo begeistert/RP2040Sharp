@@ -4,21 +4,20 @@ using RP2040Sharp.IntegrationTests.Infrastructure;
 namespace RP2040Sharp.IntegrationTests.Tests;
 
 /// <summary>
-/// Tests for CircuitPython's script-execution pipeline and filesystem.
+/// Tests for CircuitPython's script-execution pipeline and QSPI flash filesystem.
 ///
-/// <b>Emulator limitations — filesystem writes:</b>
-/// CircuitPython's FAT filesystem (CIRCUITPY drive) flushes data to the RP2040's QSPI flash
-/// via the SSI peripheral.  The emulator does not yet implement the SSI flash-programming
-/// command sequence, so all writes to the filesystem are no-ops.  This means:
-///   - <see cref="CircuitPythonRunner.WriteFile"/> cannot be used to persist files across
-///     sessions or soft resets for CircuitPython.
-///   - MicroPython is not affected because its LittleFS operates entirely in SRAM, which
-///     survives a soft reset in the emulator.
+/// <b>Filesystem write support:</b>
+/// CircuitPython's FAT filesystem (CIRCUITPY drive) flushes data to the RP2040's
+/// QSPI flash via the SSI peripheral.  The SSI now emulates the full W25Q flash
+/// command set (WRITE_ENABLE, SECTOR_ERASE, PAGE_PROGRAM, READ_DATA, etc.), so
+/// filesystem writes made via the REPL persist across soft resets.
 ///
-/// The tests here cover what <i>does</i> work:
-///   - Default boot: the <c>code.py</c> baked into the CircuitPython 9.2.1 firmware image
-///   - Read-side filesystem: listing and reading the files that ship in the firmware image
-///   - Soft-reset lifecycle
+/// Test categories:
+/// <list type="bullet">
+///   <item>Default boot: the <c>code.py</c> shipped with CircuitPython 9.2.1</item>
+///   <item>Read-side filesystem: listing and reading the firmware's files</item>
+///   <item>WriteFile + SoftReset: write new scripts via REPL and verify auto-execution</item>
+/// </list>
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class CircuitPythonScriptTests
@@ -27,6 +26,19 @@ public sealed class CircuitPythonScriptTests
         Environment.GetEnvironmentVariable("SKIP_INTEGRATION_TESTS") == "1";
 
     private const string Version = "9.2.1";
+
+    // ── Shared boot helper ────────────────────────────────────────────────────
+
+    private static async Task<CircuitPythonRunner?> BootToReplAsync()
+    {
+        var runner = await CircuitPythonRunner.CreateAsync(Version);
+        if (runner is null) return null;
+        runner.WaitForPrompt(timeoutMs: 20_000)
+              .Should().BeTrue($"CircuitPython {Version} must reach REPL within 20 s");
+        runner.Simulation.RunMilliseconds(200);
+        runner.UsbCdc.Clear();
+        return runner;
+    }
 
     // ── Default boot behaviour ────────────────────────────────────────────────
 
@@ -64,12 +76,8 @@ public sealed class CircuitPythonScriptTests
     {
         if (ShouldSkip) return;
 
-        await using var runner = await CircuitPythonRunner.CreateAsync(Version);
+        await using var runner = await BootToReplAsync();
         if (runner is null) return;
-
-        runner.WaitForPrompt(timeoutMs: 20_000).Should().BeTrue();
-        runner.Simulation.RunMilliseconds(200);
-        runner.UsbCdc.Clear();
 
         var found = runner.ExecuteAndWait("import os; print(os.listdir('/'))", "code.py");
         found.Should().BeTrue("os.listdir('/') must include 'code.py' from the firmware image");
@@ -84,14 +92,9 @@ public sealed class CircuitPythonScriptTests
     {
         if (ShouldSkip) return;
 
-        await using var runner = await CircuitPythonRunner.CreateAsync(Version);
+        await using var runner = await BootToReplAsync();
         if (runner is null) return;
 
-        runner.WaitForPrompt(timeoutMs: 20_000).Should().BeTrue();
-        runner.Simulation.RunMilliseconds(200);
-        runner.UsbCdc.Clear();
-
-        // The default code.py ships with a print("Hello World!") call
         var found = runner.ExecuteAndWait(
             "print(open('code.py').read())",
             "Hello World");
@@ -107,17 +110,106 @@ public sealed class CircuitPythonScriptTests
     {
         if (ShouldSkip) return;
 
-        await using var runner = await CircuitPythonRunner.CreateAsync(Version);
+        await using var runner = await BootToReplAsync();
         if (runner is null) return;
-
-        runner.WaitForPrompt(timeoutMs: 20_000).Should().BeTrue();
-        runner.Simulation.RunMilliseconds(200);
-        runner.UsbCdc.Clear();
 
         var found = runner.ExecuteAndWait(
             "exec(open('code.py').read())",
             "Hello World!");
         found.Should().BeTrue("exec(open('code.py').read()) must reproduce 'Hello World!'");
+    }
+
+    // ── Shared boot helper (writable FS) ─────────────────────────────────────
+
+    /// <summary>
+    /// Boot helper for tests that need to write files.
+    /// Boots with USB-CDC so CircuitPython initialises normally, then injects a
+    /// <c>boot.py</c> that calls <c>storage.disable_usb_drive()</c> into the FAT
+    /// before performing a soft reset so the file takes effect.
+    /// After the second boot the REPL is on USB-CDC and the filesystem is writable
+    /// from Python code.
+    /// </summary>
+    private static async Task<CircuitPythonRunner?> BootToReplWritableAsync()
+    {
+        // CreateWithWritableFsAsync boots CircuitPython, injects boot.py, soft-resets so
+        // boot.py runs (disabling USB-MSC), then waits for the REPL again before returning.
+        return await CircuitPythonRunner.CreateWithWritableFsAsync(Version);
+    }
+
+    // ── WriteFile + SoftReset (QSPI flash write) ──────────────────────────────
+
+    /// <summary>
+    /// Verifies that the CIRCUITPY filesystem is writable from Python code.
+    /// Runs without USB host so CircuitPython doesn't lock the FAT via USB-MSC.
+    /// </summary>
+    [Fact]
+    public async Task Script_Filesystem_IsWritableFromPython()
+    {
+        if (ShouldSkip) return;
+
+        await using var runner = await BootToReplWritableAsync();
+        if (runner is null) return;
+
+        // Write a probe file and immediately read it back in the same session.
+        runner.WriteFile("write_probe.txt", "probe_content_xyz");
+
+        runner.Simulation.RunMilliseconds(200);
+        runner.UsbCdc.Clear();
+
+        var found = runner.ExecuteAndWait(
+            "print(open('write_probe.txt').read())",
+            "probe_content_xyz");
+
+        found.Should().BeTrue(
+            "the CIRCUITPY filesystem must be writable from Python when USB host is absent");
+    }
+
+    /// <summary>
+    /// Writes a new <c>code.py</c> via REPL, performs a soft reset, and verifies the
+    /// written script runs automatically.  Exercises the full QSPI flash write path:
+    /// CircuitPython flushes the FAT filesystem via the bootrom flash_range_program hook,
+    /// which the emulator applies directly to the flash image.
+    /// </summary>
+    [Fact]
+    public async Task Script_WriteCodePy_RunsAfterSoftReset()
+    {
+        if (ShouldSkip) return;
+
+        await using var runner = await BootToReplWritableAsync();
+        if (runner is null) return;
+
+        runner.WriteFile("code.py", "print('written by WriteFile')\n")
+              .Should().BeTrue("WriteFile must succeed on a ready REPL");
+
+        runner.SoftReset(timeoutMs: 20_000)
+              .Should().BeTrue("CircuitPython must return to REPL after soft reset");
+
+        var text = runner.UsbCdc.IsConnected ? runner.UsbCdc.Text : runner.Uart.Text;
+        text.Should().Contain("written by WriteFile",
+            "the new code.py written via REPL must run automatically after soft reset");
+    }
+
+    /// <summary>
+    /// Writes a <c>code.py</c> that computes an arithmetic expression, soft resets,
+    /// and verifies the correct result is printed.
+    /// </summary>
+    [Fact]
+    public async Task Script_WriteCodePy_ComputesAndPrintsArithmetic()
+    {
+        if (ShouldSkip) return;
+
+        await using var runner = await BootToReplWritableAsync();
+        if (runner is null) return;
+
+        runner.WriteFile("code.py", "x = 6 * 7\nprint('result:', x)\n")
+              .Should().BeTrue();
+
+        runner.SoftReset(timeoutMs: 20_000)
+              .Should().BeTrue("must return to REPL after soft reset");
+
+        var text = runner.UsbCdc.IsConnected ? runner.UsbCdc.Text : runner.Uart.Text;
+        text.Should().Contain("result: 42",
+            "code.py must compute 6 * 7 = 42 and print it on soft reset");
     }
 }
 

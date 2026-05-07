@@ -44,7 +44,15 @@ public sealed class CircuitPythonRunner : IAsyncDisposable
     /// Create a runner loaded with CircuitPython <paramref name="version"/> (e.g. "9.2.1").
     /// Returns <c>null</c> when the firmware is not available (no network / not cached).
     /// </summary>
-    public static async Task<CircuitPythonRunner?> CreateAsync(string version)
+    /// <param name="version">CircuitPython version string.</param>
+    /// <param name="withUsbCdc">
+    /// When <c>true</c> (default) the simulation includes a USB-CDC host, giving access to
+    /// the USB REPL but also causing CircuitPython to lock the CIRCUITPY filesystem
+    /// read-only (USB-MSC prevents Python code from writing).
+    /// Pass <c>false</c> to run without a USB host: CircuitPython falls back to the
+    /// UART0 REPL and the filesystem remains writable from Python code.
+    /// </param>
+    public static async Task<CircuitPythonRunner?> CreateAsync(string version, bool withUsbCdc = true)
     {
         var uf2Path = await FirmwareCache.GetCircuitPythonAsync(version);
         if (uf2Path is null)
@@ -53,7 +61,7 @@ public sealed class CircuitPythonRunner : IAsyncDisposable
         var uf2Bytes = await File.ReadAllBytesAsync(uf2Path);
         var flashImage = Uf2Reader.ToFlashImage(uf2Bytes);
 
-        var sim = new PicoSimulation();
+        var sim = new PicoSimulation(withUsbCdc);
         sim.LoadFlash(flashImage);
         return new CircuitPythonRunner(sim);
     }
@@ -269,6 +277,160 @@ public sealed class CircuitPythonRunner : IAsyncDisposable
             Uart.InjectString("\x04");
         }
         return WaitForPrompt(timeoutMs);
+    }
+
+    // ── Writable-FS factory ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// Create a runner where the CircuitPython filesystem is writable from Python code.
+    ///
+    /// Strategy (two-phase):
+    /// <list type="number">
+    ///   <item>Boot CircuitPython once so it initialises (or mounts) the FAT filesystem.</item>
+    ///   <item>Copy the full 2 MB flash image, inject a <c>boot.py</c> into the copy,
+    ///         then restart with the modified image.</item>
+    /// </list>
+    /// <c>boot.py</c> runs on every <em>hard reset</em> (power-up / <c>LoadFlash</c>),
+    /// before TinyUSB is initialised.  Calling <c>storage.disable_usb_drive()</c> there
+    /// suppresses the USB-MSC descriptor and leaves the CIRCUITPY drive writable from
+    /// Python code.
+    ///
+    /// Note: a soft reset (CTRL-D) does NOT re-run <c>boot.py</c>; that is why the
+    /// second phase creates a fresh simulation rather than calling <c>SoftReset()</c>.
+    /// </summary>
+    public static async Task<CircuitPythonRunner?> CreateWithWritableFsAsync(string version)
+    {
+        // ── Phase 1: boot once so the FAT is initialised ──────────────────────
+        var stage1 = await CreateAsync(version);
+        if (stage1 is null) return null;
+
+        if (!stage1.WaitForPrompt(timeoutMs: 20_000))
+        {
+            await stage1.DisposeAsync();
+            return null;
+        }
+
+        // ── Phase 2: snapshot flash, inject boot.py, discard first simulation ─
+        var flashSize = (int)stage1.Simulation.Rp2040.Bus.FlashSize;
+        var fullFlash = new byte[flashSize];
+        unsafe
+        {
+            new ReadOnlySpan<byte>(stage1.Simulation.Rp2040.Bus.PtrFlash, flashSize)
+                .CopyTo(fullFlash);
+            fixed (byte* ptr = fullFlash)
+                InjectBootPy(ptr, "import storage\nstorage.disable_usb_drive()\n");
+        }
+        await stage1.DisposeAsync();
+
+        // ── Phase 3: restart with modified flash ──────────────────────────────
+        // boot.py is run on the very first hard reset, before TinyUSB initialises,
+        // so storage.disable_usb_drive() takes effect and the FS is writable.
+        var sim2   = new PicoSimulation(withUsbCdc: true);
+        sim2.LoadFlash(fullFlash);
+        var runner = new CircuitPythonRunner(sim2);
+
+        if (!runner.WaitForPrompt(timeoutMs: 20_000))
+            return null;
+
+        runner.Simulation.RunMilliseconds(200);
+        runner.UsbCdc.Clear();
+        return runner;
+    }
+
+    // ── FAT12 boot.py injection ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Writes a <c>boot.py</c> file into the CIRCUITPY FAT12 partition inside a raw
+    /// flash image.  Works on the raw <c>byte[]</c> (via a pinned pointer) or on the
+    /// live emulated flash — either way <paramref name="flashPtr"/> must point to
+    /// the base of the 2 MB flash image.
+    /// </summary>
+    private static unsafe void InjectBootPy(byte* flashPtr, string content)
+    {
+        // BPB parameters discovered empirically from a live CircuitPython 9.2.1 image.
+        const uint FatFlashOffset = 0x100000u; // CIRCUITPY FAT partition at 1 MB in flash
+        const int  Bps            = 512;       // BPB_BytsPerSec
+        const int  Spc            = 1;         // BPB_SecPerClus
+        const int  RsvdSectors    = 1;         // BPB_RsvdSecCnt
+        const int  NumFats        = 1;         // BPB_NumFATs
+        const int  SectorsPerFat  = 7;         // BPB_FATSz16
+        const int  RootDirEntries = 512;       // BPB_RootEntCnt
+
+        // Sector layout (all offsets relative to the start of the FAT partition):
+        //   Sector  1 : FAT1  (7 sectors)
+        //   Sector  8 : root directory  (512 entries × 32 B / 512 B/sector = 32 sectors)
+        //   Sector 40 : data area (cluster 2 = first data cluster)
+        const int FatSector  = RsvdSectors;
+        const int RootSector = RsvdSectors + NumFats * SectorsPerFat;
+        const int DataSector = RootSector  + RootDirEntries * 32 / Bps;
+
+        byte* bpb  = flashPtr + FatFlashOffset;
+        byte* fat  = bpb + FatSector  * Bps;
+        byte* root = bpb + RootSector * Bps;
+        byte* data = bpb + DataSector * Bps;
+
+        // Find the first free cluster (FAT12 allocatable entries start at cluster 2).
+        int freeClu = -1;
+        for (int clu = 2; clu < 2048; clu++)
+        {
+            if (Fat12Get(fat, clu) == 0x000u) { freeClu = clu; break; }
+        }
+        if (freeClu < 0) return; // FAT full — cannot inject
+
+        // Write file content into the allocated cluster (clear first, then copy).
+        byte[] contentBytes = System.Text.Encoding.ASCII.GetBytes(content);
+        byte*  clusterData  = data + (freeClu - 2) * Spc * Bps;
+        new Span<byte>(clusterData, Spc * Bps).Clear();
+        contentBytes.AsSpan().CopyTo(new Span<byte>(clusterData, contentBytes.Length));
+
+        // Mark cluster as end-of-chain in FAT12.
+        Fat12Set(fat, freeClu, 0xFFFu);
+
+        // Add a root-directory entry for BOOT.PY (8.3 short name).
+        for (int e = 0; e < RootDirEntries - 1; e++)
+        {
+            byte* entry    = root + e * 32;
+            bool  isEnd     = entry[0] == 0x00;
+            bool  isDeleted = entry[0] == 0xE5;
+            if (!isEnd && !isDeleted) continue;
+
+            // 8.3 name: "BOOT    " + "PY "
+            "BOOT    "u8.CopyTo(new Span<byte>(entry,     8));
+            "PY "u8.CopyTo(new Span<byte>(entry + 8,  3));
+            entry[11] = 0x20;                               // ATTR_ARCHIVE
+            new Span<byte>(entry + 12, 14).Clear();         // reserved / time / date
+            *(ushort*)(entry + 26) = (ushort)freeClu;       // first cluster (low word)
+            *(uint*)  (entry + 28) = (uint)contentBytes.Length; // file size
+
+            // When overwriting the end-of-directory marker the next slot must also
+            // be marked as end-of-directory (entry+32 is the first byte of entry e+1).
+            if (isEnd)
+                *(entry + 32) = 0x00;
+
+            break;
+        }
+    }
+
+    private static unsafe uint Fat12Get(byte* fat, int cluster)
+    {
+        int  byteOff = cluster * 3 / 2;
+        uint raw     = (uint)fat[byteOff] | ((uint)fat[byteOff + 1] << 8);
+        return (cluster & 1) == 0 ? raw & 0xFFFu : (raw >> 4) & 0xFFFu;
+    }
+
+    private static unsafe void Fat12Set(byte* fat, int cluster, uint value)
+    {
+        int byteOff = cluster * 3 / 2;
+        if ((cluster & 1) == 0)
+        {
+            fat[byteOff]     = (byte)(value & 0xFF);
+            fat[byteOff + 1] = (byte)(((uint)fat[byteOff + 1] & 0xF0u) | ((value >> 8) & 0x0Fu));
+        }
+        else
+        {
+            fat[byteOff]     = (byte)(((uint)fat[byteOff] & 0x0Fu) | ((value << 4) & 0xF0u));
+            fat[byteOff + 1] = (byte)((value >> 4) & 0xFF);
+        }
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

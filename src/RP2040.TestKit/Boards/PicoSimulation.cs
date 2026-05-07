@@ -29,15 +29,25 @@ public sealed class PicoSimulation : RP2040TestSimulation
     /// <summary>All 30 GPIO pins.</summary>
     public IReadOnlyList<GpioPin> Gpio => Machine.Gpio;
 
-    public PicoSimulation()
+    public PicoSimulation(bool withUsbCdc = true)
     {
         WithFrequency(125_000_000);
         AddUart(0, out var u0);
         AddUart(1, out var u1);
-        AddUsbCdc(out var cdc);
         Uart0 = u0;
         Uart1 = u1;
-        UsbCdc = cdc;
+
+        if (withUsbCdc)
+        {
+            AddUsbCdc(out var cdc);
+            UsbCdc = cdc;
+        }
+        else
+        {
+            // Leave USB unattached: CircuitPython sees no USB host, so USB-MSC
+            // does not lock the FAT filesystem read-only for Python code.
+            UsbCdc = new UsbCdcProbe();
+        }
     }
 
     /// <summary>Load firmware into Flash and reset.</summary>
