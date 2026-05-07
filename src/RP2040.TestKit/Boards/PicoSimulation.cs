@@ -26,6 +26,12 @@ public sealed class PicoSimulation : RP2040TestSimulation
     /// <summary>Auto-enumerated USB CDC-ACM channel (TinyUSB-compatible).</summary>
     public UsbCdcProbe UsbCdc { get; }
 
+    /// <summary>USB Mass Storage Class channel (BOT).  Connected when the firmware exposes MSC.</summary>
+    public UsbMscProbe UsbMsc { get; }
+
+    /// <summary>USB HID channel.  Connected when the firmware exposes a HID interface.</summary>
+    public UsbHidProbe UsbHid { get; }
+
     /// <summary>All 30 GPIO pins.</summary>
     public IReadOnlyList<GpioPin> Gpio => Machine.Gpio;
 
@@ -35,9 +41,13 @@ public sealed class PicoSimulation : RP2040TestSimulation
         AddUart(0, out var u0);
         AddUart(1, out var u1);
         AddUsbCdc(out var cdc);
-        Uart0 = u0;
-        Uart1 = u1;
+        AddUsbMsc(out var msc);
+        AddUsbHid(out var hid);
+        Uart0  = u0;
+        Uart1  = u1;
         UsbCdc = cdc;
+        UsbMsc = msc;
+        UsbHid = hid;
     }
 
     /// <summary>Load firmware into Flash and reset.</summary>

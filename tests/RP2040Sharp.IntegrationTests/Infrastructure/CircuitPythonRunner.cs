@@ -250,6 +250,69 @@ public sealed class CircuitPythonRunner : IAsyncDisposable
     }
 
     /// <summary>
+    /// Write <paramref name="content"/> bytes to <paramref name="filename"/> (a simple
+    /// filename in the root directory, e.g. <c>"code.py"</c>) by directly manipulating
+    /// the FAT filesystem via USB MSC sector writes.
+    ///
+    /// Unlike <see cref="WriteFile"/>, this path bypasses the Python REPL and writes
+    /// data directly to the flash via the CircuitPython MSC device interface.  Writes
+    /// are intercepted by the emulator's <c>flash_range_program</c> hook and therefore
+    /// persist in the emulated flash, surviving soft resets.
+    ///
+    /// Prerequisites: <see cref="WaitForPrompt"/> must have been called first (ensures
+    /// the USB MSC interface is enumerated and the CIRCUITPY filesystem is mounted).
+    /// </summary>
+    /// <returns><c>true</c> if the sectors were written successfully before the timeout.</returns>
+    public bool WriteFileViaMsc(string filename, byte[] content, double timeoutMs = 15_000)
+    {
+        var msc = _sim.UsbMsc;
+        if (!msc.IsConnected) return false;
+
+        // Open the FAT volume using the MSC probe as the sector transport.
+        var fat = FatVolume.Open(
+            lba  => MscReadSector(lba, timeoutMs),
+            (lba, data) => MscWriteSector(lba, data, timeoutMs));
+        if (fat is null || !fat.IsValid) return false;
+
+        return fat.WriteFile(filename, content);
+    }
+
+    /// <summary>
+    /// Convenience overload that encodes <paramref name="content"/> as UTF-8.
+    /// </summary>
+    public bool WriteFileViaMsc(string filename, string content, double timeoutMs = 15_000)
+        => WriteFileViaMsc(filename, System.Text.Encoding.UTF8.GetBytes(content), timeoutMs);
+
+    // ── MSC sector transport helpers ──────────────────────────────────────────
+
+    private byte[] MscReadSector(uint lba, double timeoutMs)
+    {
+        byte[]? result = null;
+        _sim.UsbMsc.RequestRead(lba, data => result = data);
+        const double batchMs = 20.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs && result is null)
+        {
+            _sim.RunMilliseconds(batchMs);
+            elapsed += batchMs;
+        }
+        return result ?? new byte[512];
+    }
+
+    private void MscWriteSector(uint lba, byte[] data, double timeoutMs)
+    {
+        var done = false;
+        _sim.UsbMsc.RequestWrite(lba, data, _ => done = true);
+        const double batchMs = 20.0;
+        var elapsed = 0.0;
+        while (elapsed < timeoutMs && !done)
+        {
+            _sim.RunMilliseconds(batchMs);
+            elapsed += batchMs;
+        }
+    }
+
+    /// <summary>
     /// Perform a CircuitPython soft reset (CTRL+D).  The VM re-runs <c>code.py</c>
     /// (or the first available fall-back: <c>main.py</c>, <c>code.txt</c>,
     /// <c>main.txt</c>).  Any output is captured in <see cref="UsbCdc"/> /

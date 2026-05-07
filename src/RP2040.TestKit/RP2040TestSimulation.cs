@@ -96,10 +96,32 @@ public class RP2040TestSimulation : IDisposable
     public UsbCdcHost UsbCdcHost => _usbCdcHost ??= new UsbCdcHost(Machine.Usb);
     private UsbCdcHost? _usbCdcHost;
 
+    /// <summary>Lazily-created MSC host driver (BOT protocol).  Companion to <see cref="UsbCdcHost"/>.</summary>
+    public UsbMscHost UsbMscHost => _usbMscHost ??= new UsbMscHost(UsbCdcHost);
+    private UsbMscHost? _usbMscHost;
+
+    /// <summary>Lazily-created HID host driver.  Companion to <see cref="UsbCdcHost"/>.</summary>
+    public UsbHidHost UsbHidHost => _usbHidHost ??= new UsbHidHost(UsbCdcHost);
+    private UsbHidHost? _usbHidHost;
+
     /// <summary>Attach a <see cref="UsbCdcProbe"/> to the auto-enumerated USB-CDC channel.</summary>
     public RP2040TestSimulation AddUsbCdc(out UsbCdcProbe probe)
     {
         probe = new UsbCdcProbe().Attach(UsbCdcHost);
+        return this;
+    }
+
+    /// <summary>Attach a <see cref="UsbMscProbe"/> to the USB Mass Storage channel.</summary>
+    public RP2040TestSimulation AddUsbMsc(out UsbMscProbe probe)
+    {
+        probe = new UsbMscProbe().Attach(UsbMscHost);
+        return this;
+    }
+
+    /// <summary>Attach a <see cref="UsbHidProbe"/> to the USB HID channel.</summary>
+    public RP2040TestSimulation AddUsbHid(out UsbHidProbe probe)
+    {
+        probe = new UsbHidProbe().Attach(UsbHidHost);
         return this;
     }
 
