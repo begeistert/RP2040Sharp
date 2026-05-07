@@ -29,7 +29,9 @@ public sealed class GpioPin
     /// When the pin is an output this matches <see cref="OutputValue"/>;
     /// when it is an input it reflects the value injected via <see cref="ForceInput"/>.
     /// </summary>
-    public bool DigitalValue => ((_sio.GpioIn) & (1u << _pinIndex)) != 0;
+    public bool DigitalValue => IsOutput
+        ? OutputValue
+        : ((_sio.GpioIn) & (1u << _pinIndex)) != 0;
 
     /// <summary>
     /// Inject an external signal level into this pin (simulates a physical connection).
