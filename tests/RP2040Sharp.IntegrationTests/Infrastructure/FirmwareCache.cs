@@ -1,7 +1,7 @@
 namespace RP2040Sharp.IntegrationTests.Infrastructure;
 
 /// <summary>
-/// Downloads and caches MicroPython UF2 firmware images from the official GitHub releases.
+/// Downloads and caches MicroPython and CircuitPython UF2 firmware images.
 /// Firmware is stored in a local cache directory so subsequent test runs are offline-capable.
 /// </summary>
 public static class FirmwareCache
@@ -68,12 +68,59 @@ public static class FirmwareCache
     }
 
     /// <summary>
-    /// Returns the local path to the firmware if already cached, without attempting a download.
-    /// Useful for offline CI environments where firmware is pre-seeded.
+    /// Returns the local path to the CircuitPython UF2 image for <paramref name="version"/>
+    /// (e.g. "9.2.1"), downloading it from downloads.circuitpython.org if not already cached.
+    /// Returns <c>null</c> if the download fails (network unavailable, etc.).
+    /// </summary>
+    public static async Task<string?> GetCircuitPythonAsync(string version)
+    {
+        Directory.CreateDirectory(CacheDir);
+
+        var path = Path.Combine(CacheDir, $"circuitpython-{version}.uf2");
+        if (File.Exists(path) && new FileInfo(path).Length > 0)
+            return path;
+
+        try
+        {
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(60) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("RP2040Sharp-IntegrationTests/1.0");
+
+            // Direct stable URL — no scraping needed; version has no 'v' prefix
+            var tag = version.StartsWith('v') ? version[1..] : version;
+            var url = $"https://downloads.circuitpython.org/bin/raspberry_pi_pico/en_US/" +
+                      $"adafruit-circuitpython-raspberry_pi_pico-en_US-{tag}.uf2";
+
+            var bytes = await http.GetByteArrayAsync(url);
+            await File.WriteAllBytesAsync(path, bytes);
+            return path;
+        }
+        catch
+        {
+            // Network unavailable or release doesn't exist — tests will be skipped
+            if (File.Exists(path))
+                File.Delete(path);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Returns the local path to the MicroPython firmware if already cached, without attempting
+    /// a download. Useful for offline CI environments where firmware is pre-seeded.
     /// </summary>
     public static string? GetCachedPath(string version)
     {
         var path = Path.Combine(CacheDir, $"micropython-{version}.uf2");
+        return File.Exists(path) && new FileInfo(path).Length > 0 ? path : null;
+    }
+
+    /// <summary>
+    /// Returns the local path to the CircuitPython firmware if already cached, without
+    /// attempting a download.
+    /// </summary>
+    public static string? GetCachedCircuitPythonPath(string version)
+    {
+        var tag = version.StartsWith('v') ? version[1..] : version;
+        var path = Path.Combine(CacheDir, $"circuitpython-{tag}.uf2");
         return File.Exists(path) && new FileInfo(path).Length > 0 ? path : null;
     }
 }
