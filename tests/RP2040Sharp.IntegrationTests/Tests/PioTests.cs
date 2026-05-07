@@ -94,7 +94,7 @@ public sealed class PioTests
     /// attach), so the BKPT is logged rather than escalating to HardFault.
     /// </remarks>
     [Fact]
-    public void PioBlink_PanicsAfterMainReturns_ExpectedBehavior()
+    public void PioBlink_BkptCapturedWhenMainReturns()
     {
         using var pico = new PicoSimulation();
         var flash = RP2040Machine.Uf2ToFlash(PicoExamplesFirmware.PioBlink)!;

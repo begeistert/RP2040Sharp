@@ -568,12 +568,14 @@ public sealed class SioPeripheral : IMemoryMappedDevice
     private void HandleLaunchHandshake(uint value)
     {
         // Validate sequence position (§2.8.3: 0, 0, 1, VTOR, SP, Entry).
-        // A mismatch at positions 0–2 resets the counter (Core0 may be retrying).
+        // Positions 0–2 carry constant magic values that identify a genuine launch attempt;
+        // positions 3–5 carry firmware-specific addresses (VTOR, SP, Entry) that we accept
+        // unconditionally.  A mismatch at positions 0–2 resets the counter to let Core0 retry.
         bool valid = _launchSeqPos switch
         {
-            0 or 1 => value == 0,
-            2      => value == 1,
-            _      => true,     // VTOR, SP, Entry are arbitrary addresses
+            0 or 1 => value == 0,   // sync/flush words
+            2      => value == 1,   // magic "ready" sentinel
+            _      => true,         // positions 3,4,5: VTOR, SP, Entry (any value valid)
         };
 
         if (!valid)
