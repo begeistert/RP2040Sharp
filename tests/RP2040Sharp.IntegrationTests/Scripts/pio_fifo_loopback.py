@@ -11,7 +11,9 @@ We write a value to SM0 TX FIFO and read it back from SM1 RX FIFO.
 import rp2
 from machine import Pin
 
-@rp2.asm_pio(out_init=[rp2.PIO.OUT_LOW]*8, autopull=True, pull_thresh=8)
+@rp2.asm_pio(out_init=[rp2.PIO.OUT_LOW]*8,
+             out_shiftdir=rp2.PIO.SHIFT_RIGHT,
+             autopull=True, pull_thresh=8)
 def out8():
     out(pins, 8)
     wrap_target()
