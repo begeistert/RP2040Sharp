@@ -120,7 +120,9 @@ public sealed class MicroPythonPioTests
 
     /// <summary>
     /// Verify that <c>import rp2</c> succeeds in the MicroPython REPL on the emulated Pico,
-    /// and that <c>rp2.PIO.OUT_LOW</c> evaluates to the expected constant (0).
+    /// and that <c>rp2.PIO.OUT_LOW</c> evaluates to the expected constant.  In CPython/MicroPython
+    /// for RP2040 the pin-init enum is <c>IN_LOW=0, IN_HIGH=1, OUT_LOW=2, OUT_HIGH=3</c>
+    /// (see <c>ports/rp2/modrp2.c</c> in MicroPython).
     /// This is a minimal sanity check that the rp2 module is present and not broken.
     /// </summary>
     [Fact]
@@ -133,8 +135,8 @@ public sealed class MicroPythonPioTests
 
         runner.WaitForPrompt().Should().BeTrue();
 
-        var found = runner.ExecuteAndWait("import rp2; print(rp2.PIO.OUT_LOW)", "0");
-        found.Should().BeTrue("import rp2 must succeed and rp2.PIO.OUT_LOW must equal 0");
+        var found = runner.ExecuteAndWait("import rp2; print(rp2.PIO.OUT_LOW)", "2");
+        found.Should().BeTrue("import rp2 must succeed and rp2.PIO.OUT_LOW must equal 2");
     }
 
     /// <summary>
