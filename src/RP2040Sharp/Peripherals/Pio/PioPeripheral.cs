@@ -336,7 +336,11 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             {
                 _sm[i].PC = _sm[i].WrapBottom;
                 _sm[i].ISR = 0; _sm[i].IsrCount = 0;
-                _sm[i].OSR = 0; _sm[i].OsrCount = 32;  // 32 = "full" — autopull won't stall immediately
+                // OSR shift-count is reset such that autopull triggers on the first OUT
+                // (RP2040 datasheet §3.5.4.2.1: "After RESTART, the shift counter is set
+                // to a value that triggers an autopull"). OsrCount=0 → shifts-so-far=32,
+                // which always satisfies any PULL_THRESH ≤ 32.
+                _sm[i].OSR = 0; _sm[i].OsrCount = 0;
                 _sm[i].Stalled = false;
                 // Clear EXEC_STALLED status in EXECCTRL (bit 31)
                 _sm[i].ExecCtrl &= 0x7FFFFFFFu;
@@ -671,6 +675,23 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         var bitCount = (int)(instr & 0x1F);
         if (bitCount == 0) bitCount = 32;
 
+        // Autopull is checked at the START of each OUT cycle (RP2040 datasheet §3.5.4.4):
+        // when shifts-so-far ≥ PULL_THRESH, the OSR is considered "empty"; refill it from
+        // TX FIFO before extracting bits, or stall if the FIFO is empty. This is what makes
+        // autopull-driven OUT sequences see fresh data on every threshold-aligned step,
+        // including the very first OUT after RESTART (where OSR is initialised stale).
+        if (sm.AutopullEnabled && (32u - sm.OsrCount) >= (uint)sm.AutopullThreshold)
+        {
+            if (sm.TxFifo.Count == 0)
+            {
+                sm.Stalled = true;
+                _fdebug |= 1u << (24 + sm.SmIndex);  // TXSTALL
+                return;
+            }
+            sm.OSR = sm.TxFifo.Dequeue();
+            sm.OsrCount = 32;
+        }
+
         uint data;
         if (sm.OsrShiftRight)
         {
@@ -712,8 +733,9 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             case 7: ExecuteInstr(sm, (ushort)data, (int)((data >> 13) & 7)); return;  // EXEC
         }
 
-        if (sm.AutopullEnabled && sm.OsrCount == 0)
-            DoPull(sm, false);
+        // Autopull is checked at the START of the next OUT (above), so no post-OUT pull
+        // is needed here. A non-blocking post-pull would also subtly change semantics by
+        // refilling on threshold-exact extractions even when no further OUT is pending.
     }
 
     // PUSH: bits [6]=IfFull, [5]=Block
