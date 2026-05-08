@@ -33,7 +33,10 @@ public sealed class UsbHidHost
         _usb = cdc.Usb;
         cdc.OnConfigurationComplete += HandleConfigurationComplete;
         _usb.OnEndpointWrite        += HandleEndpointWrite;
-        _usb.OnEndpointRead         += HandleEndpointRead;
+        // No subscription to OnEndpointRead: the HID OUT endpoint is sparse — the device
+        // arms it and waits indefinitely for a report. Sending a zero-length completion
+        // on every arm (as CDC does) creates a tight re-arm loop that starves the
+        // firmware of CPU. Reports are delivered explicitly via SendReport().
     }
 
     /// <summary>
@@ -59,14 +62,5 @@ public sealed class UsbHidHost
     {
         if (_cdc.HidInEndpoint < 0 || ep != _cdc.HidInEndpoint) return;
         if (data.Length > 0) OnReport?.Invoke(data);
-    }
-
-    private void HandleEndpointRead(int ep, int size)
-    {
-        // For HID OUT endpoints the device arms the endpoint when it wants to receive a report.
-        // We do nothing here; the caller uses SendReport() explicitly.
-        if (_cdc.HidOutEndpoint < 0 || ep != _cdc.HidOutEndpoint) return;
-        // Acknowledge with empty data so TinyUSB doesn't stall.
-        _usb.EndpointReadDone(ep, ReadOnlySpan<byte>.Empty);
     }
 }
