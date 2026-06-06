@@ -1,6 +1,6 @@
 # RP2040Sharp
 
-![Build Status](https://github.com/begeistert/RP2040Sharp/actions/workflows/test.yml/badge.svg)
+![Build Status](https://github.com/PyMCU/RP2040Sharp/actions/workflows/test.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)
 
@@ -35,7 +35,7 @@ The emulator boots MicroPython v1.21.0 and reaches the interactive REPL in appro
 ## Getting Started
 
 ```bash
-git clone https://github.com/begeistert/RP2040Sharp.git
+git clone https://github.com/PyMCU/RP2040Sharp.git
 cd RP2040Sharp
 dotnet restore
 dotnet build
@@ -84,7 +84,7 @@ Assert.Contains("Hello", uart.Text);
 ### Validating firmware in CI
 
 Built for using the emulator as a compiler/firmware testkit (e.g. for
-[PyMCU](https://github.com/begeistert/PyMCU)) without flaky or hanging builds. A run is
+[PyMCU](https://github.com/PyMCU/PyMCU)) without flaky or hanging builds. A run is
 always **bounded** — wedged firmware fails the test with a reason instead of stalling the
 job — and the instruction count is **deterministic** and reproducible across machines.
 

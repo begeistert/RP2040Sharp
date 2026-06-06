@@ -70,6 +70,6 @@ First public release candidate. A high-performance RP2040 emulator in modern C#
 - Flash programming uses C# hooks rather than the SSI XIP hardware path.
 - USB host support is CDC-only (sufficient for the MicroPython REPL).
 
-[Unreleased]: https://github.com/begeistert/RP2040Sharp/compare/v1.0.0-rc.2...HEAD
-[1.0.0-rc.2]: https://github.com/begeistert/RP2040Sharp/compare/v1.0.0-rc.1...v1.0.0-rc.2
-[1.0.0-rc.1]: https://github.com/begeistert/RP2040Sharp/releases/tag/v1.0.0-rc.1
+[Unreleased]: https://github.com/PyMCU/RP2040Sharp/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/PyMCU/RP2040Sharp/compare/v1.0.0-rc.1...v1.0.0-rc.2
+[1.0.0-rc.1]: https://github.com/PyMCU/RP2040Sharp/releases/tag/v1.0.0-rc.1
