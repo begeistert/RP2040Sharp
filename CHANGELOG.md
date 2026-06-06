@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-06
+
+First stable release. Promotes `1.0.0-rc.2` after the TestKit gained CI guardrails for
+use as a compiler/firmware validator (e.g. PyMCU). The public API is now considered
+stable under [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
 ### Added
 
 - **CI guardrails for the TestKit**, aimed at using the emulator to validate compiler
@@ -22,6 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a hard instruction budget, watches UART or USB-CDC for an expected string, and exits with
   a CI-friendly code (0 found · 1 not found · 2 firmware crashed). The `rp2040js`-style
   `--expect-text` workflow, headless.
+
+### Changed
+
+- Repository moved to the [PyMCU organization](https://github.com/PyMCU/RP2040Sharp);
+  package metadata URLs updated accordingly. Published by `begeistert` as before.
 
 ## [1.0.0-rc.2] - 2026-06-06
 
@@ -70,6 +81,7 @@ First public release candidate. A high-performance RP2040 emulator in modern C#
 - Flash programming uses C# hooks rather than the SSI XIP hardware path.
 - USB host support is CDC-only (sufficient for the MicroPython REPL).
 
-[Unreleased]: https://github.com/PyMCU/RP2040Sharp/compare/v1.0.0-rc.2...HEAD
+[Unreleased]: https://github.com/PyMCU/RP2040Sharp/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/PyMCU/RP2040Sharp/compare/v1.0.0-rc.2...v1.0.0
 [1.0.0-rc.2]: https://github.com/PyMCU/RP2040Sharp/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/PyMCU/RP2040Sharp/releases/tag/v1.0.0-rc.1
