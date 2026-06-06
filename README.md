@@ -3,93 +3,174 @@
 ![Build Status](https://github.com/begeistert/RP2040Sharp/actions/workflows/test.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)
-[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=begeistert_RP2040Sharp&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=begeistert_RP2040Sharp)
 
-**RP2040Sharp** is a high-performance emulator for the Raspberry Pi RP2040 microcontroller, written entirely in **modern C# (.NET 10)**.
+**RP2040Sharp** is a high-performance emulator for the Raspberry Pi RP2040 microcontroller, written entirely in **modern C# (.NET 10)**. It runs real RP2040 firmware — including **MicroPython** — without modification.
 
 This project is a port and re-imagination of the excellent [rp2040js](https://github.com/wokwi/rp2040js) project by Uri Shaked. The goal is to bring embedded emulation to the .NET ecosystem with a strong focus on speed and type safety, leveraging the latest runtime features.
 
-> 🚧 **Project Status:** Work in Progress. The CPU core (Cortex-M0+) is under active development and passing instruction tests.
+## Performance
 
-## 🚀 Technical Features
+Measured on Apple Silicon (macOS, .NET 10, Release build):
 
-* **Architecture:** Faithful emulation of the **ARM Cortex-M0+** core.
-* **Performance:** Heavy use of `Span<T>`, `Unsafe`, and pointers for direct emulated memory access, minimizing Garbage Collector overhead.
-* **Bus Interconnect:** Memory mapping system handling Flash, SRAM, BootROM, and Peripherals.
-* **Testing:** Robust unit test suite using **xUnit** and **FluentAssertions** to validate the Thumb instruction set.
+| Workload | Throughput |
+|---|---|
+| Tight arithmetic loop (Flash, steady-state) | **~460 MIPS** |
+| MicroPython boot | ~250 MIPS |
+| MicroPython REPL execution | ~250 MIPS |
 
-## 🛠️ Requirements
+The emulator boots MicroPython v1.21.0 and reaches the interactive REPL in approximately **3–4 seconds of simulated time** (wall time varies by host). On iOS/MAUI (Mono AOT, no JIT), throughput is lower but the proportional optimizations still apply.
 
-* **.NET 10 SDK**.
-* Visual Studio 2022 or JetBrains Rider.
+## Features
 
-## 📦 Solution Structure
+- **ARM Cortex-M0+** full instruction set (Thumb-1), including exceptions and NVIC
+- **Real RP2040 BootROM** (B1) — loaded as an embedded resource; `rom_table_lookup`, `memcpy44`, `memset4` and bit-manipulation helpers run natively
+- **Flash erase/program** via C# native hooks — MicroPython's LittleFS filesystem works correctly
+- **MicroPython** boots to interactive REPL over emulated USB-CDC
+- **Dual-core:** Core 1 launches via the SIO FIFO multicore handshake (RP2040 §2.8.3); both cores advance in lock-step
+- **GDB stub:** debug Core 0 with `arm-none-eabi-gdb` over `target remote :3333` (registers, memory, stepi, breakpoints)
+- **Peripherals:** GPIO, SIO, UART0/1, SPI0/1, I2C0/1 (master + slave simulation), ADC, PWM, PIO0/1, DMA, Timer, Watchdog, RTC, USB (CDC-ACM host for the MicroPython REPL), Clocks, PSM, Resets, and more
+- **Per-pin GPIO API** (`SetGpioExternalIn`, `GetGpioOutputEnable`, `GetGpioOut`) for embedding in circuit simulators
+- **TestKit** fluent API for writing firmware integration tests
 
-* `RP2040.Core`: The heart of the emulator. Contains the instruction decoder, registers, memory bus, and CPU logic.
-* `RP2040.Peripherals`: Implementation of hardware peripherals (UART, GPIO, PWM, etc.) *[In Development]*.
-* `RP2040.Core.Tests`: Unit tests validating opcode execution and logic.
+## Getting Started
 
-## 💻 Getting Started
+```bash
+git clone https://github.com/begeistert/RP2040Sharp.git
+cd RP2040Sharp
+dotnet restore
+dotnet build
+```
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/begeistert/RP2040Sharp.git
-    cd RP2040Sharp
-    ```
+**Run the demo** (downloads MicroPython, boots it, executes REPL snippets, reports MIPS):
 
-2.  **Restore dependencies and Build:**
-    ```bash
-    dotnet restore
-    dotnet build
-    ```
+```bash
+dotnet run --project src/RP2040Sharp.Demo -c Release
+```
 
-3.  **Run the Tests:**
-    The project includes comprehensive tests to validate arithmetic, logic, and flow control instructions.
-    ```bash
-    dotnet test
-    ```
+**Run the tests:**
 
-## 🗺️ Roadmap
+```bash
+dotnet test
+```
 
-### Core Emulation
-- [x] Basic Instruction Decoder
-- [x] Arithmetic Operations (ADD, SUB, MUL, CMP)
-- [x] Bitwise Operations (AND, ORR, EOR, LSL, LSR)
-- [x] Flow Control (Branching, BL, BLX)
-- [x] Stack Management (PUSH, POP)
-- [ ] Exceptions and Interrupts (NVIC)
-- [ ] Dual Core Support (SIO)
+## Basic Usage
+
+```csharp
+using RP2040.Peripherals;
+
+var machine = new RP2040Machine();
+machine.LoadFlash(File.ReadAllBytes("firmware.bin"));
+
+// Capture UART output
+machine.Uart0.OnByteTransmit += b => Console.Write((char)b);
+
+// Run 125 000 cycles (1 ms at 125 MHz)
+machine.Run(125_000);
+```
+
+### TestKit
+
+```csharp
+using RP2040.TestKit;
+
+var sim = RP2040TestSimulation.Create()
+    .WithBinary(File.ReadAllBytes("firmware.bin"))
+    .AddUart(0, out var uart);
+
+sim.RunMilliseconds(100);
+Assert.Contains("Hello", uart.Text);
+```
+
+### GPIO integration (circuit simulators)
+
+```csharp
+// Inject an external signal on GP5
+machine.Sio.SetGpioExternalIn(5, high: true);
+
+// Read firmware output state
+bool isHigh = machine.Sio.GetGpioOut(3);
+bool isOutput = machine.Sio.GetGpioOutputEnable(3);
+```
+
+### Debugging with GDB
+
+Run the demo with `--gdb` to expose Core 0 over the GDB Remote Serial Protocol:
+
+```bash
+dotnet run --project src/RP2040Sharp.Demo -c Release -- --gdb
+# in another terminal:
+arm-none-eabi-gdb -ex "target remote :3333"
+```
+
+Or embed the server in your own host:
+
+```csharp
+using RP2040.Gdb;
+
+var server = new GdbTcpServer(myGdbTarget, port: 3333); // myGdbTarget : IGdbTarget
+server.Start();
+```
+
+## Solution Structure
+
+| Project | Description |
+|---|---|
+| `src/RP2040Sharp` | Core library — CPU, bus, peripherals, machine |
+| `src/RP2040.TestKit` | Fluent test harness for firmware integration tests |
+| `src/RP2040Sharp.Demo` | Demo: boots MicroPython and drives the REPL |
+
+## Architecture Notes
+
+- **Instruction decoder:** 65 536-entry flat table of `delegate*` function pointers — O(1) dispatch with no branch on opcode
+- **Bus reads:** explicit SRAM → Flash → BootROM fast paths with direct pointer arithmetic; no table indirection
+- **Native hook guard:** registered hooks are bounded by `_nativeHookMax`; Flash-region instructions skip the dictionary lookup entirely via a single uint comparison
+- **Fetch cache:** region and base pointer cached in `Run()` locals; region changes (rare) flush the cache
+
+## Roadmap
+
+### Core / CPU
+- [x] Full Thumb-1 instruction set
+- [x] Exceptions, NVIC, SysTick, PendSV
+- [x] Native hooks (BootROM ROM API, flash erase/program)
+- [x] WFI / WFE sleep with correct peripheral wakeup
+- [x] Dual-core (Core 1 launch, SIO FIFO)
+- [x] GDB stub for step-debugging firmware
 
 ### Peripherals
-- [ ] GPIO & Pin Access
-- [ ] UART (Serial Communication)
-- [ ] Timer & Alarm System
-- [ ] PWM
-- [ ] SPI / I2C
+- [x] GPIO, SIO (spinlocks, interpolator)
+- [x] UART0 / UART1
+- [x] SPI0 / SPI1
+- [x] I2C0 / I2C1 (master + slave-mode simulation)
+- [x] ADC
+- [x] PWM (all 8 slices)
+- [x] PIO0 / PIO1 (state machines, GPIO integration)
+- [x] DMA (all channels, DREQ sources)
+- [x] USB (CDC-ACM host driver for the MicroPython REPL)
+- [x] Timer / Alarms, Watchdog, RTC
+- [x] Clocks, Resets
+- [~] XOSC, ROSC, PLL, PSM, VREG — register stubs (report stable/locked; no frequency model)
+- [ ] Flash programming via SSI (XIP hardware path)
 
-### Ecosystem & Targets
-- [ ] **Native AOT Compilation:**
-    - [ ] Windows (x64/arm64)
-    - [ ] Linux (x64/arm64)
-    - [ ] macOS (Apple Silicon)
-- [ ] **WebAssembly (WASM):** Run RP2040Sharp directly in the browser.
-- [ ] Loader for `.elf` and `.uf2` files.
-- [ ] GDB Server implementation for debugging.
+### Ecosystem
+- [x] UF2 parser in demo
+- [x] Real RP2040 B1 BootROM (embedded resource)
+- [x] MicroPython v1.21.0 boots to REPL
+- [x] Per-pin GPIO API for circuit simulator embedding
+- [ ] iCircuit element (`RP2040Elm`) — in design
+- [ ] NativeAOT targets (Windows, Linux, macOS, iOS)
+- [ ] WebAssembly (WASM) target
 
-## 🤝 Contributing
+## Contributing
 
-Contributions are welcome! This is a collaborative project.
+1. Fork the repository.
+2. Create a feature branch (`git checkout -b feature/my-feature`).
+3. Ensure all tests pass (`dotnet test`).
+4. Commit following [Conventional Commits](https://www.conventionalcommits.org/).
+5. Open a Pull Request against `master`.
 
-1.  Fork the repository.
-2.  Create a feature branch (`git checkout -b feature/AmazingFeature`).
-3.  Ensure **all tests pass**.
-4.  Commit your changes (`git commit -m 'Add some AmazingFeature'`).
-5.  Push to the branch (`git push origin feature/AmazingFeature`).
-6.  Open a Pull Request.
+## License
 
-## 📄 License
+MIT License — see [LICENSE](LICENSE).
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Based on the original work from [rp2040js](https://github.com/wokwi/rp2040js) © 2021 Uri Shaked.
-C# Port © 2025 Iván Montiel Cardona.
+Based on the original work from [rp2040js](https://github.com/wokwi/rp2040js) © 2021 Uri Shaked.  
+C# Port © 2026 Iván Montiel Cardona.
