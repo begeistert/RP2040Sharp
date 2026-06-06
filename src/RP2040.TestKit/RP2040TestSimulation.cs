@@ -185,6 +185,47 @@ public class RP2040TestSimulation : IDisposable
         return this;
     }
 
+    /// <summary>
+    /// Total instructions executed by Core 0 since reset. Deterministic and reproducible
+    /// across machines (the emulator's clock is driven by executed cycles, never by
+    /// wall-clock time), which makes it usable as a compiler-regression metric — e.g.
+    /// asserting that a given program still compiles to no more than N instructions.
+    /// </summary>
+    public long InstructionCount => Machine.InstructionCount;
+
+    /// <summary>
+    /// Run in bounded batches until <paramref name="until"/> returns true, the CPU locks up,
+    /// or <paramref name="maxInstructions"/> is reached — whichever comes first. Unlike a
+    /// fixed <c>RunMilliseconds</c>, this never hangs: wedged or crashed firmware terminates
+    /// with a diagnostic <see cref="RunResult"/> instead of stalling the CI job.
+    /// </summary>
+    /// <param name="until">Predicate evaluated between batches (e.g. UART output check).</param>
+    /// <param name="maxInstructions">Hard upper bound on executed instructions.</param>
+    public RunResult RunUntilHalt(Func<bool> until, long maxInstructions = 50_000_000)
+    {
+        var batch = (int)Math.Min(100_000, Math.Max(1, maxInstructions));
+        var start = Machine.InstructionCount;
+
+        while (true)
+        {
+            if (until())
+                return new RunResult(RunOutcome.PredicateMet, Machine.InstructionCount - start, Cpu.Registers.Waiting);
+            if (Cpu.IsLockedUp)
+                return new RunResult(RunOutcome.LockedUp, Machine.InstructionCount - start, Cpu.Registers.Waiting);
+            if (Machine.InstructionCount - start >= maxInstructions)
+                return new RunResult(RunOutcome.BudgetReached, Machine.InstructionCount - start, Cpu.Registers.Waiting);
+
+            Machine.Run(batch);
+        }
+    }
+
+    /// <summary>
+    /// Convenience overload: run until <paramref name="probe"/> captures
+    /// <paramref name="expectedText"/>, the CPU crashes, or the budget is reached.
+    /// </summary>
+    public RunResult RunUntilHalt(UartProbe probe, string expectedText, long maxInstructions = 50_000_000)
+        => RunUntilHalt(() => probe.Text.Contains(expectedText, StringComparison.Ordinal), maxInstructions);
+
     /// <summary>Reset the CPU to its initial state.</summary>
     public RP2040TestSimulation Reset()
     {

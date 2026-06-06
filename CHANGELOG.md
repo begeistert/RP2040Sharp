@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **CI guardrails for the TestKit**, aimed at using the emulator to validate compiler
+  output (e.g. PyMCU) without flaky or hanging builds:
+  - `RP2040TestSimulation.RunUntilHalt(predicate, maxInstructions)` — a bounded run that
+    can never hang: it returns a diagnostic `RunResult` (`PredicateMet` / `LockedUp` /
+    `BudgetReached`) instead of stalling on wedged firmware.
+  - CPU-health assertions: `Should().NotBeLockedUp()`, `NotHaveFaulted()`,
+    `BeInThreadMode()`, and `HaveExecutedAtMost(n)`.
+  - `RP2040TestSimulation.InstructionCount` — a deterministic, reproducible
+    instruction-count metric for compiler-size regression checks.
+- **`rp2040sharp` runner CLI** (`src/RP2040Sharp.Runner`) — loads a UF2/bin, runs it under
+  a hard instruction budget, watches UART or USB-CDC for an expected string, and exits with
+  a CI-friendly code (0 found · 1 not found · 2 firmware crashed). The `rp2040js`-style
+  `--expect-text` workflow, headless.
+
 ## [1.0.0-rc.2] - 2026-06-06
 
 ### Changed

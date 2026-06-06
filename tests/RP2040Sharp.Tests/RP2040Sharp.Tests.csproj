@@ -21,5 +21,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\RP2040Sharp\RP2040Sharp.csproj" />
+    <ProjectReference Include="..\..\src\RP2040.TestKit\RP2040.TestKit.csproj" />
   </ItemGroup>
 </Project>
