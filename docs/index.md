@@ -5,24 +5,30 @@ microcontroller, written entirely in modern **C# (.NET 10)**. It runs real, unmo
 RP2040 firmware — including **MicroPython** — and reaches an interactive REPL in ~3–4 s of
 simulated time (~460 MIPS on Apple Silicon).
 
-It is a C# port and re-imagination of [rp2040js](https://github.com/wokwi/rp2040js) by
-Uri Shaked, built for the .NET ecosystem with a focus on speed, type safety, and use as a
-**deterministic firmware testkit** — for example, validating the output of the
-[PyMCU](https://docs.pymcu.org) compiler in CI.
+Its headline use case is **firmware integration testing in CI/CD**: run your real
+firmware headlessly and assert on what it actually does — toggles a pin, prints over UART,
+echoes bytes — with runs that are **deterministic** and **never hang**. It's how the
+[PyMCU](https://docs.pymcu.org) compiler validates its output on every push. It is a C#
+port and re-imagination of [rp2040js](https://github.com/wokwi/rp2040js) by Uri Shaked.
 
 ```bash
-dotnet add package RP2040Sharp
-dotnet add package RP2040Sharp.TestKit   # fluent harness for firmware tests
+dotnet add package RP2040Sharp.TestKit   # fluent firmware-testing harness
 ```
 
 ```csharp
-using RP2040.Peripherals;
+using RP2040.TestKit.Boards;       // PicoSimulation
+using RP2040.TestKit.Extensions;   // .Should() for pins, UART, CPU
 
-var machine = new RP2040Machine();
-machine.LoadFlash(File.ReadAllBytes("firmware.bin"));
-machine.Uart0.OnByteTransmit += b => Console.Write((char)b);
-machine.Run(125_000);   // 1 ms at 125 MHz
+using var pico = new PicoSimulation(withUsbCdc: false);
+pico.LoadFlash(File.ReadAllBytes("firmware.bin"));
+
+// Run real firmware and assert on its behavior — bounded, deterministic, headless.
+pico.RunUntilOutput(pico.Uart0, "ready", timeoutMs: 5_000).Should().BeTrue();
+pico.Gpio[25].Should().BeHigh();
+pico.Cpu.Should().NotHaveFaulted();
 ```
+
+→ Start with the **[firmware integration testing guide](guides/ci-validation.md)**.
 
 ---
 
@@ -31,9 +37,12 @@ machine.Run(125_000);   // 1 ms at 125 MHz
 ::::{grid} 1 2 2 3
 :gutter: 3
 
-:::{grid-item-card} Real firmware, unmodified
-Boots the real RP2040 B1 BootROM and runs stock MicroPython/CircuitPython UF2 images —
-no patches, no shims.
+:::{grid-item-card} Firmware testing in CI
+:link: guides/ci-validation
+:link-type: doc
+
+A fluent TestKit to drive real firmware and assert on GPIO, UART, and CPU state —
+`dotnet test`, no hardware.
 :::
 
 :::{grid-item-card} Deterministic by design
@@ -44,6 +53,11 @@ machines — ideal for CI and compiler regression checks.
 :::{grid-item-card} Never hangs in CI
 Bounded execution: wedged or crashed firmware fails a test with a diagnostic reason
 instead of stalling the build.
+:::
+
+:::{grid-item-card} Real firmware, unmodified
+Boots the real RP2040 B1 BootROM and runs stock MicroPython/CircuitPython UF2 images —
+no patches, no shims.
 :::
 
 :::{grid-item-card} GDB debugging
