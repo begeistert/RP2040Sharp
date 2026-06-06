@@ -29,7 +29,7 @@ The emulator boots MicroPython v1.21.0 and reaches the interactive REPL in appro
 - **MicroPython** boots to interactive REPL over emulated USB-CDC
 - **Dual-core:** Core 1 launches via the SIO FIFO multicore handshake (RP2040 §2.8.3); both cores advance in lock-step
 - **GDB stub:** debug Core 0 with `arm-none-eabi-gdb` over `target remote :3333` (registers, memory, stepi, breakpoints)
-- **Peripherals:** GPIO, SIO, UART0/1, SPI0/1, I2C0/1 (master + slave simulation), ADC, PWM, PIO0/1, DMA, Timer, Watchdog, RTC, USB (CDC-ACM device + HID/MSC host), Clocks, PSM, Resets, and more
+- **Peripherals:** GPIO, SIO, UART0/1, SPI0/1, I2C0/1 (master + slave simulation), ADC, PWM, PIO0/1, DMA, Timer, Watchdog, RTC, USB (CDC-ACM host for the MicroPython REPL), Clocks, PSM, Resets, and more
 - **Per-pin GPIO API** (`SetGpioExternalIn`, `GetGpioOutputEnable`, `GetGpioOut`) for embedding in circuit simulators
 - **TestKit** fluent API for writing firmware integration tests
 
@@ -146,7 +146,7 @@ server.Start();
 - [x] PWM (all 8 slices)
 - [x] PIO0 / PIO1 (state machines, GPIO integration)
 - [x] DMA (all channels, DREQ sources)
-- [x] USB (CDC-ACM device; HID / MSC host drivers)
+- [x] USB (CDC-ACM host driver for the MicroPython REPL)
 - [x] Timer / Alarms, Watchdog, RTC
 - [x] Clocks, Resets
 - [~] XOSC, ROSC, PLL, PSM, VREG — register stubs (report stable/locked; no frequency model)

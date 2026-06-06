@@ -5,8 +5,7 @@ namespace RP2040Sharp.IntegrationTests.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="FatVolume"/> using an in-memory FAT12 disk image.
-/// These tests run entirely offline (no firmware download required) and validate the
-/// FAT implementation used by <see cref="CircuitPythonRunner.WriteFileViaMsc"/>.
+/// These tests run entirely offline (no firmware download required).
 /// </summary>
 public sealed class FatVolumeTests
 {

@@ -8,17 +8,8 @@ namespace RP2040.Peripherals.Usb;
 /// endpoint, and bytes the firmware writes to the bulk-IN endpoint are
 /// surfaced through <see cref="OnSerialData"/>.
 ///
-/// Composite-device support: during descriptor parsing the driver also
-/// discovers MSC (class 0x08) and HID (class 0x03) bulk/interrupt
-/// endpoints and exposes them via <see cref="MscInEndpoint"/>,
-/// <see cref="MscOutEndpoint"/>, <see cref="HidInEndpoint"/> and
-/// <see cref="HidOutEndpoint"/>.  Companion drivers
-/// (<see cref="UsbMscHost"/>, <see cref="UsbHidHost"/>) subscribe to
-/// <see cref="UsbPeripheral.OnEndpointWrite"/> and
-/// <see cref="UsbPeripheral.OnEndpointRead"/> with <c>+=</c> alongside
-/// this driver.  <see cref="OnConfigurationComplete"/> is fired once
-/// SET_CONFIGURATION is acknowledged so they can start their own
-/// class-level initialisation.
+/// <see cref="OnConfigurationComplete"/> is fired once SET_CONFIGURATION is
+/// acknowledged.
 /// </summary>
 public sealed class UsbCdcHost
 {
@@ -26,10 +17,7 @@ public sealed class UsbCdcHost
     private const byte CDC_DTR = 1 << 0;
     private const byte CDC_RTS = 1 << 1;
     private const byte CDC_DATA_CLASS = 10;
-    private const byte MSC_CLASS       = 8;
-    private const byte HID_CLASS       = 3;
     private const byte ENDPOINT_BULK   = 2;
-    private const byte ENDPOINT_INTERRUPT = 3;
 
     private const int ENDPOINT_ZERO = 0;
     private const int CONFIGURATION_DESCRIPTOR_SIZE = 9;
@@ -61,23 +49,15 @@ public sealed class UsbCdcHost
     private readonly List<byte> _descriptors = new();
     private int _inEndpoint  = -1;
     private int _outEndpoint = -1;
-    private int _mscInEndpoint  = -1;
-    private int _mscOutEndpoint = -1;
-    private int _hidInEndpoint  = -1;
-    private int _hidOutEndpoint = -1;
 
     /// <summary>Raised whenever the device transmits bytes on the CDC bulk-IN endpoint.</summary>
     public Action<byte[]>? OnSerialData;
     /// <summary>Raised once the host has issued SET_CONTROL_LINE_STATE (device is "open").</summary>
     public Action? OnDeviceConnected;
-    /// <summary>
-    /// Raised after SET_CONFIGURATION is acknowledged and CDC line-state is set.
-    /// Companion MSC / HID host drivers subscribe to this to begin their
-    /// own class-level initialisation sequences.
-    /// </summary>
+    /// <summary>Raised after SET_CONFIGURATION is acknowledged and CDC line-state is set.</summary>
     public Action? OnConfigurationComplete;
 
-    /// <summary>The underlying USB peripheral (used by companion host drivers).</summary>
+    /// <summary>The underlying USB peripheral.</summary>
     public UsbPeripheral Usb => _usb;
 
     public bool IsConnected => _initialized;
@@ -85,19 +65,9 @@ public sealed class UsbCdcHost
     public int OutEndpoint => _outEndpoint;
     public int TxFifoCount => _txFifo.Count;
 
-    /// <summary>MSC bulk-IN endpoint number; -1 if the device has no MSC interface.</summary>
-    public int MscInEndpoint  => _mscInEndpoint;
-    /// <summary>MSC bulk-OUT endpoint number; -1 if the device has no MSC interface.</summary>
-    public int MscOutEndpoint => _mscOutEndpoint;
-    /// <summary>HID interrupt-IN endpoint number; -1 if the device has no HID interface.</summary>
-    public int HidInEndpoint  => _hidInEndpoint;
-    /// <summary>HID interrupt-OUT endpoint number; -1 if the device has no HID interface.</summary>
-    public int HidOutEndpoint => _hidOutEndpoint;
-
     public UsbCdcHost(UsbPeripheral usb)
     {
         _usb = usb;
-        // Use += so companion drivers (UsbMscHost, UsbHidHost) can also subscribe.
         _usb.OnUsbEnabled     += HandleUsbEnabled;
         _usb.OnResetReceived  += HandleResetReceived;
         _usb.OnEndpointWrite  += HandleEndpointWrite;
@@ -163,10 +133,7 @@ public sealed class UsbCdcHost
 
             if (_descriptorsSize == _descriptors.Count)
             {
-                ExtractAllInterfaces(_descriptors,
-                    out _inEndpoint,    out _outEndpoint,
-                    out _mscInEndpoint, out _mscOutEndpoint,
-                    out _hidInEndpoint, out _hidOutEndpoint);
+                ExtractEndpointNumbers(_descriptors, out _inEndpoint, out _outEndpoint);
                 _usb.SendSetupPacket(SetDeviceConfigurationPacket(1));
             }
             return;
@@ -213,17 +180,12 @@ public sealed class UsbCdcHost
     // ── Descriptor parsing ───────────────────────────────────────────────
 
     /// <summary>
-    /// Scans the full configuration descriptor blob and fills in the CDC, MSC, and HID
-    /// bulk/interrupt endpoint numbers.  Each output is -1 when the corresponding interface
-    /// is not present.
+    /// Scans the configuration descriptor blob for the CDC data interface and returns its
+    /// bulk IN/OUT endpoint numbers.  Each output is -1 when no CDC data endpoint is found.
     /// </summary>
-    public static void ExtractAllInterfaces(
-        IReadOnlyList<byte> descriptors,
-        out int cdcInEp,  out int cdcOutEp,
-        out int mscInEp,  out int mscOutEp,
-        out int hidInEp,  out int hidOutEp)
+    public static void ExtractEndpointNumbers(IReadOnlyList<byte> descriptors, out int inEp, out int outEp)
     {
-        cdcInEp = cdcOutEp = mscInEp = mscOutEp = hidInEp = hidOutEp = -1;
+        inEp = outEp = -1;
         var index    = 0;
         var curClass = -1;
         while (index < descriptors.Count)
@@ -237,35 +199,19 @@ public sealed class UsbCdcHost
 
             if (type == (byte)DescriptorType.Endpoint && len == 7)
             {
-                var addr    = descriptors[index + 2];
-                var attr    = descriptors[index + 3];
-                var isIn    = (addr & 0x80) != 0;
-                var epNum   = addr & 0x0F;
-                var isBulk  = (attr & 0x03) == ENDPOINT_BULK;
-                var isIntr  = (attr & 0x03) == ENDPOINT_INTERRUPT;
-                switch (curClass)
+                var addr   = descriptors[index + 2];
+                var attr   = descriptors[index + 3];
+                var isIn   = (addr & 0x80) != 0;
+                var epNum  = addr & 0x0F;
+                var isBulk = (attr & 0x03) == ENDPOINT_BULK;
+                if (curClass == CDC_DATA_CLASS && isBulk)
                 {
-                    case CDC_DATA_CLASS when isBulk:
-                        if (isIn) cdcInEp  = epNum; else cdcOutEp  = epNum; break;
-                    case MSC_CLASS when isBulk:
-                        if (isIn) mscInEp  = epNum; else mscOutEp  = epNum; break;
-                    case HID_CLASS when isIntr:
-                        // Only the first IN and first OUT HID interrupt endpoint are tracked.
-                        // Composite HID devices with multiple endpoints (e.g. separate keyboard
-                        // and mouse IN endpoints) will have additional endpoints ignored.
-                        if (isIn && hidInEp  < 0) hidInEp  = epNum;
-                        else if (!isIn && hidOutEp < 0) hidOutEp = epNum;
-                        break;
+                    if (isIn) inEp = epNum; else outEp = epNum;
                 }
             }
             index += len;
         }
     }
-
-    /// <inheritdoc cref="ExtractAllInterfaces"/>
-    /// <remarks>Kept for backward compatibility; extracts only the CDC endpoints.</remarks>
-    public static void ExtractEndpointNumbers(IReadOnlyList<byte> descriptors, out int inEp, out int outEp)
-        => ExtractAllInterfaces(descriptors, out inEp, out outEp, out _, out _, out _, out _);
 
     // ── SETUP packet helpers ─────────────────────────────────────────────
 

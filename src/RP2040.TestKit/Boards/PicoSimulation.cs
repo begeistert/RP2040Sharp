@@ -26,12 +26,6 @@ public sealed class PicoSimulation : RP2040TestSimulation
     /// <summary>Auto-enumerated USB CDC-ACM channel (TinyUSB-compatible).</summary>
     public UsbCdcProbe UsbCdc { get; }
 
-    /// <summary>USB Mass Storage Class channel (BOT).  Connected when the firmware exposes MSC.</summary>
-    public UsbMscProbe UsbMsc { get; }
-
-    /// <summary>USB HID channel.  Connected when the firmware exposes a HID interface.</summary>
-    public UsbHidProbe UsbHid { get; }
-
     /// <summary>All 30 GPIO pins.</summary>
     public IReadOnlyList<GpioPin> Gpio => Machine.Gpio;
 
@@ -46,19 +40,12 @@ public sealed class PicoSimulation : RP2040TestSimulation
         if (withUsbCdc)
         {
             AddUsbCdc(out var cdc);
-            AddUsbMsc(out var msc);
-            AddUsbHid(out var hid);
             UsbCdc = cdc;
-            UsbMsc = msc;
-            UsbHid = hid;
         }
         else
         {
-            // Leave USB unattached: CircuitPython sees no USB host, so USB-MSC
-            // does not lock the FAT filesystem read-only for Python code.
+            // Leave USB unattached so the device sees no USB host.
             UsbCdc = new UsbCdcProbe();
-            UsbMsc = new UsbMscProbe();
-            UsbHid = new UsbHidProbe();
         }
     }
 
