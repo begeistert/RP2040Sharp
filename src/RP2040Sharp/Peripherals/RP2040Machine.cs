@@ -792,6 +792,16 @@ public sealed class RP2040Machine : IDisposable
     /// <summary>Total instructions executed by Core 0 since reset.</summary>
     public long InstructionCount => Cpu.Cycles;
 
+    /// <summary>True once Core 1 has been launched via the SIO FIFO multicore handshake.</summary>
+    public bool Core1Launched => _core1Launched;
+
+    /// <summary>
+    /// Wall-clock cycles elapsed during the most recent <see cref="Run"/> call.
+    /// When Core 1 is launched this is <c>max(core0, core1)</c> — both cores run in
+    /// parallel on real hardware — never the sum.
+    /// </summary>
+    public long LastElapsedCycles { get; private set; }
+
     /// <summary>
     /// Run both cores for approximately <paramref name="instructions"/> instructions each,
     /// then tick all time-aware peripherals.
@@ -802,17 +812,23 @@ public sealed class RP2040Machine : IDisposable
     {
         // ── Core 0 ────────────────────────────────────────────────────
         _activeCoreId = 0;
-        var before = Cpu.Cycles;
+        var before0 = Cpu.Cycles;
         Cpu.Run(instructions);
-        var delta = Cpu.Cycles - before;
+        var delta = Cpu.Cycles - before0;
 
         // ── Core 1 (if launched) ───────────────────────────────────────
         if (_core1Launched)
         {
             _activeCoreId = 1;
+            var before1 = Cpu1.Cycles;
             Cpu1.Run(instructions);
             _activeCoreId = 0;
+            // Both cores run in parallel on real hardware; wall-clock elapsed
+            // is the maximum of the two cycle counts.
+            delta = Math.Max(delta, (int)(Cpu1.Cycles - before1));
         }
+
+        LastElapsedCycles = delta;
 
         foreach (var t in _tickables)
             t.Tick(delta);
@@ -823,6 +839,7 @@ public sealed class RP2040Machine : IDisposable
     {
         _core1Launched = false;
         _activeCoreId  = 0;
+        Sio.ResetMulticoreLaunch();
         Cpu.Reset();
         Cpu1.Reset();
     }

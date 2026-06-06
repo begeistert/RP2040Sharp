@@ -80,6 +80,7 @@ public sealed class SioPeripheral : IMemoryMappedDevice
 
     private readonly CortexM0Plus _cpu;
     private CortexM0Plus? _cpu1;  // Core1 CPU; set by RP2040Machine after construction
+    private bool _core1Launched;  // true once the §2.8.3 launch handshake has completed
 
     /// <summary>
     /// Returns the ID of the core currently performing the bus access (0 or 1).
@@ -266,10 +267,12 @@ public sealed class SioPeripheral : IMemoryMappedDevice
                 var coreId = GetActiveCoreId?.Invoke() ?? 0;
                 if (coreId == 0)
                 {
-                    if (_cpu1 == null)
+                    if (!_core1Launched)
                     {
                         // Core1 not yet running: handle the RP2040 §2.8.3 launch handshake
                         // natively by echoing each word back so Core0's pop returns immediately.
+                        // (_cpu1 is always wired up at construction, so gate on the launch
+                        // state — not on a null reference — to actually enter the handshake.)
                         HandleLaunchHandshake(value);
                     }
                     else
@@ -278,7 +281,7 @@ public sealed class SioPeripheral : IMemoryMappedDevice
                         if (_fifo01.Count < FIFO_DEPTH)
                         {
                             _fifo01.Enqueue(value);
-                            _cpu1.SetInterrupt(16, true);           // SIO_IRQ_PROC1 on Core1
+                            _cpu1!.SetInterrupt(16, true);          // SIO_IRQ_PROC1 on Core1
                             _cpu1.Registers.EventRegistered = true; // wake WFE
                         }
                         else _wof0 = true;
@@ -606,9 +609,20 @@ public sealed class SioPeripheral : IMemoryMappedDevice
 
         if (_launchSeqPos == 6)
         {
-            _launchSeqPos = 0; // reset for potential re-launch
+            _launchSeqPos  = 0;     // reset sequence tracking
+            _core1Launched = true;  // subsequent FIFO writes are normal Core0→Core1 traffic
             OnLaunchCore1?.Invoke(_launchVtor, _launchSp, _launchEntry);
         }
+    }
+
+    /// <summary>
+    /// Clear the multicore launch state so a subsequent §2.8.3 handshake re-launches Core1.
+    /// Called by <see cref="RP2040Machine.Reset"/>.
+    /// </summary>
+    public void ResetMulticoreLaunch()
+    {
+        _core1Launched = false;
+        _launchSeqPos  = 0;
     }
 
     // ── FIFO helpers ──────────────────────────────────────────────────

@@ -147,5 +147,46 @@ public sealed class MulticoreTests
             "SP must remain valid after multiple FIFO IRQ rounds");
         pico.Cpu.IsLockedUp.Should().BeFalse("CPU must not lock up after FIFO IRQ rounds");
     }
+
+    // ── Dual-core timing ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Both cores run in parallel on real hardware, so the wall-clock time advanced by a
+    /// single <c>Run(n)</c> must be <c>max(core0, core1)</c> — never the sum of both.
+    /// Before the fix, summing the two cores' cycles made time-aware peripherals (timer,
+    /// PWM, …) run at up to double speed whenever Core 1 was active.
+    /// </summary>
+    [Fact]
+    public void DualCore_ElapsedTime_IsMaxNotSum()
+    {
+        using var pico = new PicoSimulation();
+        var flash = RP2040Machine.Uf2ToFlash(PicoExamplesFirmware.HelloMulticore)!;
+
+        pico.LoadFlash(flash);
+
+        // Run in fixed batches until Core 0 launches Core 1 via the SIO FIFO handshake.
+        const int batch = 100_000;
+        var launched = false;
+        for (var i = 0; i < 1000 && !launched; i++)   // up to ~100M cycles (~0.8 s @125 MHz)
+        {
+            pico.Rp2040.Run(batch);
+            launched = pico.Rp2040.Core1Launched;
+        }
+
+        launched.Should().BeTrue("the test needs both cores active");
+
+        // Both cores run in parallel on real hardware, so the wall-clock advanced by a
+        // single Run must be exactly max(core0, core1). The pre-fix code used Core 0's
+        // cycles alone, which underran the clock whenever Core 1 did more work.
+        var c0Before = pico.Cpu.Cycles;
+        var c1Before = pico.Cpu1.Cycles;
+
+        pico.Rp2040.Run(batch);
+
+        var d0 = pico.Cpu.Cycles - c0Before;
+        var d1 = pico.Cpu1.Cycles - c1Before;
+        pico.Rp2040.LastElapsedCycles.Should().Be(Math.Max(d0, d1),
+            "elapsed time is max(core0, core1) — neither Core 0 alone nor the sum");
+    }
 }
 
