@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>RP2040Sharp.Demo</AssemblyName>
     <RootNamespace>RP2040Sharp.Demo</RootNamespace>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\RP2040.TestKit\RP2040.TestKit.csproj" />

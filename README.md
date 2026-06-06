@@ -27,7 +27,9 @@ The emulator boots MicroPython v1.21.0 and reaches the interactive REPL in appro
 - **Real RP2040 BootROM** (B1) — loaded as an embedded resource; `rom_table_lookup`, `memcpy44`, `memset4` and bit-manipulation helpers run natively
 - **Flash erase/program** via C# native hooks — MicroPython's LittleFS filesystem works correctly
 - **MicroPython** boots to interactive REPL over emulated USB-CDC
-- **Peripherals:** GPIO, SIO, UART0/1, SPI0/1, I2C0/1, ADC, PWM, PIO0/1, DMA, Timer, Watchdog, RTC, USB (CDC-ACM), Clocks, PSM, Resets, and more
+- **Dual-core:** Core 1 launches via the SIO FIFO multicore handshake (RP2040 §2.8.3); both cores advance in lock-step
+- **GDB stub:** debug Core 0 with `arm-none-eabi-gdb` over `target remote :3333` (registers, memory, stepi, breakpoints)
+- **Peripherals:** GPIO, SIO, UART0/1, SPI0/1, I2C0/1 (master + slave simulation), ADC, PWM, PIO0/1, DMA, Timer, Watchdog, RTC, USB (CDC-ACM device + HID/MSC host), Clocks, PSM, Resets, and more
 - **Per-pin GPIO API** (`SetGpioExternalIn`, `GetGpioOutputEnable`, `GetGpioOut`) for embedding in circuit simulators
 - **TestKit** fluent API for writing firmware integration tests
 
@@ -91,6 +93,25 @@ bool isHigh = machine.Sio.GetGpioOut(3);
 bool isOutput = machine.Sio.GetGpioOutputEnable(3);
 ```
 
+### Debugging with GDB
+
+Run the demo with `--gdb` to expose Core 0 over the GDB Remote Serial Protocol:
+
+```bash
+dotnet run --project src/RP2040Sharp.Demo -c Release -- --gdb
+# in another terminal:
+arm-none-eabi-gdb -ex "target remote :3333"
+```
+
+Or embed the server in your own host:
+
+```csharp
+using RP2040.Gdb;
+
+var server = new GdbTcpServer(myGdbTarget, port: 3333); // myGdbTarget : IGdbTarget
+server.Start();
+```
+
 ## Solution Structure
 
 | Project | Description |
@@ -113,21 +134,22 @@ bool isOutput = machine.Sio.GetGpioOutputEnable(3);
 - [x] Exceptions, NVIC, SysTick, PendSV
 - [x] Native hooks (BootROM ROM API, flash erase/program)
 - [x] WFI / WFE sleep with correct peripheral wakeup
-- [ ] Dual-core (Core 1 launch, SIO FIFO)
-- [ ] GDB stub for step-debugging firmware
+- [x] Dual-core (Core 1 launch, SIO FIFO)
+- [x] GDB stub for step-debugging firmware
 
 ### Peripherals
 - [x] GPIO, SIO (spinlocks, interpolator)
 - [x] UART0 / UART1
 - [x] SPI0 / SPI1
-- [x] I2C0 / I2C1
+- [x] I2C0 / I2C1 (master + slave-mode simulation)
 - [x] ADC
 - [x] PWM (all 8 slices)
 - [x] PIO0 / PIO1 (state machines, GPIO integration)
 - [x] DMA (all channels, DREQ sources)
-- [x] USB (CDC-ACM device, host driver for tests)
+- [x] USB (CDC-ACM device; HID / MSC host drivers)
 - [x] Timer / Alarms, Watchdog, RTC
-- [x] Clocks, XOSC, PLL, PSM, Resets
+- [x] Clocks, Resets
+- [~] XOSC, ROSC, PLL, PSM, VREG — register stubs (report stable/locked; no frequency model)
 - [ ] Flash programming via SSI (XIP hardware path)
 
 ### Ecosystem

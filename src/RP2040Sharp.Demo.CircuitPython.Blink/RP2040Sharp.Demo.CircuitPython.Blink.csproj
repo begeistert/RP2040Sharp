@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>RP2040Sharp.Demo.CircuitPython.Blink</AssemblyName>
     <RootNamespace>RP2040Sharp.Demo.CircuitPython.Blink</RootNamespace>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\RP2040.TestKit\RP2040.TestKit.csproj" />
