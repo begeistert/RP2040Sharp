@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using RP2040.Gdb;
 using RP2040.Peripherals;
 using RP2040.TestKit;
 using RP2040.TestKit.Boards;
@@ -20,8 +21,10 @@ internal static class Program
     private const string MicroPythonVersion = "v1.21.0";
     private const double RP2040_CLK_HZ = 125_000_000.0;
 
-    private static async Task<int> Main()
+    private static async Task<int> Main(string[] args)
     {
+        var gdbEnabled = args.Contains("--gdb");
+
         PrintBanner();
 
         // ── 1. Firmware ───────────────────────────────────────────────────────
@@ -76,6 +79,24 @@ internal static class Program
         Console.WriteLine("Interactive MicroPython REPL — type Python and press Enter.  Ctrl+C to exit.");
         Console.WriteLine(new string('─', 60));
 
+        // ── 2b. Optional GDB server ───────────────────────────────────────────
+        // With --gdb, expose Core 0 over the GDB Remote Serial Protocol on :3333.
+        // The target gates the sim loop below: a debugger interrupt/breakpoint pauses
+        // execution, and `continue` resumes it.
+        GdbExecutionTarget? gdbTarget = null;
+        GdbTcpServer? gdbServer = null;
+        if (gdbEnabled)
+        {
+            gdbTarget = new GdbExecutionTarget(pico.Rp2040);
+            gdbTarget.Execute();   // MicroPython keeps running until a debugger pauses it
+            gdbServer = new GdbTcpServer(gdbTarget, 3333);
+            gdbServer.OnLog = msg => Console.Error.WriteLine($"[gdb] {msg}");
+            gdbServer.Start();
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("GDB server listening on :3333   (arm-none-eabi-gdb → target remote :3333)");
+            Console.ResetColor();
+        }
+
         // ── 3. Interactive REPL loop ──────────────────────────────────────────
         // Use a CancellationToken so Ctrl+C cleanly stops both tasks.
         using var cts = new CancellationTokenSource();
@@ -89,7 +110,10 @@ internal static class Program
             {
                 try
                 {
-                    pico.RunMilliseconds(10);
+                    if (gdbTarget is null || gdbTarget.Executing)
+                        pico.RunMilliseconds(10);
+                    else
+                        await Task.Delay(5, cts.Token);
                     // Yield to the I/O task between sim slices.
                     await Task.Yield();
                 }
@@ -123,6 +147,8 @@ internal static class Program
         await Task.WhenAny(simTask, ioTask);
         cts.Cancel();
         try { await Task.WhenAll(simTask, ioTask); } catch { /* ignore cancellation */ }
+
+        gdbServer?.Dispose();
 
         Console.WriteLine();
         Console.ForegroundColor = ConsoleColor.Cyan;
@@ -198,4 +224,19 @@ internal static class Program
         }
         return null;
     }
+}
+
+/// <summary>
+/// Drives execution for the GDB server: the sim loop runs only while <see cref="Executing"/>
+/// is true. A debugger interrupt or a breakpoint hit calls <see cref="Stop"/>; <c>continue</c>
+/// calls <see cref="Execute"/>.
+/// </summary>
+internal sealed class GdbExecutionTarget(RP2040Machine machine) : IGdbTarget
+{
+    private volatile bool _executing;
+
+    public RP2040Machine Machine => machine;
+    public bool Executing => _executing;
+    public void Execute() => _executing = true;
+    public void Stop() => _executing = false;
 }

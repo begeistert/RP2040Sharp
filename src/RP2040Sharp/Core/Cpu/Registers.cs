@@ -86,6 +86,20 @@ public struct Registers
         return apsr | 0x01000000 | (IPSR & 0x3F);
     }
 
+    /// <summary>
+    /// Write the APSR (condition flags) and IPSR portions of xPSR. Used by the GDB stub
+    /// when a debugger writes the cpsr/xPSR register. The EPSR Thumb bit is fixed.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void SetxPsr(uint value)
+    {
+        N = (value & 0x80000000) != 0;
+        Z = (value & 0x40000000) != 0;
+        C = (value & 0x20000000) != 0;
+        V = (value & 0x10000000) != 0;
+        IPSR = value & 0x3F;
+    }
+
     // Interrupt Status Register (IPSR) y Execution (EPSR) se pueden manejar aparte o implícitamente.
 
     /// <summary>
