@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-06-06
+
+### Changed
+
+- **License hygiene:** pinned `FluentAssertions` to **6.12.0**, the last
+  MIT-licensed release (7.x+ moved to a commercial Xceed license). This keeps the
+  published `RP2040Sharp.TestKit` package and everything it pulls in MIT-compatible.
+  The TestKit's custom assertions were ported back to the 6.x extension model.
+
 ## [1.0.0-rc.1] - 2026-06-06
 
 First public release candidate. A high-performance RP2040 emulator in modern C#
@@ -45,5 +54,6 @@ First public release candidate. A high-performance RP2040 emulator in modern C#
 - Flash programming uses C# hooks rather than the SSI XIP hardware path.
 - USB host support is CDC-only (sufficient for the MicroPython REPL).
 
-[Unreleased]: https://github.com/begeistert/RP2040Sharp/compare/v1.0.0-rc.1...HEAD
+[Unreleased]: https://github.com/begeistert/RP2040Sharp/compare/v1.0.0-rc.2...HEAD
+[1.0.0-rc.2]: https://github.com/begeistert/RP2040Sharp/compare/v1.0.0-rc.1...v1.0.0-rc.2
 [1.0.0-rc.1]: https://github.com/begeistert/RP2040Sharp/releases/tag/v1.0.0-rc.1
