@@ -87,11 +87,23 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
 
     private readonly Queue<byte> _rxFifo = new(FIFO_DEPTH);
 
+    private bool _inSlaveTransmit;
+    private readonly Queue<byte> _slaveTxFifo = new(FIFO_DEPTH);
+
     /// <summary>Called on each byte write: (targetAddress, data).</summary>
     public Action<byte, byte>? OnWrite;
 
     /// <summary>Called on each byte read request: (targetAddress) → rx byte.</summary>
     public Func<byte, byte>? OnRead;
+
+    /// <summary>Called when the STOP bit is set in IC_DATA_CMD, signalling end of transaction.</summary>
+    public Action? OnStop;
+
+    /// <summary>Raised when firmware writes IC_SAR (slave address register). Argument is the new 7-bit address (0 = slave disabled).</summary>
+    public event Action<byte>? SlaveAddressChanged;
+
+    /// <summary>The 7-bit slave address currently written in IC_SAR.</summary>
+    public byte SlaveAddress => (byte)(_sar & 0x7F);
 
     public uint Size => 0x1000;
 
@@ -165,7 +177,10 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         {
             case IC_CON:              _con              = value & 0x7FF; break;
             case IC_TAR:              _tar              = value & 0x3FF; break;
-            case IC_SAR:              _sar              = value & 0x3FF; break;
+            case IC_SAR:
+                _sar = value & 0x3FF;
+                SlaveAddressChanged?.Invoke((byte)(_sar & 0x7F));
+                break;
             case IC_DATA_CMD:         HandleDataCmd(value); break;
             case IC_SS_SCL_HCNT:      _ssSclHcnt        = value & 0xFFFF; break;
             case IC_SS_SCL_LCNT:      _ssSclLcnt        = value & 0xFFFF; break;
@@ -229,6 +244,16 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
             _rawIntr |= 1u << 2;  // RX_FULL
             CheckInterrupts();
         }
+        else if (_inSlaveTransmit)
+        {
+            // Firmware is responding to RD_REQ in slave-transmit mode — capture the byte.
+            // The master may clock out several bytes before issuing STOP, so accumulate
+            // them rather than overwriting; the mode ends on SimulateStop().
+            if (_slaveTxFifo.Count < FIFO_DEPTH)
+                _slaveTxFifo.Enqueue((byte)(value & 0xFF));
+            _rawIntr |= 1u << 4;  // TX_EMPTY
+            CheckInterrupts();
+        }
         else
         {
             OnWrite?.Invoke(addr, (byte)(value & 0xFF));
@@ -240,6 +265,7 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         // Signal STOP_DET when STOP bit set
         if ((value & (1u << 9)) != 0)
         {
+            OnStop?.Invoke();
             _rawIntr |= 1u << 9;
             CheckInterrupts();
         }
@@ -293,4 +319,60 @@ public sealed class I2cPeripheral : IMemoryMappedDevice
         if (_rxFifo.Count < FIFO_DEPTH)
             _rxFifo.Enqueue(value);
     }
+
+    // ── Slave simulation ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Simulate an external I2C master addressing this device as a slave.
+    /// Returns true when the address matches IC_SAR.
+    /// When the master wants to read (<paramref name="isWrite"/> = false), raises RD_REQ (bit 5)
+    /// so firmware can respond by writing to IC_DATA_CMD.
+    /// </summary>
+    public bool SimulateIncomingAddress(byte addr, bool isWrite)
+    {
+        if ((byte)(_sar & 0x7F) != addr)
+            return false;
+
+        if (!isWrite)
+        {
+            // Master wants to read from us — firmware must respond via IC_DATA_CMD.
+            _inSlaveTransmit = true;
+            _rawIntr        |= 1u << 5;  // RD_REQ
+            CheckInterrupts();
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Simulate a data byte delivered by an external master (slave-receive mode).
+    /// Places the byte in the RX FIFO and raises RX_FULL.
+    /// </summary>
+    public void SimulateIncomingData(byte data)
+    {
+        if (_rxFifo.Count < FIFO_DEPTH)
+            _rxFifo.Enqueue(data);
+        _rawIntr |= 1u << 2;  // RX_FULL
+        CheckInterrupts();
+    }
+
+    /// <summary>
+    /// Simulate a STOP condition from an external master. Ends any slave-transmit phase
+    /// and raises STOP_DET (bit 9).
+    /// </summary>
+    public void SimulateStop()
+    {
+        _inSlaveTransmit = false;
+        _rawIntr |= 1u << 9;  // STOP_DET
+        CheckInterrupts();
+    }
+
+    /// <summary>True while firmware still owes the master bytes captured for slave-transmit.</summary>
+    public bool HasSlaveTransmitByte => _slaveTxFifo.Count > 0;
+
+    /// <summary>
+    /// Dequeue the next byte firmware placed in IC_DATA_CMD for slave-transmit mode.
+    /// Returns 0 when no byte is pending.
+    /// </summary>
+    public byte ReadSlaveTransmitByte() => _slaveTxFifo.TryDequeue(out var b) ? b : (byte)0;
 }
