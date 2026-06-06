@@ -1,6 +1,6 @@
 # RP2040Sharp
 
-![Build Status](https://github.com/begeistert/RP2040Sharp/actions/workflows/test.yml/badge.svg)
+![Build Status](https://github.com/PyMCU/RP2040Sharp/actions/workflows/test.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![.NET Version](https://img.shields.io/badge/.NET-10.0-purple)
 
@@ -35,7 +35,7 @@ The emulator boots MicroPython v1.21.0 and reaches the interactive REPL in appro
 ## Getting Started
 
 ```bash
-git clone https://github.com/begeistert/RP2040Sharp.git
+git clone https://github.com/PyMCU/RP2040Sharp.git
 cd RP2040Sharp
 dotnet restore
 dotnet build
@@ -81,6 +81,34 @@ sim.RunMilliseconds(100);
 Assert.Contains("Hello", uart.Text);
 ```
 
+### Validating firmware in CI
+
+Built for using the emulator as a compiler/firmware testkit (e.g. for
+[PyMCU](https://github.com/PyMCU/PyMCU)) without flaky or hanging builds. A run is
+always **bounded** — wedged firmware fails the test with a reason instead of stalling the
+job — and the instruction count is **deterministic** and reproducible across machines.
+
+```csharp
+var sim = RP2040TestSimulation.Create()
+    .WithBinary(File.ReadAllBytes("firmware.bin"))
+    .AddUart(0, out var uart);
+
+// Never hangs: returns PredicateMet / LockedUp / BudgetReached.
+var result = sim.RunUntilHalt(() => uart.Text.Contains("PASS"), maxInstructions: 5_000_000);
+
+result.Succeeded.Should().BeTrue();
+sim.Cpu.Should().NotHaveFaulted();
+sim.Cpu.Should().HaveExecutedAtMost(2_000_000);   // compiler-size regression guard
+```
+
+Or headless from a pipeline, with the `rp2040sharp` runner CLI (exit 0 found · 1 not
+found · 2 crashed):
+
+```bash
+dotnet run --project src/RP2040Sharp.Runner -c Release -- \
+    firmware.uf2 --expect-text "PASS" --channel uart
+```
+
 ### GPIO integration (circuit simulators)
 
 ```csharp
@@ -117,6 +145,7 @@ server.Start();
 |---|---|
 | `src/RP2040Sharp` | Core library — CPU, bus, peripherals, machine |
 | `src/RP2040.TestKit` | Fluent test harness for firmware integration tests |
+| `src/RP2040Sharp.Runner` | Headless `rp2040sharp` CLI: run firmware, `--expect-text`, CI exit codes |
 | `src/RP2040Sharp.Demo` | Demo: boots MicroPython and drives the REPL |
 
 ## Architecture Notes

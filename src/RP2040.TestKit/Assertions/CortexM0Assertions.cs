@@ -76,4 +76,56 @@ public sealed class CortexM0Assertions : ReferenceTypeAssertions<CortexM0Plus, C
             .FailWith("Expected flag {0} to be {1}{reason}, but found {2}.", name, expected, actual);
         return new AndConstraint<CortexM0Assertions>(this);
     }
+
+    // ── Health checks (handy for CI / firmware smoke tests) ──────────────────────
+
+    /// <summary>Assert the CPU has not locked up (no HardFault escalation / firmware crash).</summary>
+    public AndConstraint<CortexM0Assertions> NotBeLockedUp(
+        string because = "", params object[] becauseArgs)
+    {
+        Execute.Assertion.BecauseOf(because, becauseArgs)
+            .ForCondition(!Subject.IsLockedUp)
+            .FailWith("Expected the CPU not to be locked up{reason}, but it was " +
+                      "(a HardFault escalated — the firmware crashed). PC=0x{0:X8}.", Subject.Registers.PC);
+        return new AndConstraint<CortexM0Assertions>(this);
+    }
+
+    /// <summary>
+    /// Assert the CPU is healthy: not locked up and not handling a HardFault (IPSR != 3).
+    /// The go-to smoke check after running firmware.
+    /// </summary>
+    public AndConstraint<CortexM0Assertions> NotHaveFaulted(
+        string because = "", params object[] becauseArgs)
+    {
+        Execute.Assertion.BecauseOf(because, becauseArgs)
+            .ForCondition(!Subject.IsLockedUp && Subject.Registers.IPSR != 3)
+            .FailWith("Expected the CPU not to have faulted{reason}, but IPSR={0} (3 = HardFault) " +
+                      "and IsLockedUp={1}.", Subject.Registers.IPSR, Subject.IsLockedUp);
+        return new AndConstraint<CortexM0Assertions>(this);
+    }
+
+    /// <summary>Assert the CPU is in Thread mode (IPSR == 0), i.e. not inside an exception handler.</summary>
+    public AndConstraint<CortexM0Assertions> BeInThreadMode(
+        string because = "", params object[] becauseArgs)
+    {
+        Execute.Assertion.BecauseOf(because, becauseArgs)
+            .ForCondition(Subject.Registers.IPSR == 0)
+            .FailWith("Expected the CPU to be in Thread mode{reason}, but it was handling exception {0}.",
+                Subject.Registers.IPSR);
+        return new AndConstraint<CortexM0Assertions>(this);
+    }
+
+    /// <summary>
+    /// Assert the CPU has executed no more than <paramref name="maxInstructions"/> since reset.
+    /// Useful as a deterministic compiler-regression guard (instruction count is reproducible).
+    /// </summary>
+    public AndConstraint<CortexM0Assertions> HaveExecutedAtMost(long maxInstructions,
+        string because = "", params object[] becauseArgs)
+    {
+        Execute.Assertion.BecauseOf(because, becauseArgs)
+            .ForCondition(Subject.Cycles <= maxInstructions)
+            .FailWith("Expected the CPU to execute at most {0} instructions{reason}, but it executed {1}.",
+                maxInstructions, Subject.Cycles);
+        return new AndConstraint<CortexM0Assertions>(this);
+    }
 }
