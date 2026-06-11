@@ -50,6 +50,23 @@ public sealed unsafe class CortexM0Plus
     public Action<uint, uint>? OnLockup;
 
     /// <summary>
+    /// Called when the CPU takes an exception (ISR / fault / SysTick / PendSV / SVCall).
+    /// The parameter is the exception number being entered (same value written to IPSR).
+    /// Fires once per exception entry — never on the per-instruction hot path — and is
+    /// intended for profiling/tracing the boundary between thread code and handler code.
+    /// </summary>
+    public Action<uint>? OnExceptionEntry;
+
+    /// <summary>
+    /// Called when the CPU returns from an exception (EXC_RETURN consumed). The parameter
+    /// is the EXC_RETURN value that drove the return. By the time this fires the registers,
+    /// SP and PC have already been restored to the resumed context, so a profiler can read
+    /// the return PC / stack to identify the task being resumed.
+    /// Fires once per exception return — never on the per-instruction hot path.
+    /// </summary>
+    public Action<uint>? OnExceptionReturn;
+
+    /// <summary>
     /// Native hooks: when the PC equals a registered address (Thumb bit stripped), the
     /// corresponding delegate is called instead of fetching/executing an instruction.
     /// The delegate is responsible for updating registers as needed.  After the delegate
@@ -228,6 +245,112 @@ public sealed unsafe class CortexM0Plus
         _fetchMask = fetchMask;
     }
 
+    /// <summary>
+    /// Profiling-only sibling of <see cref="Run"/>. Identical execution semantics, but
+    /// invokes <paramref name="observer"/> once per instruction (before dispatch). This is a
+    /// deliberately separate method so the hot <see cref="Run"/> path is byte-for-byte
+    /// unchanged and pays nothing for profiling — mirroring AVR8Sharp's
+    /// Execute()/ExecuteProfiling() split. Do not use for throughput-sensitive simulation.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public void RunProfiled(int instructions, IProfilingObserver observer)
+    {
+        var decoder = _decoder;
+
+        var fetchPtr = _fetchPtr;
+        var fetchMask = _fetchMask;
+        var regionId = _currentRegionId;
+
+        while (instructions-- > 0)
+        {
+            if (IsLockedUp) return;
+
+            if (Registers.InterruptsUpdated)
+            {
+                Registers.InterruptsUpdated = false;
+                if (CheckForInterrupts())
+                {
+                    UpdateFetchCache(Registers.PC);
+                    fetchPtr = _fetchPtr;
+                    fetchMask = _fetchMask;
+                    regionId = _currentRegionId;
+                }
+            }
+
+            if (Registers.Waiting)
+            {
+                if (Registers.EventRegistered)
+                {
+                    Registers.Waiting = false;
+                    Registers.EventRegistered = false;
+                }
+                else
+                {
+                    Cycles += (uint)(instructions + 1);
+                    return;
+                }
+            }
+
+            var pc = Registers.PC;
+
+            if ((pc >> 28) != regionId)
+            {
+                UpdateFetchCache(pc);
+
+                fetchPtr = _fetchPtr;
+                fetchMask = _fetchMask;
+                regionId = _currentRegionId;
+
+                if (fetchPtr == null)
+                {
+                    ExceptionEntry(EXC_HARDFAULT);
+                    if (IsLockedUp) return;
+                    UpdateFetchCache(Registers.PC);
+                    fetchPtr  = _fetchPtr;
+                    fetchMask = _fetchMask;
+                    regionId  = _currentRegionId;
+                    continue;
+                }
+            }
+
+            if (_nativeHooks != null && pc <= _nativeHookMax && _nativeHooks.TryGetValue(pc, out var nativeHook))
+            {
+                observer.OnInstruction(pc, Unsafe.ReadUnaligned<ushort>(fetchPtr + (pc & fetchMask)), Cycles);
+
+                var pcBeforeHook = Registers.PC;
+                nativeHook(this);
+                if (Registers.PC == pcBeforeHook)
+                {
+                    var hookLr = Registers.LR;
+                    if (hookLr >= 0xFFFFFFF0)
+                        ExceptionReturn(hookLr);
+                    else
+                        Registers.PC = hookLr & ~1u;
+                }
+                UpdateFetchCache(Registers.PC);
+                fetchPtr  = _fetchPtr;
+                fetchMask = _fetchMask;
+                regionId  = _currentRegionId;
+                Cycles++;
+                continue;
+            }
+
+            var opcode = Unsafe.ReadUnaligned<ushort>(fetchPtr + (pc & fetchMask));
+
+            observer.OnInstruction(pc, opcode, Cycles);
+
+            Registers.PC = pc + 2;
+
+            Cycles++;
+
+            decoder.Dispatch(opcode, this);
+        }
+
+        _currentRegionId = regionId;
+        _fetchPtr = fetchPtr;
+        _fetchMask = fetchMask;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Step()
     {
@@ -332,6 +455,8 @@ public sealed unsafe class CortexM0Plus
         Registers.PC = targetPc & 0xFFFFFFFE;
 
         Cycles += 12; // Exception Entry cost (aprox 12-15 cycles)
+
+        OnExceptionEntry?.Invoke(exceptionNumber);
     }
 
     // ================================================================
@@ -490,5 +615,7 @@ public sealed unsafe class CortexM0Plus
         // that already happened. rp2040js cortex-m0-core.ts:339-341 sets both flags.
         Registers.InterruptsUpdated = true;
         Registers.EventRegistered = true;
+
+        OnExceptionReturn?.Invoke(excReturn);
     }
 }
