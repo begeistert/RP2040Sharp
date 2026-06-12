@@ -136,13 +136,18 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         {
             var smIdx = (int)((off - REG_RXF_BASE) / 4);
             var sm = _sm[smIdx];
-            if (!sm.RxFifo.TryDequeue(out var v)) return 0;
+            if (!sm.RxFifo.TryDequeue(out var v))
+            {
+                // RX FIFO underflow: reading an empty RX FIFO. TRM §3.7 FDEBUG.RXUNDER = bits [11:8].
+                _fdebug |= 1u << (8 + smIdx);
+                return 0;
+            }
             // Clear RXSTALL for this SM now that RX FIFO has space
             _fdebug &= ~(1u << smIdx);
             // Wake a SM that was stalled waiting for space in the RX FIFO (PUSH block / autopush).
             // rp2040js: readFIFO() → checkWait().
             if (sm.Stalled)
-                CheckSmWait(sm, smIdx);
+                CheckSmWait(sm, txEvent: false);
             return v;
         }
 
@@ -200,11 +205,11 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
                 // Wake a SM that was stalled waiting for data in the TX FIFO (PULL block / autopull).
                 // rp2040js: writeFIFO() → checkWait().
                 if (sm.Stalled)
-                    CheckSmWait(sm, smIdx);
+                    CheckSmWait(sm, txEvent: true);
             }
             else
             {
-                _fdebug |= 1u << (8 + smIdx);  // TXOVER bits [11:8]
+                _fdebug |= 1u << (16 + smIdx);  // TXOVER bits [19:16] (TRM §3.7)
             }
             return;
         }
@@ -257,28 +262,59 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
     // ── Private: stall wake-up ───────────────────────────────────────
 
     /// <summary>
-    /// Re-evaluate the stall condition for a SM that was blocked on a FIFO or IRQ wait.
-    /// Mirrors rp2040js <c>StateMachine.checkWait()</c>: the SM may immediately unstall and
-    /// advance its PC if the blocking condition has been resolved.
-    /// Called after TXF writes (may unblock PULL-stalled SM) and RXF reads (may unblock PUSH-stalled SM).
+    /// Immediately re-evaluate the stall of a SM after a FIFO event, so it can resume within the
+    /// same CPU step instead of waiting for the next <see cref="Tick"/>. Mirrors rp2040js
+    /// <c>StateMachine.checkWait()</c>.
+    /// <para><paramref name="txEvent"/> = true after a TXF write (may unblock a PULL or an
+    /// autopull-stalled OUT); false after an RXF read (may unblock a PUSH or a deferred autopush).
+    /// The two FIFO events are handled separately: freeing RX space must not disturb a TX-waiter,
+    /// and vice-versa.</para>
     /// </summary>
-    private void CheckSmWait(PioStateMachine sm, int smIdx)
+    private void CheckSmWait(PioStateMachine sm, bool txEvent)
     {
-        // Try to complete a blocked PULL (SM was stalled because TX FIFO was empty).
-        if (sm.TxFifo.Count > 0)
+        if (txEvent)
         {
-            sm.OSR = sm.TxFifo.Dequeue();
-            sm.OsrCount = 32;
-            sm.Stalled = false;
-            AdvanceSmPc(sm);
+            if (sm.TxFifo.Count == 0) return;
+            var instr = _instrMem[sm.PC & 0x1F];
+            if (((instr >> 13) & 7) == OP_PUSH_PULL)
+            {
+                // Blocking PULL: its sole effect is to load the OSR — do it and step past it.
+                sm.OSR = sm.TxFifo.Dequeue();
+                sm.OsrCount = 32;
+                sm.Stalled = false;
+                AdvanceSmPc(sm);
+            }
+            else
+            {
+                // Autopull stall on an OUT (or MOV): the instruction has not yet produced its
+                // result. Just clear the stall so it re-executes and refills the OSR itself —
+                // advancing the PC here would skip the OUT entirely.
+                sm.Stalled = false;
+            }
         }
-        // Try to complete a blocked PUSH (SM was stalled because RX FIFO was full).
-        else if (sm.RxFifo.Count < sm.RxDepth && sm.IsrCount >= (uint)sm.AutopushThreshold)
+        else
         {
-            sm.RxFifo.Enqueue(sm.ISR);
-            sm.ISR = 0; sm.IsrCount = 0;
-            sm.Stalled = false;
-            AdvanceSmPc(sm);
+            if (sm.RxFifo.Count >= sm.RxDepth) return;
+            if (sm.AutopushPending)
+            {
+                // Deferred autopush: the ISR already holds the captured data; flush it and
+                // step past the IN that stalled.
+                sm.RxFifo.Enqueue(sm.ISR);
+                sm.ISR = 0; sm.IsrCount = 0;
+                sm.AutopushPending = false;
+                sm.Stalled = false;
+                AdvanceSmPc(sm);
+                return;
+            }
+            var instr = _instrMem[sm.PC & 0x1F];
+            if (((instr >> 13) & 7) == OP_PUSH_PULL && (instr & 0x80) == 0)
+            {
+                // Blocking PUSH: flush the ISR and step past it.
+                sm.RxFifo.Enqueue(sm.ISR);
+                sm.ISR = 0; sm.IsrCount = 0;
+                sm.Stalled = false;
+                AdvanceSmPc(sm);
+            }
         }
     }
 
@@ -342,6 +378,7 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
                 // which always satisfies any PULL_THRESH ≤ 32.
                 _sm[i].OSR = 0; _sm[i].OsrCount = 0;
                 _sm[i].Stalled = false;
+                _sm[i].AutopushPending = false;
                 // Clear EXEC_STALLED status in EXECCTRL (bit 31)
                 _sm[i].ExecCtrl &= 0x7FFFFFFFu;
             }
@@ -468,6 +505,23 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
         if (sm.DelayCounter > 0)
         {
             sm.DelayCounter--;
+            return;
+        }
+
+        // Complete a deferred autopush before fetching the next instruction. The IN already
+        // shifted its data; we must NOT re-execute it (that would shift fresh data). Retry the
+        // push, and advance past the IN once it succeeds.
+        if (sm.AutopushPending)
+        {
+            if (sm.RxFifo.Count < sm.RxDepth)
+            {
+                sm.RxFifo.Enqueue(sm.ISR);
+                sm.ISR = 0; sm.IsrCount = 0;
+                sm.AutopushPending = false;
+                sm.Stalled = false;
+                sm.PC++;
+                if (sm.PC > sm.WrapTop) sm.PC = sm.WrapBottom;
+            }
             return;
         }
 
@@ -663,9 +717,24 @@ public sealed class PioPeripheral : IMemoryMappedDevice, ITickable
             sm.ISR = bitCount == 32 ? data : (sm.ISR << bitCount) | (data & ((1u << bitCount) - 1));
         }
         sm.IsrCount += (uint)bitCount;
+        if (sm.IsrCount > 32) sm.IsrCount = 32;  // shift counter saturates at 32 (TRM §3.5.4)
 
         if (sm.AutopushEnabled && sm.IsrCount >= (uint)sm.AutopushThreshold)
-            DoPush(sm, false);
+        {
+            if (sm.RxFifo.Count < sm.RxDepth)
+            {
+                sm.RxFifo.Enqueue(sm.ISR);
+                sm.ISR = 0; sm.IsrCount = 0;
+            }
+            else
+            {
+                // RX FIFO full: stall WITHOUT discarding. The data already shifted into the ISR
+                // is retained; the deferred push completes once the RX FIFO drains (TRM §3.5.4.2).
+                sm.Stalled = true;
+                sm.AutopushPending = true;
+                _fdebug |= 1u << sm.SmIndex;  // RXSTALL [3:0]
+            }
+        }
     }
 
     // OUT: bits [7:5]=destination, [4:0]=bit count (0=32)
